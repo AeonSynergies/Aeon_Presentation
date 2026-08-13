@@ -1,0 +1,132 @@
+import type { DeckConfig } from "@aeon/types";
+import { Link } from "@tanstack/react-router";
+import * as React from "react";
+import { DiscoveryNotesPanel } from "~/components/discovery/DiscoveryNotesPanel";
+import { useDeckSession } from "~/hooks/useDeckSession";
+import { DeckLogo } from "./Logo";
+import { getSlides } from "./getSlides";
+
+export function DeckPlayer({ deck, dbId }: { deck: DeckConfig; dbId: string }) {
+  const { state, setState, clientName, setClientName } = useDeckSession(deck, dbId);
+  const [idx, setIdx] = React.useState(0);
+  const [notesOpen, setNotesOpen] = React.useState(true);
+  const stageRef = React.useRef<HTMLDivElement>(null);
+  const slideContentRef = React.useRef<HTMLDivElement>(null);
+
+  const slides = React.useMemo(() => getSlides(deck, state), [deck, state]);
+  const clampedIdx = Math.min(idx, slides.length - 1);
+
+  React.useEffect(() => {
+    if (idx > slides.length - 1) setIdx(Math.max(0, slides.length - 1));
+  }, [idx, slides.length]);
+
+  React.useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) return;
+      if (e.key === "ArrowRight") setIdx((i) => Math.min(i + 1, slides.length - 1));
+      if (e.key === "ArrowLeft") setIdx((i) => Math.max(i - 1, 0));
+      if (e.key === "f" || e.key === "F") toggleFullscreen();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slides.length]);
+
+  function isFullscreen() {
+    return !!document.fullscreenElement;
+  }
+
+  function toggleFullscreen() {
+    const el = stageRef.current;
+    if (!el) return;
+    if (!isFullscreen()) {
+      el.requestFullscreen?.().catch(() => undefined);
+    } else {
+      document.exitFullscreen?.().catch(() => undefined);
+    }
+  }
+
+  function onViewportClick(e: React.MouseEvent) {
+    if (!isFullscreen()) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('[contenteditable="true"]') || target.closest("a")) return;
+    setIdx((i) => Math.min(i + 1, slides.length - 1));
+  }
+
+  const deckColorVars: React.CSSProperties = {
+    "--amber": deck.colors.amber,
+    "--teal": deck.colors.teal,
+    "--ink": deck.colors.ink,
+    "--panel": deck.colors.panel,
+    "--panel-2": deck.colors.panel2,
+    "--fog": deck.colors.fog,
+    "--paper": deck.colors.paper,
+    ...(deck.colors.success ? { "--success": deck.colors.success } : {}),
+    ...(deck.colors.danger ? { "--danger": deck.colors.danger } : {}),
+    ...(deck.colors.gold ? { "--gold": deck.colors.gold } : {}),
+  } as React.CSSProperties;
+
+  return (
+    <div style={{ ...deckColorVars, display: "flex", minHeight: "100vh" }}>
+      <div className="stage" ref={stageRef} style={{ flex: 1 }}>
+        <div className="topbar">
+          <div className="wordmark">
+            <DeckLogo logo={deck.logo} colors={deck.colors} />
+            <span className="sub">PARTNER DECK · {deck.industry.toUpperCase()}</span>
+          </div>
+          <div className="topbar-actions">
+            <Link to="/" className="back-home-btn chrome-hide-present">
+              ← Home
+            </Link>
+            <button className="icon-btn chrome-hide-present" onClick={() => setNotesOpen((v) => !v)}>
+              {notesOpen ? "Hide" : "Show"} Discovery Notes
+            </button>
+            <button className="icon-btn" id="presentBtn" onClick={toggleFullscreen}>
+              ⛶ PRESENT
+            </button>
+          </div>
+        </div>
+
+        <div className="viewport" onClick={onViewportClick}>
+          <button className="nav-arrow prev chrome-hide-present" disabled={clampedIdx === 0} onClick={() => setIdx((i) => Math.max(i - 1, 0))}>
+            ‹
+          </button>
+          <div className="slide" ref={slideContentRef} key={slides[clampedIdx]?.id}>
+            {slides[clampedIdx]?.render()}
+          </div>
+          <button
+            className="nav-arrow next chrome-hide-present"
+            disabled={clampedIdx === slides.length - 1}
+            onClick={() => setIdx((i) => Math.min(i + 1, slides.length - 1))}
+          >
+            ›
+          </button>
+        </div>
+
+        <div className="routebar-wrap chrome-hide-present">
+          <div className="routebar">
+            <div className="track" />
+            {slides.map((s, i) => (
+              <button
+                key={s.id}
+                className={`stop ${i === clampedIdx ? "active" : ""} ${i < clampedIdx ? "done" : ""}`}
+                aria-label={s.label}
+                onClick={() => setIdx(i)}
+              >
+                <span className="beacon" />
+                <span className="label">{s.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {notesOpen && (
+        <div className="chrome-hide-present" style={{ width: 480, flexShrink: 0, borderLeft: "1px solid var(--line)", background: "var(--panel)" }}>
+          <DiscoveryNotesPanel deck={deck} state={state} setState={setState} clientName={clientName} setClientName={setClientName} />
+        </div>
+      )}
+    </div>
+  );
+}

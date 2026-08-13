@@ -1,0 +1,30 @@
+{
+  "name": "aeon-presentation-platform",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "pnpm --filter @aeon/database generate",
+    "db:migrate": "pnpm --filter @aeon/database migrate",
+    "db:seed": "pnpm --filter @aeon/database seed"
+  },
+  "devDependencies": {
+    "turbo": "^2.10.9",
+    "typescript": "^5.9.3"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "prisma"
+    ]
+  }
+}
