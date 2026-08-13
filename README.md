@@ -72,20 +72,37 @@ deployed API's origin before running `pnpm build` for a production deploy.
 ## Deployment (Railway)
 
 Both apps are plain Node servers (`apps/api`: Express; `apps/web`: a Nitro-built Node
-server) and a standard Postgres database — no Docker required, though Railway can build
-either with Nixpacks directly from this repo.
+server) and a standard Postgres database — no Docker required; Railway builds each with
+Nixpacks directly from this repo. Set **Root Directory to the repo root** (not
+`apps/api`/`apps/web`) for both services, so `pnpm install` and `pnpm --filter` resolve
+the workspace correctly.
 
-1. Create a Railway project, add a **PostgreSQL** plugin, and copy its connection string.
-2. Deploy `apps/api` as a service: root directory `apps/api`, build command
-   `pnpm install --frozen-lockfile && pnpm --filter @aeon/database generate && pnpm --filter @aeon/api build`,
-   start command `pnpm --filter @aeon/api start`. Set env vars `DATABASE_URL` (from the
-   Postgres plugin), `JWT_ACCESS_SECRET` (random string), `WEB_ORIGIN` (the web service's
-   public URL), `NODE_ENV=production`.
-3. Run the migration + seed once against the Railway Postgres (e.g. via
-   `pnpm --filter @aeon/database migrate` then `pnpm --filter @aeon/database seed`, with
-   `DATABASE_URL` pointed at Railway).
-4. Deploy `apps/web` as a second service: root directory `apps/web`, build command
-   `pnpm install --frozen-lockfile && pnpm --filter @aeon/web build`, start command
-   `pnpm --filter @aeon/web start`. Set `VITE_API_URL` to the API service's public URL
-   **before the build runs** (Railway build-time env vars), and `NODE_ENV=production`.
-5. Point your domain (via Cloudflare DNS) at the web service's Railway URL.
+1. Create a Railway project and add a **PostgreSQL** plugin — it provisions
+   `DATABASE_URL` automatically as a referenceable variable.
+2. Add a service for **apps/api**, connected to this GitHub repo/branch:
+   - Root directory: `/` (repo root)
+   - Build command: `pnpm install --frozen-lockfile && pnpm --filter @aeon/database generate && pnpm --filter @aeon/api build`
+   - Start command: `pnpm --filter @aeon/api start:with-migrate` (runs `prisma migrate
+     deploy` + the idempotent seed before starting the server — safe to run on every
+     deploy, so migrations never need a separate manual step)
+   - Variables: `DATABASE_URL` = reference the Postgres plugin's variable,
+     `JWT_ACCESS_SECRET` = a long random string, `NODE_ENV` = `production`,
+     `WEB_ORIGIN` = the web service's public URL (fill in after step 3 creates it —
+     Railway lets you generate the domain first and paste it back here)
+   - Generate a public domain for this service (Settings → Networking → Generate
+     Domain) and note it down — that's the value for `VITE_API_URL` below.
+3. Add a second service for **apps/web**, same repo/branch:
+   - Root directory: `/` (repo root)
+   - Build command: `pnpm install --frozen-lockfile && pnpm --filter @aeon/web build`
+   - Start command: `pnpm --filter @aeon/web start`
+   - Variables: `VITE_API_URL` = the apps/api service's public URL from step 2 (must be
+     set **before** the build runs — it's baked in at build time), `NODE_ENV` =
+     `production`
+   - Generate a public domain for this service too (Settings → Networking → Generate
+     Domain) — that's the hosted URL.
+4. Go back to the **apps/api** service's variables and set `WEB_ORIGIN` to the web
+   service's public URL from step 3, then redeploy apps/api so CORS/cookies allow it.
+5. Visit the web service's URL, confirm it redirects to `/login` when logged out, sign
+   in with the seeded demo user, and click through the Amazon DSP deck.
+6. Optional: point a custom domain at the web service via Cloudflare DNS (CNAME to the
+   Railway-provided domain), once you're ready to move off the `*.up.railway.app` URL.
