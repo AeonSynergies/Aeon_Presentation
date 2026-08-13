@@ -1,0 +1,93 @@
+// Aeon Presentation Platform — Phase 1 schema.
+// decks.config and meetings.* mirror the prototype's nested deck-config / session-state
+// shapes (see packages/types) so migrating existing data is a data copy, not a redesign.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SALES_EXECUTIVE
+  OPERATIONS_MANAGER
+  BD_MANAGER
+  ADMIN
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  // Role enforcement is a later phase (CLAUDE.md Build Order #9) — this column exists now
+  // so it doesn't need a migration later, but no permission checks read it yet.
+  role         Role     @default(SALES_EXECUTIVE)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
+  meetings      Meeting[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Deck {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  companyName String
+  industry    String
+  // Full DeckConfig (packages/types DeckConfig) — services, pricing bands, discovery
+  // questions, static slide content, team, colors/logo. JSON so deck data migration is
+  // close to a data copy from the prototype rather than a schema redesign.
+  config      Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  meetings Meeting[]
+
+  @@map("decks")
+}
+
+model Meeting {
+  id        String   @id @default(cuid())
+  deckId    String
+  deck      Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  clientName String?
+
+  // Live discovery-call session state (packages/types SessionState), kept in sync with
+  // the Discovery Notes panel in real time.
+  driverValue String?
+  selected    Json    @default("[]")
+  toggles     Json    @default("{}")
+  answers     Json    @default("{}")
+  discount    Json    @default("{\"enabled\":false,\"scope\":\"all\",\"services\":[],\"type\":\"percent\",\"value\":0}")
+
+  meetingOutcome Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([deckId])
+  @@index([createdById])
+  @@map("meetings")
+}

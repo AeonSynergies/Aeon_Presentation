@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.output/
+.vinxi/
+.turbo/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+/packages/database/prisma/generated/
+apps/web/src/routeTree.gen.ts
