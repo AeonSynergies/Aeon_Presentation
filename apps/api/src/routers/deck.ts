@@ -10,13 +10,15 @@ export const deckRouter = router({
       select: { id: true, slug: true, companyName: true, industry: true, config: true },
       orderBy: { createdAt: "asc" },
     });
-    return decks.map((d) => ({
-      id: d.id,
-      slug: d.slug,
-      companyName: d.companyName,
-      industry: d.industry,
-      tagline: (d.config as unknown as DeckConfig).tagline,
-    }));
+    return decks.map(
+      (d: { id: string; slug: string; companyName: string; industry: string; config: unknown }) => ({
+        id: d.id,
+        slug: d.slug,
+        companyName: d.companyName,
+        industry: d.industry,
+        tagline: (d.config as unknown as DeckConfig).tagline,
+      }),
+    );
   }),
 
   getBySlug: protectedProcedure.input(z.object({ slug: z.string() })).query(async ({ input }) => {
