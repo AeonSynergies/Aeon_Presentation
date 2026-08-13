@@ -81,7 +81,9 @@ the workspace correctly.
    `DATABASE_URL` automatically as a referenceable variable.
 2. Add a service for **apps/api**, connected to this GitHub repo/branch:
    - Root directory: `/` (repo root)
-   - Build command: `pnpm install --frozen-lockfile && pnpm --filter @aeon/database generate && pnpm --filter @aeon/api build`
+   - Build command: `pnpm install --frozen-lockfile && pnpm --filter @aeon/api build`
+     (the root `postinstall` script runs `prisma generate` automatically as part of
+     `pnpm install`, so the Prisma client is always up to date before either build runs)
    - Start command: `pnpm --filter @aeon/api start:with-migrate` (runs `prisma migrate
      deploy` + the idempotent seed before starting the server — safe to run on every
      deploy, so migrations never need a separate manual step)
