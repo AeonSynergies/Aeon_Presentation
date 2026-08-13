@@ -33,12 +33,12 @@ function HomePortal() {
       {!isLoading && decks?.length === 0 && <div className="empty-state">No decks yet.</div>}
 
       <div className="deck-grid">
-        {decks?.map((deck) => (
+        {decks?.map((deck: { id: string; slug: string; companyName: string; industry: string; tagline: string }) => (
           <div key={deck.id} className="deck-card" onClick={() => navigate({ to: "/decks/$slug", params: { slug: deck.slug } })}>
             <div className="dc-badge" style={{ background: "linear-gradient(135deg, var(--teal), var(--amber))" }}>
               {deck.companyName
                 .split(" ")
-                .map((w) => w[0])
+                .map((w: string) => w[0])
                 .slice(0, 2)
                 .join("")
                 .toUpperCase()}
