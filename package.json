@@ -10,7 +10,7 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "postinstall": "pnpm --filter @aeon/database generate",
+    "postinstall": "pnpm --filter @aeon/types build && pnpm --filter @aeon/database generate && pnpm --filter @aeon/database build",
     "db:generate": "pnpm --filter @aeon/database generate",
     "db:migrate": "pnpm --filter @aeon/database migrate",
     "db:seed": "pnpm --filter @aeon/database seed"
