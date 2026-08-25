@@ -109,3 +109,52 @@ the workspace correctly.
    in with the seeded demo user, and click through the Amazon DSP deck.
 6. Optional: point a custom domain at the web service via Cloudflare DNS (CNAME to the
    Railway-provided domain), once you're ready to move off the `*.up.railway.app` URL.
+
+## Deployment (AWS)
+
+The active deployment target. Fully automated via `infra/aws/deploy.sh`, run by
+`.github/workflows/deploy-aws.yml` on every push to `main` (and manually via
+`workflow_dispatch`). Requires `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` as repo
+secrets, and optionally an `AWS_REGION` repo variable (defaults to `us-east-1`).
+
+**What it provisions** (idempotent — safe to re-run; only creates what's missing):
+- Two ECR repositories (`aeon-api`, `aeon-web`)
+- RDS for PostgreSQL: `db.t4g.micro`, 20GB gp3, **not publicly accessible**
+- ElastiCache for Redis: `cache.t3.micro`, single node, **VPC-only** (ElastiCache has no
+  public-access mode at all, at any instance size)
+- An App Runner VPC Connector in the account's default VPC, and a security group scoped
+  so only that connector can reach RDS/ElastiCache on 5432/6379
+- IAM roles for App Runner (ECR image pull, and an instance role scoped to read exactly
+  two SSM parameters)
+- `DATABASE_URL` / `REDIS_URL` / `JWT_ACCESS_SECRET` as SSM Parameter Store values
+  (the first and last as SecureString), injected into the api service as App Runner
+  runtime secrets — never as plain environment variables, never in a workflow log
+- Two App Runner services (`aeon-api`, `aeon-web`), each deployed from its ECR image —
+  **App Runner has no mode that builds from a Dockerfile in a git repo**; the two source
+  types are buildpack-based source-code deploy (no Dockerfile involved) or a pre-built
+  ECR image. CI builds the image and pushes it; App Runner only ever deploys it.
+
+**Why RDS is private, not public:** ElastiCache forces a VPC Connector to exist
+regardless (it has no public-access option at any size). Once that connector exists,
+keeping RDS behind it too costs nothing extra and is strictly more secure than making
+Postgres public for convenience — so both ended up on the "correct" side of the
+public-vs-private tradeoff for the same setup cost.
+
+**Deploy order** (handled automatically, since `VITE_API_URL` is baked into the web
+image at build time and the api service's URL doesn't exist until it's created): build
++ push the api image → create/redeploy the api App Runner service → build the web image
+with `VITE_API_URL` set to the api service's URL → create/redeploy the web App Runner
+service → update the api service's `WEB_ORIGIN` to the web service's URL (only if it
+changed, to avoid a redundant redeploy).
+
+**Free Tier, checked (not assumed) as of this writing:** AWS changed the Free Tier model
+on July 15, 2025. Accounts created *before* that date get the legacy fixed allocation —
+750 hrs/month of a `db.t3`/`t4g.micro` RDS instance + 20GB storage, and 750 hrs/month of
+a `cache.t3.micro` ElastiCache node (not `t4g`), both for 12 months. Accounts created
+*after* that date get $100 in credits instead, with no fixed free allocation for any
+specific service. If neither applies, budget roughly $25–35/month for RDS + ElastiCache
+combined, plus App Runner's own compute charges.
+
+**CI** (`.github/workflows/ci.yml`) runs on every PR against `main`: typechecks every
+workspace package and builds both Dockerfiles (no push, no AWS credentials needed) —
+this is what catches a broken build on the PR instead of after it's deployed.
