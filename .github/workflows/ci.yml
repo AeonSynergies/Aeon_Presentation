@@ -1,0 +1,63 @@
+name: CI
+
+# Runs on every PR against main so build breakage is caught here, not after it's already
+# deployed. Deliberately does not touch AWS or need any secrets: it only proves every
+# workspace package typechecks (apps/web's own "build" script ends with `tsc --noEmit`,
+# and also generates routeTree.gen.ts, which a bare `tsc --noEmit` can't do on its own)
+# and that both Dockerfiles actually build.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  # prisma generate only needs this to resolve env("DATABASE_URL") in schema.prisma —
+  # it doesn't connect to a real database, so a placeholder is enough here.
+  DATABASE_URL: postgresql://user:pass@localhost:5432/aeon
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - name: Install (postinstall builds @aeon/types, generates + builds @aeon/database)
+        run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @aeon/types typecheck
+      - run: pnpm --filter @aeon/database typecheck
+      - run: pnpm --filter @aeon/api typecheck
+      - run: pnpm --filter @aeon/web build
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build api image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: false
+
+      - name: Build web image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          build-args: |
+            VITE_API_URL=https://placeholder.invalid

@@ -1,0 +1,47 @@
+name: Deploy to AWS
+
+# Pushes to main build both images from their Dockerfiles (never an auto-detected
+# buildpack — see apps/*/Dockerfile), push to ECR, and deploy to App Runner. Also
+# runnable manually (workflow_dispatch) — the underlying script is fully idempotent, so
+# re-running it is how the one-time infrastructure bootstrap (RDS, ElastiCache, IAM,
+# VPC connector) happens too: there's a single script, not a separate one-off setup path.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-aws
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Provision (idempotent) + build + deploy
+        id: deploy
+        run: |
+          ./infra/aws/deploy.sh | tee /tmp/deploy.log
+          API_URL=$(grep -oP '(?<= api: )\S+' /tmp/deploy.log | tail -1)
+          WEB_URL=$(grep -oP '(?<= web: )\S+' /tmp/deploy.log | tail -1)
+          {
+            echo "## Deployed"
+            echo "- api: $API_URL"
+            echo "- web: $WEB_URL"
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
