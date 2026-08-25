@@ -34,10 +34,20 @@ jobs:
 
       - name: Provision (idempotent) + build + deploy
         id: deploy
+        # GitHub's default shell for a `run:` block is `bash -e {0}` — no `pipefail` — so
+        # `deploy.sh | tee log` would report tee's exit code (always 0), silently masking
+        # a real failure in deploy.sh. Setting pipefail explicitly is what makes this step
+        # actually fail when the script does, instead of printing a blank summary and a
+        # green checkmark (which is exactly what happened before this was added).
         run: |
+          set -euo pipefail
           ./infra/aws/deploy.sh | tee /tmp/deploy.log
           API_URL=$(grep -oP '(?<= api: )\S+' /tmp/deploy.log | tail -1)
           WEB_URL=$(grep -oP '(?<= web: )\S+' /tmp/deploy.log | tail -1)
+          if [ -z "$API_URL" ] || [ -z "$WEB_URL" ]; then
+            echo "::error::deploy.sh reported success but didn't print both service URLs — treating as a failure."
+            exit 1
+          fi
           {
             echo "## Deployed"
             echo "- api: $API_URL"
