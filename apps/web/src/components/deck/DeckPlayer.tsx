@@ -1,4 +1,4 @@
-import type { DeckConfig } from "@aeon/types";
+import { PLATFORM_DEFAULT_COLORS, type DeckConfig } from "@aeon/types";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
 import { DiscoveryNotesPanel } from "~/components/discovery/DiscoveryNotesPanel";
@@ -57,11 +57,11 @@ export function DeckPlayer({ deck, dbId }: { deck: DeckConfig; dbId: string }) {
   const deckColorVars: React.CSSProperties = {
     "--amber": deck.colors.amber,
     "--teal": deck.colors.teal,
-    "--ink": deck.colors.ink,
-    "--panel": deck.colors.panel,
-    "--panel-2": deck.colors.panel2,
-    "--fog": deck.colors.fog,
-    "--paper": deck.colors.paper,
+    "--ink": deck.colors.ink || PLATFORM_DEFAULT_COLORS.ink,
+    "--panel": deck.colors.panel || PLATFORM_DEFAULT_COLORS.panel,
+    "--panel-2": deck.colors.panel2 || PLATFORM_DEFAULT_COLORS.panel2,
+    "--fog": deck.colors.fog || PLATFORM_DEFAULT_COLORS.fog,
+    "--paper": deck.colors.paper || PLATFORM_DEFAULT_COLORS.paper,
     ...(deck.colors.success ? { "--success": deck.colors.success } : {}),
     ...(deck.colors.danger ? { "--danger": deck.colors.danger } : {}),
     ...(deck.colors.gold ? { "--gold": deck.colors.gold } : {}),

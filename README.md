@@ -9,8 +9,9 @@ This repository is being rebuilt from a single-file HTML prototype
 `CLAUDE.md` for the full project brief and `Aeon_Platform_Requirements_Spec.md` for the
 target feature set across all phases.
 
-**Current phase: Phase 1** — one deck (Amazon DSP) rendering correctly with real pricing
-math and Discovery Notes behavior, behind real login, backed by a real database.
+**Current phase: Phase 2a** — three decks (Amazon DSP, Meridian Property Partners, FedEx
+P&D) rendering correctly with real pricing math and Discovery Notes behavior, behind real
+login, backed by a real database, each with its own accent colors and logo.
 
 ## Monorepo layout
 
@@ -44,7 +45,7 @@ cp packages/database/.env.example packages/database/.env
 
 pnpm --filter @aeon/database generate
 pnpm --filter @aeon/database migrate:dev   # creates the schema
-pnpm --filter @aeon/database seed          # seeds the Amazon DSP deck + a demo user
+pnpm --filter @aeon/database seed          # seeds all three decks + a demo user
 ```
 
 The seed script creates a login at `demo@aeonsynergies.com` / `AeonDemo123!` (override via
@@ -57,7 +58,7 @@ pnpm --filter @aeon/api dev     # http://localhost:4000
 pnpm --filter @aeon/web dev     # http://localhost:3000
 ```
 
-Visit `http://localhost:3000`, sign in, and open the Amazon DSP deck.
+Visit `http://localhost:3000`, sign in, and open any of the three decks.
 
 ## Building for production
 

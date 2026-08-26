@@ -1,25 +1,29 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { amazonDspDeck } from "./seed-data/amazon-dsp.js";
+import { fedexPdDeck } from "./seed-data/fedex-pd.js";
+import { meridianPropertyDeck } from "./seed-data/meridian-property.js";
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const deck = await prisma.deck.upsert({
-    where: { slug: amazonDspDeck.id },
-    update: {
-      companyName: amazonDspDeck.companyName,
-      industry: amazonDspDeck.industry,
-      config: amazonDspDeck as object,
-    },
-    create: {
-      slug: amazonDspDeck.id,
-      companyName: amazonDspDeck.companyName,
-      industry: amazonDspDeck.industry,
-      config: amazonDspDeck as object,
-    },
-  });
-  console.log(`Seeded deck: ${deck.companyName} (${deck.slug})`);
+  for (const deckConfig of [amazonDspDeck, meridianPropertyDeck, fedexPdDeck]) {
+    const deck = await prisma.deck.upsert({
+      where: { slug: deckConfig.id },
+      update: {
+        companyName: deckConfig.companyName,
+        industry: deckConfig.industry,
+        config: deckConfig as object,
+      },
+      create: {
+        slug: deckConfig.id,
+        companyName: deckConfig.companyName,
+        industry: deckConfig.industry,
+        config: deckConfig as object,
+      },
+    });
+    console.log(`Seeded deck: ${deck.companyName} (${deck.slug})`);
+  }
 
   const demoEmail = process.env.SEED_DEMO_USER_EMAIL || "demo@aeonsynergies.com";
   const demoPassword = process.env.SEED_DEMO_USER_PASSWORD || "AeonDemo123!";

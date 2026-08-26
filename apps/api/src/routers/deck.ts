@@ -11,13 +11,20 @@ export const deckRouter = router({
       orderBy: { createdAt: "asc" },
     });
     return decks.map(
-      (d: { id: string; slug: string; companyName: string; industry: string; config: unknown }) => ({
-        id: d.id,
-        slug: d.slug,
-        companyName: d.companyName,
-        industry: d.industry,
-        tagline: (d.config as unknown as DeckConfig).tagline,
-      }),
+      (d: { id: string; slug: string; companyName: string; industry: string; config: unknown }) => {
+        const config = d.config as unknown as DeckConfig;
+        return {
+          id: d.id,
+          slug: d.slug,
+          companyName: d.companyName,
+          industry: d.industry,
+          tagline: config.tagline,
+          // Home shows every deck's card at once, so each needs its own accent colors
+          // here rather than the global --amber/--teal CSS vars (which only reflect
+          // whichever deck was last opened, or the platform default).
+          colors: { amber: config.colors.amber, teal: config.colors.teal },
+        };
+      },
     );
   }),
 

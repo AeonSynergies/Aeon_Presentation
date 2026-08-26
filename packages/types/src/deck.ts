@@ -12,19 +12,35 @@ export type LogoConfig =
 
 export type WatermarkConfig = { type: "image"; src: string };
 
-/** Per-deck palette override. Five-color accent system (Section 4 / CLAUDE.md design system). */
+/** Per-deck palette override. Five-color accent system (Section 4 / CLAUDE.md design system).
+ * Only amber/teal are required — a deck (e.g. Meridian) may omit the rest and inherit them
+ * from PLATFORM_DEFAULT_COLORS below, exactly like the prototype's PLATFORM_THEME_DEFAULTS
+ * fallback in bootDeckPlayer(). This is what keeps per-deck design isolation real: a global
+ * default change cascades to any deck that didn't override it, without touching that deck's
+ * data, and vice versa. */
 export interface DeckColors {
   amber: string; // primary accent
   teal: string; // secondary accent
-  ink: string; // page background
-  panel: string; // card background
-  panel2: string; // secondary panel background
-  fog: string; // muted text
-  paper: string; // primary text / dark ink
+  ink?: string; // page background
+  panel?: string; // card background
+  panel2?: string; // secondary panel background
+  fog?: string; // muted text
+  paper?: string; // primary text / dark ink
   success?: string;
   danger?: string;
   gold?: string; // tertiary accent
 }
+
+/** Ported verbatim from Presentation_Platform.html's PLATFORM_THEME_DEFAULTS. */
+export const PLATFORM_DEFAULT_COLORS = {
+  amber: "#16A6CE",
+  teal: "#0C7B82",
+  ink: "#F3F6F7",
+  panel: "#FFFFFF",
+  panel2: "#EAF0F1",
+  fog: "#5C6E73",
+  paper: "#15282D",
+} as const;
 
 export interface PricingDriver {
   label: string; // e.g. "Routes per day"
