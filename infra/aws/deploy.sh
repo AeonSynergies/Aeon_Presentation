@@ -236,15 +236,62 @@ aws iam put-role-policy --role-name "${PROJECT}-apprunner-instance" \
 sleep 10
 
 # ============================================================
-# App Runner VPC Connector (shared by the api service to reach RDS/ElastiCache)
+# App Runner VPC Connector (shared by the api service to reach RDS/ElastiCache).
+# App Runner isn't available in every AZ in a region — there's no CLI/API to list which
+# AZs are supported, only a CreateVpcConnector failure naming the specific unsupported
+# subnet(s). So: try with every default-VPC subnet, and on that specific error, drop the
+# named subnet(s) and retry. App Runner only needs one working subnet for the connector
+# (unlike RDS/ElastiCache, which is why SUBNET_IDS itself — used for those — is left
+# untouched; this operates on a copy).
 # ============================================================
 CONNECTOR_NAME="${PROJECT}-connector"
 CONNECTOR_ARN="$(aws_ apprunner list-vpc-connectors --query "VpcConnectors[?VpcConnectorName=='${CONNECTOR_NAME}' && Status=='ACTIVE'].VpcConnectorArn | [0]" --output text)"
 if [ -z "$CONNECTOR_ARN" ] || [ "$CONNECTOR_ARN" = "None" ]; then
-  log "Creating App Runner VPC connector $CONNECTOR_NAME"
-  CONNECTOR_ARN="$(aws_ apprunner create-vpc-connector --vpc-connector-name "$CONNECTOR_NAME" \
-    --subnets "${SUBNET_IDS[@]}" --security-groups "$APP_SG_ID" \
-    --query 'VpcConnector.VpcConnectorArn' --output text)"
+  CONNECTOR_SUBNETS=("${SUBNET_IDS[@]}")
+  while true; do
+    log "Creating App Runner VPC connector $CONNECTOR_NAME (subnets: ${CONNECTOR_SUBNETS[*]})"
+    CREATE_ERR_FILE="$(mktemp)"
+    if CONNECTOR_ARN="$(aws_ apprunner create-vpc-connector --vpc-connector-name "$CONNECTOR_NAME" \
+        --subnets "${CONNECTOR_SUBNETS[@]}" --security-groups "$APP_SG_ID" \
+        --query 'VpcConnector.VpcConnectorArn' --output text 2>"$CREATE_ERR_FILE")"; then
+      rm -f "$CREATE_ERR_FILE"
+      break
+    fi
+    CREATE_ERR="$(cat "$CREATE_ERR_FILE")"
+    rm -f "$CREATE_ERR_FILE"
+    echo "$CREATE_ERR" >&2
+    if ! echo "$CREATE_ERR" | grep -q "don't support App Runner services"; then
+      echo "CreateVpcConnector failed for a reason this script doesn't know how to work around." >&2
+      exit 1
+    fi
+    mapfile -t BAD_SUBNETS < <(echo "$CREATE_ERR" | grep -oP 'subnet-[a-z0-9]+(?=\()')
+    if [ "${#BAD_SUBNETS[@]}" -eq 0 ]; then
+      echo "AWS named unsupported subnet(s) but this script couldn't parse the subnet id(s) out of the error above." >&2
+      exit 1
+    fi
+    log "App Runner doesn't support the AZ(s) for: ${BAD_SUBNETS[*]} — excluding and retrying"
+    # Note: deliberately not `[ cond ] && action` here — under `set -e` a bare "test &&
+    # action" statement aborts the whole script the moment the test is false (the normal,
+    # non-error case for most of these comparisons), not just when something actually errors.
+    NEXT_SUBNETS=()
+    for s in "${CONNECTOR_SUBNETS[@]}"; do
+      is_bad=false
+      for b in "${BAD_SUBNETS[@]}"; do
+        if [ "$s" = "$b" ]; then
+          is_bad=true
+          break
+        fi
+      done
+      if [ "$is_bad" = false ]; then
+        NEXT_SUBNETS+=("$s")
+      fi
+    done
+    if [ "${#NEXT_SUBNETS[@]}" -eq 0 ]; then
+      echo "Every default-VPC subnet was rejected as unsupported for an App Runner VPC connector; none left to try." >&2
+      exit 1
+    fi
+    CONNECTOR_SUBNETS=("${NEXT_SUBNETS[@]}")
+  done
   log "Waiting for VPC connector to become active..."
   until [ "$(aws_ apprunner describe-vpc-connector --vpc-connector-arn "$CONNECTOR_ARN" --query 'VpcConnector.Status' --output text)" = "ACTIVE" ]; do
     sleep 10
