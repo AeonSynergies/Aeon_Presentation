@@ -289,6 +289,28 @@ DB_PARAM_ARN="arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter${DB_PARAM_NAME}"
 JWT_PARAM_ARN="arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter${JWT_PARAM_NAME}"
 
 # ============================================================
+# Anthropic API key (Phase 3a, AI-assisted deck drafting) — unlike JWT_ACCESS_SECRET this
+# can't be generated, it has to come from a real Anthropic account. Sourced from the
+# ANTHROPIC_API_KEY repo secret (same as AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, added by
+# hand once). If it's not set on this run, an already-stored value from a previous run is
+# left alone; if none exists at all, AI drafting stays disabled (ai.draftDeck returns a
+# clear "not configured" error) rather than failing the whole deploy over one optional
+# feature's key.
+# ============================================================
+ANTHROPIC_PARAM_NAME="/${PROJECT}/ANTHROPIC_API_KEY"
+if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+  log "Storing ANTHROPIC_API_KEY in SSM Parameter Store ($ANTHROPIC_PARAM_NAME)"
+  aws_ ssm put-parameter --name "$ANTHROPIC_PARAM_NAME" --type SecureString --value "$ANTHROPIC_API_KEY" --overwrite >/dev/null
+fi
+ANTHROPIC_CONFIGURED=false
+if aws_ ssm get-parameter --name "$ANTHROPIC_PARAM_NAME" >/dev/null 2>&1; then
+  ANTHROPIC_CONFIGURED=true
+else
+  log "ANTHROPIC_API_KEY not set (no ANTHROPIC_API_KEY env var, and none stored from a previous run) — AI drafting stays disabled until it's added as a repo secret."
+fi
+ANTHROPIC_PARAM_ARN="arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter${ANTHROPIC_PARAM_NAME}"
+
+# ============================================================
 # IAM roles for App Runner
 # ============================================================
 ensure_role() {
@@ -320,7 +342,7 @@ ECR_ACCESS_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT}-apprunner-ecr-ac
 
 ensure_role "${PROJECT}-apprunner-instance" "tasks.apprunner.amazonaws.com"
 INSTANCE_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT}-apprunner-instance"
-# Both params are SecureString, so reading them at runtime (App Runner's
+# All of these are SecureString, so reading them at runtime (App Runner's
 # RuntimeEnvironmentSecrets injection, done by this instance role before the container
 # ever starts) needs kms:Decrypt on the key that encrypted them, not just ssm:GetParameter
 # — a very easy permission to forget, and one that fails silently from this script's
@@ -329,6 +351,10 @@ INSTANCE_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT}-apprunner-instance
 # container. Scoped via ViaService instead of a hardcoded key ARN so it works with
 # whatever key SSM used (the account default alias/aws/ssm unless overridden) without an
 # extra lookup call.
+SSM_SECRET_RESOURCES="\"${DB_PARAM_ARN}\", \"${JWT_PARAM_ARN}\""
+if [ "$ANTHROPIC_CONFIGURED" = true ]; then
+  SSM_SECRET_RESOURCES="${SSM_SECRET_RESOURCES}, \"${ANTHROPIC_PARAM_ARN}\""
+fi
 SSM_POLICY_DOC=$(cat <<EOF
 {
   "Version": "2012-10-17",
@@ -336,7 +362,7 @@ SSM_POLICY_DOC=$(cat <<EOF
     {
       "Effect": "Allow",
       "Action": ["ssm:GetParameters", "ssm:GetParameter"],
-      "Resource": ["${DB_PARAM_ARN}", "${JWT_PARAM_ARN}"]
+      "Resource": [${SSM_SECRET_RESOURCES}]
     },
     {
       "Effect": "Allow",
@@ -431,6 +457,11 @@ docker push "${ECR_API_URI}:${GIT_SHA}"
 # ============================================================
 # api App Runner service (create once, redeploy on subsequent runs)
 # ============================================================
+API_SECRETS_JSON="\"DATABASE_URL\": \"${DB_PARAM_ARN}\", \"JWT_ACCESS_SECRET\": \"${JWT_PARAM_ARN}\""
+if [ "$ANTHROPIC_CONFIGURED" = true ]; then
+  API_SECRETS_JSON="${API_SECRETS_JSON}, \"ANTHROPIC_API_KEY\": \"${ANTHROPIC_PARAM_ARN}\""
+fi
+
 API_SERVICE_INFO="$(apprunner_find_service "${PROJECT}-api")"
 API_SERVICE_ARN="$(awk '{print $1}' <<< "$API_SERVICE_INFO")"
 API_SERVICE_STATUS="$(awk '{print $2}' <<< "$API_SERVICE_INFO")"
@@ -451,7 +482,7 @@ if [ -z "$API_SERVICE_ARN" ]; then
     "ImageConfiguration": {
       "Port": "4000",
       "RuntimeEnvironmentVariables": {"NODE_ENV": "production"},
-      "RuntimeEnvironmentSecrets": {"DATABASE_URL": "${DB_PARAM_ARN}", "JWT_ACCESS_SECRET": "${JWT_PARAM_ARN}"}
+      "RuntimeEnvironmentSecrets": {${API_SECRETS_JSON}}
     }
   },
   "AuthenticationConfiguration": {"AccessRoleArn": "${ECR_ACCESS_ROLE_ARN}"},
@@ -511,12 +542,22 @@ log "web service URL: $WEB_URL"
 # ============================================================
 # Point the api service's WEB_ORIGIN at the web service (needed for CORS + the
 # refresh-token cookie) — only update if it's missing or stale, to avoid an
-# unnecessary redeploy on every run.
+# unnecessary redeploy on every run. Also covers the case where ANTHROPIC_API_KEY was
+# just added as a repo secret for the first time: the api service already exists from an
+# earlier deploy, so a plain start-deployment redeploy (used above when nothing else
+# changed) wouldn't pick up a newly-available secret — only create-service and this
+# update-service call actually set RuntimeEnvironmentSecrets.
 # ============================================================
 CURRENT_WEB_ORIGIN="$(aws_ apprunner describe-service --service-arn "$API_SERVICE_ARN" \
   --query 'Service.SourceConfiguration.ImageRepository.ImageConfiguration.RuntimeEnvironmentVariables.WEB_ORIGIN' --output text)"
-if [ "$CURRENT_WEB_ORIGIN" != "$WEB_URL" ]; then
-  log "Setting api's WEB_ORIGIN to $WEB_URL and redeploying"
+CURRENT_ANTHROPIC_SECRET="$(aws_ apprunner describe-service --service-arn "$API_SERVICE_ARN" \
+  --query 'Service.SourceConfiguration.ImageRepository.ImageConfiguration.RuntimeEnvironmentSecrets.ANTHROPIC_API_KEY' --output text)"
+NEEDS_ANTHROPIC_UPDATE=false
+if [ "$ANTHROPIC_CONFIGURED" = true ] && { [ "$CURRENT_ANTHROPIC_SECRET" = "None" ] || [ -z "$CURRENT_ANTHROPIC_SECRET" ]; }; then
+  NEEDS_ANTHROPIC_UPDATE=true
+fi
+if [ "$CURRENT_WEB_ORIGIN" != "$WEB_URL" ] || [ "$NEEDS_ANTHROPIC_UPDATE" = true ]; then
+  log "Updating api service (WEB_ORIGIN and/or newly-added ANTHROPIC_API_KEY) and redeploying"
   aws_ apprunner update-service --service-arn "$API_SERVICE_ARN" --source-configuration "{
     \"ImageRepository\": {
       \"ImageIdentifier\": \"${ECR_API_URI}:latest\",
@@ -524,7 +565,7 @@ if [ "$CURRENT_WEB_ORIGIN" != "$WEB_URL" ]; then
       \"ImageConfiguration\": {
         \"Port\": \"4000\",
         \"RuntimeEnvironmentVariables\": {\"NODE_ENV\": \"production\", \"WEB_ORIGIN\": \"${WEB_URL}\"},
-        \"RuntimeEnvironmentSecrets\": {\"DATABASE_URL\": \"${DB_PARAM_ARN}\", \"JWT_ACCESS_SECRET\": \"${JWT_PARAM_ARN}\"}
+        \"RuntimeEnvironmentSecrets\": {${API_SECRETS_JSON}}
       }
     },
     \"AuthenticationConfiguration\": {\"AccessRoleArn\": \"${ECR_ACCESS_ROLE_ARN}\"},
@@ -537,4 +578,5 @@ echo ""
 echo "============================================================"
 echo " api: $API_URL"
 echo " web: $WEB_URL"
+echo " ai_configured: $ANTHROPIC_CONFIGURED"
 echo "============================================================"

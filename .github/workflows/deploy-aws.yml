@@ -25,6 +25,7 @@ jobs:
     outputs:
       web_url: ${{ steps.deploy.outputs.web_url }}
       api_url: ${{ steps.deploy.outputs.api_url }}
+      ai_configured: ${{ steps.deploy.outputs.ai_configured }}
     steps:
       - uses: actions/checkout@v4
 
@@ -47,6 +48,7 @@ jobs:
           ./infra/aws/deploy.sh | tee /tmp/deploy.log
           API_URL=$(grep -oP '(?<= api: )\S+' /tmp/deploy.log | tail -1)
           WEB_URL=$(grep -oP '(?<= web: )\S+' /tmp/deploy.log | tail -1)
+          AI_CONFIGURED=$(grep -oP '(?<= ai_configured: )\S+' /tmp/deploy.log | tail -1)
           if [ -z "$API_URL" ] || [ -z "$WEB_URL" ]; then
             echo "::error::deploy.sh reported success but didn't print both service URLs — treating as a failure."
             exit 1
@@ -55,11 +57,18 @@ jobs:
             echo "## Deployed"
             echo "- api: $API_URL"
             echo "- web: $WEB_URL"
+            echo "- AI drafting configured: ${AI_CONFIGURED:-false}"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "web_url=$WEB_URL" >> "$GITHUB_OUTPUT"
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+          echo "ai_configured=${AI_CONFIGURED:-false}" >> "$GITHUB_OUTPUT"
         env:
           AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          # Phase 3a (AI-assisted deck drafting). Optional on purpose: deploy.sh stores
+          # this in SSM only when it's set, and reuses whatever's already stored otherwise
+          # — so a repo without this secret still deploys fine, just with AI drafting
+          # disabled (ai.draftDeck returns a clear "not configured" error) until it's added.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
   # Live end-to-end checks against the deployment that just went out, through a real
   # browser. Both scripts are idempotent (see their own headers) so re-deploys don't pile
@@ -96,6 +105,21 @@ jobs:
       - name: Run live role-enforcement E2E against the deployment
         working-directory: infra/e2e
         run: node role-enforcement-e2e.mjs
+        env:
+          BASE_URL: ${{ needs.deploy.outputs.web_url }}
+          API_URL: ${{ needs.deploy.outputs.api_url }}
+
+      # AI-assisted deck drafting (Phase 3a). Skips itself (not the job — a skip, not a
+      # failure) when ANTHROPIC_API_KEY hasn't been added as a repo secret yet, since
+      # ai.draftDeck is then correctly disabled rather than broken. Confirms the real
+      # feature end to end: a real Anthropic call produces a draft that loads into the
+      # wizard, nothing is saved until Save, exceeding the rate limit is genuinely
+      # rejected, and the browser network tab never carries the API key or an Anthropic
+      # request.
+      - name: Run live AI-drafting E2E against the deployment
+        if: needs.deploy.outputs.ai_configured == 'true'
+        working-directory: infra/e2e
+        run: node ai-draft-e2e.mjs
         env:
           BASE_URL: ${{ needs.deploy.outputs.web_url }}
           API_URL: ${{ needs.deploy.outputs.api_url }}

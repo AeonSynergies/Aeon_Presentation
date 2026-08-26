@@ -9,18 +9,42 @@ This repository is being rebuilt from a single-file HTML prototype
 `CLAUDE.md` for the full project brief and `Aeon_Platform_Requirements_Spec.md` for the
 target feature set across all phases.
 
-**Current phase: Phase 2c** — Team & Role Management, for real: the four-role permission
-matrix (Sales Executive, Operations Manager, BD Manager, Admin) is enforced server-side on
-every relevant tRPC procedure (`requirePermission()` in `apps/api/src/trpc.ts`, reading
-the same `can()` matrix from `@aeon/types` the frontend uses to decide what to show) —
-a hidden button was never the enforcement, and now nothing is. Admins manage accounts at
-`/team` (list, add, change role, remove); accounts are created there directly (no
-email-invite flow yet). Edit Deck, Export (rate-card CSV), and Send to Client are real,
-role-gated actions on the deck player. Deployed pushes run two post-deploy live E2E
-suites (`infra/e2e/`): `wizard-e2e.mjs` (Phase 2b) and `role-enforcement-e2e.mjs`, which
-creates one QA user per role through the real Team Management screen and then calls the
-API directly — bypassing the UI — to confirm every permission each role lacks is actually
-rejected (FORBIDDEN) and everything it has actually works, against the real deployment.
+Phases 1, 2a, 2b, and 2c are live and verified: four decks, correct pricing, the Deck
+Builder wizard, and the four-role permission matrix (Sales Executive, Operations Manager,
+BD Manager, Admin) enforced server-side on every relevant tRPC procedure
+(`requirePermission()` in `apps/api/src/trpc.ts`, reading the same `can()` matrix from
+`@aeon/types` the frontend uses to decide what to show) — a hidden button was never the
+enforcement, and now nothing is. Admins manage accounts at `/team`; Edit Deck, Export
+(rate-card CSV), and Send to Client are real, role-gated actions on the deck player.
+
+**Current phase: Phase 3a** — AI-assisted deck drafting. From `/decks/new`, "Draft with
+AI" (`apps/web/src/components/builder/DeckWizard.tsx`) sends a short plain-language
+description to `ai.draftDeck` (`apps/api/src/routers/ai.ts`, gated by the same
+`requirePermission("createDeck")` as manual creation) and loads the result into the exact
+same wizard state the manual/clone flows use — **the AI never creates a deck directly**;
+`deck.create` (a human clicking Save, after reviewing/editing every field) is the only
+path to a persisted deck, same as every other creation path. Price-band fields the draft
+populated are marked with a subtle "✦ AI-suggested" badge until a human edits that band.
+
+The Anthropic API key lives server-side only — an SSM SecureString
+(`/aeon/ANTHROPIC_API_KEY`, same pattern as `DATABASE_URL`/`JWT_ACCESS_SECRET`) injected
+into the api App Runner service as a runtime secret, sourced from an `ANTHROPIC_API_KEY`
+repo secret that has to be added by hand (see "Deployment (AWS)" below) — deploys work
+fine without it, just with AI drafting correctly disabled rather than broken. Two
+guardrails on the drafting endpoint: a prompt length cap (800 characters, enforced by the
+tRPC input schema, so an out-of-range prompt is rejected before it ever reaches Anthropic)
+and a per-user rate limit (5 requests/hour, checked against a Postgres ledger —
+`AiDraftRequest` — *before* calling Anthropic, so a capped user's request never costs a
+real API call; the ledger also means the limit holds across server restarts and every App
+Runner instance, not an in-memory counter that would reset per instance).
+
+Deployed pushes run three post-deploy live E2E suites (`infra/e2e/`): `wizard-e2e.mjs`
+(Phase 2b), `role-enforcement-e2e.mjs` (Phase 2c), and `ai-draft-e2e.mjs` (Phase 3a, run
+only when `ANTHROPIC_API_KEY` is configured) — the last one drafts a deck through the real
+UI with a real Anthropic call, confirms the deck count is unchanged until an explicit Save,
+confirms every network request during drafting stays same-origin (proving the key never
+reaches the browser and the browser never talks to Anthropic directly), and confirms a
+dedicated QA user genuinely gets rejected once it exceeds the rate limit.
 
 ## Monorepo layout
 
@@ -126,6 +150,14 @@ The active deployment target. Fully automated via `infra/aws/deploy.sh`, run by
 `.github/workflows/deploy-aws.yml` on every push to `main` (and manually via
 `workflow_dispatch`). Requires `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` as repo
 secrets, and optionally an `AWS_REGION` repo variable (defaults to `us-east-1`).
+
+Optionally also `ANTHROPIC_API_KEY` as a repo secret, to enable AI-assisted deck drafting
+(Phase 3a) — get one from [console.anthropic.com](https://console.anthropic.com). Without
+it, deploys still succeed; `ai.draftDeck` just returns a clear "not configured" error
+instead of drafting, and the `ai-draft-e2e.mjs` live-e2e step skips itself. Add it any
+time — the next push to `main` picks it up and updates the running api service with it
+(deploy.sh stores it in SSM and re-checks whether the running service needs the update,
+it doesn't require deleting/recreating anything).
 
 **What it provisions** (idempotent — safe to re-run; only creates what's missing):
 - Two ECR repositories (`aeon-api`, `aeon-web`)

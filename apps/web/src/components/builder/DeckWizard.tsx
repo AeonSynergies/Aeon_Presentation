@@ -41,7 +41,85 @@ const STEP_SLIDE: Partial<Record<StepKey, string>> = {
   review: "cover",
 };
 
-function StartScreen({ onPick }: { onPick: (source: DeckConfig | null) => void }) {
+// Prompt-length cap mirrors the server's (apps/api/src/routers/ai.ts PROMPT_MAX_LEN) so
+// the field stops the user before a round trip would, not instead of the real check.
+const AI_PROMPT_MAX_LEN = 800;
+
+function AiDraftCard({ onDraft }: { onDraft: (config: DeckConfig, aiSuggestedFields: string[]) => void }) {
+  const [open, setOpen] = React.useState(false);
+  const [prompt, setPrompt] = React.useState("");
+  const [error, setError] = React.useState<string | null>(null);
+  const draftDeck = trpc.ai.draftDeck.useMutation();
+
+  const generate = async () => {
+    setError(null);
+    try {
+      const result = await draftDeck.mutateAsync({ prompt });
+      onDraft(result.config, result.aiSuggestedFields);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Drafting failed — please try again.");
+    }
+  };
+
+  if (!open) {
+    return (
+      <div className="deck-card builder-ai-card" onClick={() => setOpen(true)}>
+        <div className="dc-badge" style={{ background: "linear-gradient(135deg, #C98A3A, #E3A147)" }}>
+          ✦
+        </div>
+        <div>
+          <div className="dc-industry">OR</div>
+          <div className="dc-name">Draft with AI</div>
+        </div>
+        <div className="dc-tagline">
+          Describe the client's industry in a sentence or two — get a full first-pass draft loaded into this same wizard, every field
+          still yours to review and edit before anything saves.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="deck-card builder-ai-card open" onClick={(e) => e.stopPropagation()}>
+      <div className="dc-badge" style={{ background: "linear-gradient(135deg, #C98A3A, #E3A147)" }}>
+        ✦
+      </div>
+      <div className="dc-industry">DRAFT WITH AI</div>
+      <textarea
+        className="builder-ai-prompt"
+        placeholder="e.g. A regional last-mile parcel carrier running contracted delivery routes for a national e-commerce client."
+        value={prompt}
+        maxLength={AI_PROMPT_MAX_LEN}
+        onChange={(e) => setPrompt(e.target.value)}
+        disabled={draftDeck.isPending}
+      />
+      <div className="builder-ai-count">
+        {prompt.length} / {AI_PROMPT_MAX_LEN}
+      </div>
+      {error && <div className="builder-ai-error">{error}</div>}
+      <div className="builder-ai-actions">
+        <button type="button" className="mini-btn" onClick={() => setOpen(false)} disabled={draftDeck.isPending}>
+          Cancel
+        </button>
+        <button type="button" className="new-deck-btn" onClick={() => void generate()} disabled={draftDeck.isPending || prompt.trim().length < 10}>
+          {draftDeck.isPending ? "Drafting…" : "Generate draft"}
+        </button>
+      </div>
+      <div className="q-hint" style={{ marginTop: 8 }}>
+        Nothing is saved by this — the draft loads into the wizard below, exactly like starting from a clone, for you to review, edit, and
+        save (or discard) yourself.
+      </div>
+    </div>
+  );
+}
+
+function StartScreen({
+  onPick,
+  onAiDraft,
+}: {
+  onPick: (source: DeckConfig | null) => void;
+  onAiDraft: (config: DeckConfig, aiSuggestedFields: string[]) => void;
+}) {
   const { data: decks, isLoading } = trpc.deck.list.useQuery();
   const utils = trpc.useUtils();
   const [loadingSlug, setLoadingSlug] = React.useState<string | null>(null);
@@ -65,7 +143,7 @@ function StartScreen({ onPick }: { onPick: (source: DeckConfig | null) => void }
       <h1 className="home-title">New deck</h1>
       <p className="home-sub">
         Start from an existing deck — its services, pricing structure, and discovery questions become your editable starting point. Or
-        start blank.
+        start blank, or let AI draft a first pass from a short description.
       </p>
       {isLoading && <div className="empty-state">Loading decks…</div>}
       <div className="deck-grid">
@@ -83,6 +161,7 @@ function StartScreen({ onPick }: { onPick: (source: DeckConfig | null) => void }
             </div>
           </div>
         ))}
+        <AiDraftCard onDraft={onAiDraft} />
         <div className="deck-card builder-blank-card" onClick={() => onPick(null)}>
           <div className="dc-badge" style={{ background: "linear-gradient(135deg, #5E7E84, #8D97A6)" }}>＋</div>
           <div>
@@ -113,6 +192,10 @@ export function DeckWizard({ editingSlug, initialDraft }: { editingSlug?: string
   const [stepIdx, setStepIdx] = React.useState(0);
   const [focusSlide, setFocusSlide] = React.useState<string | null>(null);
   const [serverError, setServerError] = React.useState<string | null>(null);
+  // Price-band fields an AI draft populated, as "<serviceId>:<bandIndex>" keys — shown as
+  // a subtle "AI-suggested" badge in the Services step until a human edits that band, at
+  // which point its key is removed. Purely a display hint; it never affects what's saved.
+  const [aiFields, setAiFields] = React.useState<Set<string>>(new Set());
 
   const createDeck = trpc.deck.create.useMutation();
   const updateDeck = trpc.deck.update.useMutation();
@@ -127,9 +210,26 @@ export function DeckWizard({ editingSlug, initialDraft }: { editingSlug?: string
     });
   }, []);
 
+  const markAiFieldReviewed = React.useCallback((key: string) => {
+    setAiFields((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  }, []);
+
   if (!draft) {
     if (editing) return null; // caller (the edit route) supplies initialDraft once loaded
-    return <StartScreen onPick={(source) => setDraft(source ?? blankDeck())} />;
+    return (
+      <StartScreen
+        onPick={(source) => setDraft(source ?? blankDeck())}
+        onAiDraft={(config, fields) => {
+          setDraft(config);
+          setAiFields(new Set(fields));
+        }}
+      />
+    );
   }
 
   const step = STEPS[stepIdx];
@@ -191,7 +291,9 @@ export function DeckWizard({ editingSlug, initialDraft }: { editingSlug?: string
         <div className="builder-form-body">
           {step.key === "basics" && <StepBasics deck={draft} update={update} />}
           {step.key === "pricing" && <StepPricingModel deck={draft} update={update} />}
-          {step.key === "services" && <StepServices deck={draft} update={update} onFocusSlide={setFocusSlide} />}
+          {step.key === "services" && (
+            <StepServices deck={draft} update={update} onFocusSlide={setFocusSlide} aiFields={aiFields} onAiFieldReviewed={markAiFieldReviewed} />
+          )}
           {step.key === "team" && <StepTeam deck={draft} update={update} />}
           {step.key === "content" && <StepContent deck={draft} update={update} onFocusSlide={setFocusSlide} />}
           {step.key === "discovery" && <StepDiscovery deck={draft} update={update} />}

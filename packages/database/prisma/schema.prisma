@@ -29,8 +29,9 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  refreshTokens RefreshToken[]
-  meetings      Meeting[]
+  refreshTokens   RefreshToken[]
+  meetings        Meeting[]
+  aiDraftRequests AiDraftRequest[]
 
   @@map("users")
 }
@@ -90,4 +91,18 @@ model Meeting {
   @@index([deckId])
   @@index([createdById])
   @@map("meetings")
+}
+
+// One row per AI drafting call (Phase 3a) — never the draft content itself, just who
+// asked and when. This is the rate-limit ledger: ai.draftDeck counts rows in the recent
+// window before it ever calls Anthropic, so the guardrail survives a server restart and
+// is shared across every App Runner instance, unlike an in-memory counter.
+model AiDraftRequest {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("ai_draft_requests")
 }

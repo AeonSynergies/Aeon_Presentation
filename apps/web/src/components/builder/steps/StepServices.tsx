@@ -17,45 +17,67 @@ function findSurchargeQuestion(deck: DeckConfig, svc: DeckService) {
   return deck.discoveryQuestions.find((q) => q.id === svc.surcharge!.questionId);
 }
 
-function BandsEditor({ deck, svcIdx, update }: { deck: DeckConfig; svcIdx: number; update: UpdateDraft }) {
+function BandsEditor({
+  deck,
+  svcIdx,
+  update,
+  aiFields,
+  onAiFieldReviewed,
+}: {
+  deck: DeckConfig;
+  svcIdx: number;
+  update: UpdateDraft;
+  aiFields: Set<string>;
+  onAiFieldReviewed: (key: string) => void;
+}) {
   const svc = deck.services[svcIdx];
   return (
     <Field
       label="Price bands (monthly $)"
       hint="Leave “up to” empty on the last band for an uncapped band; leave price empty for “Custom Quote”."
     >
-      {svc.priceBands.map((band, bi) => (
-        <div className="builder-band-row" key={bi}>
-          <span className="builder-band-label">up to</span>
-          <input
-            type="number"
-            min={1}
-            placeholder="∞"
-            value={band.upTo === null ? "" : String(band.upTo)}
-            onChange={(e) =>
-              update((d) => void (d.services[svcIdx].priceBands[bi].upTo = e.target.value === "" ? null : Number(e.target.value)))
-            }
-          />
-          <span className="builder-band-label">→ $</span>
-          <input
-            type="number"
-            min={0}
-            placeholder="Custom Quote"
-            value={band.price === null ? "" : String(band.price)}
-            onChange={(e) =>
-              update((d) => void (d.services[svcIdx].priceBands[bi].price = e.target.value === "" ? null : Number(e.target.value)))
-            }
-          />
-          <MiniBtn
-            danger
-            title="Remove band"
-            disabled={svc.priceBands.length === 1}
-            onClick={() => update((d) => void d.services[svcIdx].priceBands.splice(bi, 1))}
-          >
-            ✕
-          </MiniBtn>
-        </div>
-      ))}
+      {svc.priceBands.map((band, bi) => {
+        const aiKey = `${svc.id}:${bi}`;
+        const isAiSuggested = aiFields.has(aiKey);
+        return (
+          <div className="builder-band-row" key={bi}>
+            <span className="builder-band-label">up to</span>
+            <input
+              type="number"
+              min={1}
+              placeholder="∞"
+              value={band.upTo === null ? "" : String(band.upTo)}
+              onChange={(e) => {
+                update((d) => void (d.services[svcIdx].priceBands[bi].upTo = e.target.value === "" ? null : Number(e.target.value)));
+                onAiFieldReviewed(aiKey);
+              }}
+            />
+            <span className="builder-band-label">→ $</span>
+            <input
+              type="number"
+              min={0}
+              placeholder="Custom Quote"
+              value={band.price === null ? "" : String(band.price)}
+              onChange={(e) => {
+                update((d) => void (d.services[svcIdx].priceBands[bi].price = e.target.value === "" ? null : Number(e.target.value)));
+                onAiFieldReviewed(aiKey);
+              }}
+            />
+            {isAiSuggested && <span className="ai-badge" title="Populated by the AI draft — review before publishing.">✦ AI-suggested</span>}
+            <MiniBtn
+              danger
+              title="Remove band"
+              disabled={svc.priceBands.length === 1}
+              onClick={() => {
+                update((d) => void d.services[svcIdx].priceBands.splice(bi, 1));
+                onAiFieldReviewed(aiKey);
+              }}
+            >
+              ✕
+            </MiniBtn>
+          </div>
+        );
+      })}
       <MiniBtn onClick={() => update((d) => void d.services[svcIdx].priceBands.push({ upTo: null, price: null }))}>＋ Add band</MiniBtn>
     </Field>
   );
@@ -146,11 +168,15 @@ function ServiceEditor({
   svcIdx,
   update,
   onRemove,
+  aiFields,
+  onAiFieldReviewed,
 }: {
   deck: DeckConfig;
   svcIdx: number;
   update: UpdateDraft;
   onRemove: () => void;
+  aiFields: Set<string>;
+  onAiFieldReviewed: (key: string) => void;
 }) {
   const svc = deck.services[svcIdx];
   const numberQuestions = deck.discoveryQuestions.filter((q) => q.type === "number");
@@ -222,7 +248,7 @@ function ServiceEditor({
         onChange={(items) => update((d) => void (d.services[svcIdx].dashboards = items))}
       />
 
-      <BandsEditor deck={deck} svcIdx={svcIdx} update={update} />
+      <BandsEditor deck={deck} svcIdx={svcIdx} update={update} aiFields={aiFields} onAiFieldReviewed={onAiFieldReviewed} />
 
       <Field
         label="Priced by"
@@ -294,10 +320,14 @@ export function StepServices({
   deck,
   update,
   onFocusSlide,
+  aiFields,
+  onAiFieldReviewed,
 }: {
   deck: DeckConfig;
   update: UpdateDraft;
   onFocusSlide: (slideId: string) => void;
+  aiFields: Set<string>;
+  onAiFieldReviewed: (key: string) => void;
 }) {
   const [openId, setOpenId] = React.useState<string | null>(deck.services[0]?.id ?? null);
 
@@ -342,29 +372,44 @@ export function StepServices({
         Each service becomes its own slide plus a card on the pricing summary. Open one to edit it — the preview jumps to that service's
         real slide.
       </p>
-      {deck.services.map((svc, i) => (
-        <div className={`builder-svc-card${openId === svc.id ? " open" : ""}`} key={svc.id}>
-          <div className="builder-svc-head" onClick={() => open(openId === svc.id ? null : svc.id)}>
-            <span className="builder-svc-name">
-              {svc.name || "(unnamed service)"} <span className="builder-svc-id">· {svc.id}</span>
-            </span>
-            <span className="builder-svc-tools" onClick={(e) => e.stopPropagation()}>
-              <MiniBtn title="Move up" disabled={i === 0} onClick={() => move(i, -1)}>
-                ↑
-              </MiniBtn>
-              <MiniBtn title="Move down" disabled={i === deck.services.length - 1} onClick={() => move(i, 1)}>
-                ↓
-              </MiniBtn>
-              <span className="builder-svc-caret">{openId === svc.id ? "▾" : "▸"}</span>
-            </span>
-          </div>
-          {openId === svc.id && (
-            <div className="builder-svc-body">
-              <ServiceEditor deck={deck} svcIdx={i} update={update} onRemove={() => removeService(svc.id)} />
+      {deck.services.map((svc, i) => {
+        const hasUnreviewedAiBands = svc.priceBands.some((_, bi) => aiFields.has(`${svc.id}:${bi}`));
+        return (
+          <div className={`builder-svc-card${openId === svc.id ? " open" : ""}`} key={svc.id}>
+            <div className="builder-svc-head" onClick={() => open(openId === svc.id ? null : svc.id)}>
+              <span className="builder-svc-name">
+                {svc.name || "(unnamed service)"} <span className="builder-svc-id">· {svc.id}</span>
+                {hasUnreviewedAiBands && (
+                  <span className="ai-badge" title="This service's price bands were populated by the AI draft — review before publishing.">
+                    ✦ AI-suggested
+                  </span>
+                )}
+              </span>
+              <span className="builder-svc-tools" onClick={(e) => e.stopPropagation()}>
+                <MiniBtn title="Move up" disabled={i === 0} onClick={() => move(i, -1)}>
+                  ↑
+                </MiniBtn>
+                <MiniBtn title="Move down" disabled={i === deck.services.length - 1} onClick={() => move(i, 1)}>
+                  ↓
+                </MiniBtn>
+                <span className="builder-svc-caret">{openId === svc.id ? "▾" : "▸"}</span>
+              </span>
             </div>
-          )}
-        </div>
-      ))}
+            {openId === svc.id && (
+              <div className="builder-svc-body">
+                <ServiceEditor
+                  deck={deck}
+                  svcIdx={i}
+                  update={update}
+                  onRemove={() => removeService(svc.id)}
+                  aiFields={aiFields}
+                  onAiFieldReviewed={onAiFieldReviewed}
+                />
+              </div>
+            )}
+          </div>
+        );
+      })}
       <MiniBtn onClick={addService}>＋ Add service</MiniBtn>
     </>
   );
