@@ -133,10 +133,18 @@ async function main() {
     page.waitForResponse((r) => r.url().includes("ai.draftDeck"), { timeout: 60_000 }),
     page.locator("button", { hasText: "Generate draft" }).click(),
   ]);
-  await page.waitForSelector(".builder-form-pane", { timeout: 15_000 });
   page.off("request", onRequest);
 
-  check("ai.draftDeck request succeeded (2xx)", draftResp.ok());
+  // Check response status BEFORE waiting on the DOM: if the server rejected the request,
+  // .builder-form-pane never appears and a blind selector wait just burns 15s producing a
+  // useless timeout instead of the real, actionable error — log the actual response body
+  // (tRPC's error JSON, including our own wrapped Anthropic SDK error message) so a
+  // failure here is diagnosable straight from the job log, no screenshot needed.
+  const draftBodyText = await draftResp.text();
+  if (!draftResp.ok()) {
+    console.error(`ai.draftDeck response was ${draftResp.status()}: ${draftBodyText}`);
+  }
+  check("ai.draftDeck request succeeded (2xx)", draftResp.ok(), draftResp.ok() ? "" : draftBodyText);
 
   const offSiteHosts = [...seenHosts].filter((h) => !ALLOWED_HOSTS.has(h));
   check(
@@ -147,8 +155,17 @@ async function main() {
 
   // Belt-and-suspenders on top of the same-origin proof above: the response body our own
   // API sent back never contains anything that looks like an Anthropic key.
-  const draftBodyText = await draftResp.text();
   check("the draftDeck response body never contains an Anthropic-shaped API key", !/sk-ant-/.test(draftBodyText));
+
+  if (!draftResp.ok()) {
+    // Nothing further to check through the UI if drafting itself failed server-side — the
+    // error was already logged and recorded as a failed check above; stop here rather than
+    // burn 15s on a selector wait that can never succeed.
+    await page.screenshot({ path: `${OUT}/ai-draft-e2e-failure.png`, fullPage: true }).catch(() => {});
+    throw new Error("ai.draftDeck failed server-side — see the logged response body above.");
+  }
+
+  await page.waitForSelector(".builder-form-pane", { timeout: 15_000 });
 
   const companyNameValue = await page
     .locator(".q-block", { hasText: "Company / deck name" })

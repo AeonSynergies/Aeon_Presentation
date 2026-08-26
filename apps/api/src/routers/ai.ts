@@ -55,7 +55,10 @@ export const aiRouter = router({
       try {
         response = await anthropic.messages.create({
           model: "claude-sonnet-5",
-          max_tokens: 4096,
+          // A full draft (up to 7 services plus all static content) can run several
+          // thousand output tokens; 4096 was cutting it close enough to risk a truncated
+          // tool call that never resolves to a usable submit_deck_draft input.
+          max_tokens: 8000,
           system: AI_DRAFT_SYSTEM_PROMPT,
           messages: [{ role: "user", content: input.prompt }],
           tools: [
