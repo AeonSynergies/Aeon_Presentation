@@ -159,6 +159,16 @@ time — the next push to `main` picks it up and updates the running api service
 (deploy.sh stores it in SSM and re-checks whether the running service needs the update,
 it doesn't require deleting/recreating anything).
 
+**IAM note (Phase 3a):** the AI-drafting feature needed a NAT Gateway added to the network
+setup (see "What it provisions" below), which uses several EC2 actions the deploy
+credentials may not have needed before: `ec2:CreateSubnet`, `ec2:DescribeInternetGateways`,
+`ec2:CreateRouteTable`, `ec2:CreateRoute`, `ec2:DescribeRouteTables`,
+`ec2:AssociateRouteTable`, `ec2:ReplaceRouteTableAssociation`, `ec2:AllocateAddress`,
+`ec2:DescribeAddresses`, `ec2:CreateNatGateway`, `ec2:DescribeNatGateways`. If the deploy
+credentials' policy is scoped narrower than a blanket `ec2:*`, add these (same pattern as
+the `apprunner:DeleteService` and `kms:Decrypt` additions earlier in this project's
+history — each surfaced as a real `AccessDenied` from a live run, added once discovered).
+
 **What it provisions** (idempotent — safe to re-run; only creates what's missing):
 - Two ECR repositories (`aeon-api`, `aeon-web`)
 - RDS for PostgreSQL: `db.t4g.micro`, 20GB gp3, **not publicly accessible**
@@ -166,8 +176,16 @@ it doesn't require deleting/recreating anything).
   public-access mode at all, at any instance size)
 - An App Runner VPC Connector in the account's default VPC, and a security group scoped
   so only that connector can reach RDS/ElastiCache on 5432/6379
+- A NAT Gateway (its own dedicated subnet + Elastic IP), with every default-VPC subnet's
+  default route pointed at it (Phase 3a) — App Runner VPC Connector ENIs never get a
+  public IP, so a route to the Internet Gateway alone isn't enough for the api service to
+  reach a public API (e.g. `api.anthropic.com` for AI-assisted deck drafting); nothing
+  before that needed outbound internet from inside the container at all, since RDS/Redis
+  are both private, in-VPC-only targets. **This is a real, ongoing cost** — roughly
+  $32–35/month for the NAT Gateway itself, on top of everything else below, not covered
+  by the RDS/ElastiCache free-tier notes.
 - IAM roles for App Runner (ECR image pull, and an instance role scoped to read exactly
-  two SSM parameters)
+  the SSM parameters it needs)
 - `DATABASE_URL` / `REDIS_URL` / `JWT_ACCESS_SECRET` as SSM Parameter Store values
   (the first and last as SecureString), injected into the api service as App Runner
   runtime secrets — never as plain environment variables, never in a workflow log

@@ -169,6 +169,100 @@ fi
 log "Default VPC: $VPC_ID  Subnets: ${SUBNET_IDS[*]}"
 
 # ============================================================
+# NAT Gateway — outbound internet access for the App Runner VPC Connector.
+#
+# App Runner's VPC Connector ENIs never get a public IP, so being in a subnet that's
+# routed to the Internet Gateway isn't enough on its own (the IGW only NATs traffic from
+# instances that already have a public IP — an ENI without one gets no response). Nothing
+# before Phase 3a (AI-assisted deck drafting) ever needed outbound internet access from
+# inside the running api container: DATABASE_URL and REDIS_URL are both private, in-VPC-
+# only targets, so this gap was invisible until ai.draftDeck's real call to
+# api.anthropic.com started failing with a generic connection error.
+#
+# The App Runner VPC Connector was created back in Phase 1, using whichever of this
+# default VPC's subnets AWS happened to pick — there's no cheap way to ask which ones from
+# outside this running script. Rather than guess and exclude "the one subnet it's
+# probably using," this creates a brand-new, dedicated subnet purely to host the NAT
+# Gateway, and routes every ORIGINAL default-VPC subnet (all of SUBNET_IDS — wherever the
+# connector actually lives, it's covered) through that NAT Gateway via a new route table.
+# RDS and ElastiCache don't care either way (they never originate outbound internet
+# traffic), so re-routing their subnets too is harmless.
+# ============================================================
+VPC_CIDR="$(aws_ ec2 describe-vpcs --vpc-ids "$VPC_ID" --query 'Vpcs[0].CidrBlock' --output text)"
+VPC_CIDR_PREFIX="$(cut -d. -f1-2 <<< "$VPC_CIDR")"
+NAT_SUBNET_CIDR="${VPC_CIDR_PREFIX}.250.0/24"
+NAT_SUBNET_AZ="$(aws_ ec2 describe-subnets --subnet-ids "${SUBNET_IDS[0]}" --query 'Subnets[0].AvailabilityZone' --output text)"
+
+NAT_SUBNET_ID="$(aws_ ec2 describe-subnets --filters "Name=tag:Name,Values=${PROJECT}-nat-subnet" "Name=vpc-id,Values=${VPC_ID}" --query 'Subnets[0].SubnetId' --output text)"
+if [ -z "$NAT_SUBNET_ID" ] || [ "$NAT_SUBNET_ID" = "None" ]; then
+  log "Creating a dedicated subnet ($NAT_SUBNET_CIDR) to host the NAT Gateway"
+  NAT_SUBNET_ID="$(aws_ ec2 create-subnet --vpc-id "$VPC_ID" --cidr-block "$NAT_SUBNET_CIDR" --availability-zone "$NAT_SUBNET_AZ" \
+    --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=${PROJECT}-nat-subnet}]" --query 'Subnet.SubnetId' --output text)"
+else
+  log "NAT subnet already exists ($NAT_SUBNET_ID)"
+fi
+
+IGW_ID="$(aws_ ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=${VPC_ID}" --query 'InternetGateways[0].InternetGatewayId' --output text)"
+if [ -z "$IGW_ID" ] || [ "$IGW_ID" = "None" ]; then
+  echo "No Internet Gateway attached to $VPC_ID — this script assumes the default VPC's own IGW exists." >&2
+  exit 1
+fi
+
+# The new NAT subnet needs an explicit route to the IGW — it isn't associated with any
+# route table yet, so make that explicit rather than relying on an implicit main-table fallback.
+NAT_SUBNET_RT_ID="$(aws_ ec2 describe-route-tables --filters "Name=association.subnet-id,Values=${NAT_SUBNET_ID}" --query 'RouteTables[0].RouteTableId' --output text)"
+if [ -z "$NAT_SUBNET_RT_ID" ] || [ "$NAT_SUBNET_RT_ID" = "None" ]; then
+  log "Routing the NAT subnet to the Internet Gateway"
+  NAT_SUBNET_RT_ID="$(aws_ ec2 create-route-table --vpc-id "$VPC_ID" \
+    --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${PROJECT}-nat-subnet-rt}]" --query 'RouteTable.RouteTableId' --output text)"
+  aws_ ec2 create-route --route-table-id "$NAT_SUBNET_RT_ID" --destination-cidr-block 0.0.0.0/0 --gateway-id "$IGW_ID" >/dev/null
+  aws_ ec2 associate-route-table --route-table-id "$NAT_SUBNET_RT_ID" --subnet-id "$NAT_SUBNET_ID" >/dev/null
+fi
+
+EIP_ALLOC_ID="$(aws_ ec2 describe-addresses --filters "Name=tag:Name,Values=${PROJECT}-nat-eip" --query 'Addresses[0].AllocationId' --output text)"
+if [ -z "$EIP_ALLOC_ID" ] || [ "$EIP_ALLOC_ID" = "None" ]; then
+  log "Allocating Elastic IP for the NAT Gateway"
+  EIP_ALLOC_ID="$(aws_ ec2 allocate-address --domain vpc --tag-specifications "ResourceType=elastic-ip,Tags=[{Key=Name,Value=${PROJECT}-nat-eip}]" --query 'AllocationId' --output text)"
+fi
+
+NAT_GW_ID="$(aws_ ec2 describe-nat-gateways --filter "Name=tag:Name,Values=${PROJECT}-nat" "Name=state,Values=pending,available" --query 'NatGateways[0].NatGatewayId' --output text)"
+if [ -z "$NAT_GW_ID" ] || [ "$NAT_GW_ID" = "None" ]; then
+  log "Creating NAT Gateway in $NAT_SUBNET_ID (needed so the App Runner VPC connector — which never gets a public IP — can reach the public internet, e.g. api.anthropic.com)"
+  NAT_GW_ID="$(aws_ ec2 create-nat-gateway --subnet-id "$NAT_SUBNET_ID" --allocation-id "$EIP_ALLOC_ID" \
+    --tag-specifications "ResourceType=natgateway,Tags=[{Key=Name,Value=${PROJECT}-nat}]" --query 'NatGateway.NatGatewayId' --output text)"
+fi
+log "Waiting for the NAT Gateway to become available (first create takes a few minutes)..."
+aws_ ec2 wait nat-gateway-available --nat-gateway-ids "$NAT_GW_ID"
+
+PRIVATE_RT_ID="$(aws_ ec2 describe-route-tables --filters "Name=tag:Name,Values=${PROJECT}-private-rt" "Name=vpc-id,Values=${VPC_ID}" --query 'RouteTables[0].RouteTableId' --output text)"
+if [ -z "$PRIVATE_RT_ID" ] || [ "$PRIVATE_RT_ID" = "None" ]; then
+  log "Creating private route table (default route -> NAT Gateway)"
+  PRIVATE_RT_ID="$(aws_ ec2 create-route-table --vpc-id "$VPC_ID" \
+    --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${PROJECT}-private-rt}]" --query 'RouteTable.RouteTableId' --output text)"
+  aws_ ec2 create-route --route-table-id "$PRIVATE_RT_ID" --destination-cidr-block 0.0.0.0/0 --nat-gateway-id "$NAT_GW_ID" >/dev/null
+fi
+
+# Point every original default-VPC subnet at the private route table — a subnet with no
+# explicit association yet (the default-VPC norm: it implicitly uses the main route table)
+# needs associate-route-table; a subnet already explicitly associated with some other
+# table (e.g. a prior run of this script) needs replace-route-table-association instead —
+# AWS rejects associate-route-table on a subnet that already has an explicit association.
+for s in "${SUBNET_IDS[@]}"; do
+  CURRENT_RT="$(aws_ ec2 describe-route-tables --filters "Name=association.subnet-id,Values=${s}" --query 'RouteTables[0].RouteTableId' --output text)"
+  if [ "$CURRENT_RT" = "$PRIVATE_RT_ID" ]; then
+    continue
+  fi
+  if [ -n "$CURRENT_RT" ] && [ "$CURRENT_RT" != "None" ]; then
+    ASSOC_ID="$(aws_ ec2 describe-route-tables --route-table-ids "$CURRENT_RT" \
+      --query "RouteTables[0].Associations[?SubnetId=='${s}'].RouteTableAssociationId | [0]" --output text)"
+    aws_ ec2 replace-route-table-association --association-id "$ASSOC_ID" --route-table-id "$PRIVATE_RT_ID" >/dev/null
+  else
+    aws_ ec2 associate-route-table --route-table-id "$PRIVATE_RT_ID" --subnet-id "$s" >/dev/null
+  fi
+done
+log "All default-VPC subnets route outbound internet traffic through the NAT Gateway"
+
+# ============================================================
 # Security groups: one for the App Runner VPC connector, one for RDS/ElastiCache that
 # only accepts traffic from the connector's security group.
 # ============================================================
