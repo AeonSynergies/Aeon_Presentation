@@ -1,9 +1,10 @@
-import { PLATFORM_DEFAULT_COLORS, type DeckConfig } from "@aeon/types";
+import type { DeckConfig } from "@aeon/types";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
 import { DiscoveryNotesPanel } from "~/components/discovery/DiscoveryNotesPanel";
 import { useDeckSession } from "~/hooks/useDeckSession";
 import { DeckLogo } from "./Logo";
+import { deckColorVars } from "./deckColors";
 import { getSlides } from "./getSlides";
 
 export function DeckPlayer({ deck, dbId }: { deck: DeckConfig; dbId: string }) {
@@ -54,21 +55,8 @@ export function DeckPlayer({ deck, dbId }: { deck: DeckConfig; dbId: string }) {
     setIdx((i) => Math.min(i + 1, slides.length - 1));
   }
 
-  const deckColorVars: React.CSSProperties = {
-    "--amber": deck.colors.amber,
-    "--teal": deck.colors.teal,
-    "--ink": deck.colors.ink || PLATFORM_DEFAULT_COLORS.ink,
-    "--panel": deck.colors.panel || PLATFORM_DEFAULT_COLORS.panel,
-    "--panel-2": deck.colors.panel2 || PLATFORM_DEFAULT_COLORS.panel2,
-    "--fog": deck.colors.fog || PLATFORM_DEFAULT_COLORS.fog,
-    "--paper": deck.colors.paper || PLATFORM_DEFAULT_COLORS.paper,
-    ...(deck.colors.success ? { "--success": deck.colors.success } : {}),
-    ...(deck.colors.danger ? { "--danger": deck.colors.danger } : {}),
-    ...(deck.colors.gold ? { "--gold": deck.colors.gold } : {}),
-  } as React.CSSProperties;
-
   return (
-    <div style={{ ...deckColorVars, display: "flex", minHeight: "100vh" }}>
+    <div style={{ ...deckColorVars(deck.colors), display: "flex", minHeight: "100vh" }}>
       <div className="stage" ref={stageRef} style={{ flex: 1 }}>
         <div className="topbar">
           <div className="wordmark">

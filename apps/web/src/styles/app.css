@@ -1539,3 +1539,300 @@ select:focus {
     height: 22px;
   }
 }
+
+/* ============================================================
+   DECK BUILDER WIZARD
+   Layout: fixed-width form pane (same width family as the Discovery Notes panel) +
+   fill-remaining live preview. Form controls reuse the global input styles and the
+   q-block/q-label/tier-heading vocabulary so the builder reads as part of the app.
+   ============================================================ */
+.builder-shell {
+  display: flex;
+  height: 100vh;
+  background: var(--ink);
+}
+.builder-form-pane {
+  width: 560px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+}
+.builder-form-head {
+  padding: 18px 22px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.builder-form-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--disp);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--paper);
+  margin-bottom: 12px;
+}
+.builder-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.builder-step-chip {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--ink);
+  color: var(--fog);
+  cursor: pointer;
+}
+.builder-step-chip.done {
+  color: var(--teal);
+  border-color: var(--teal);
+}
+.builder-step-chip.active {
+  color: var(--amber);
+  border-color: var(--amber);
+  background: rgba(22, 166, 206, 0.08);
+  font-weight: 600;
+}
+.builder-form-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 22px 30px;
+}
+.builder-step-intro {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--fog);
+  margin: 0 0 18px;
+}
+.builder-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 22px;
+  border-top: 1px solid var(--line);
+}
+.builder-footer-progress {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fog);
+}
+.builder-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.builder-list-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.builder-color-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.builder-color-row input[type="color"] {
+  width: 42px;
+  height: 38px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--ink);
+  cursor: pointer;
+}
+.mini-btn {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  padding: 7px 12px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--ink);
+  color: var(--paper);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.mini-btn:hover:not(:disabled) {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.mini-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.mini-btn-danger:hover:not(:disabled) {
+  border-color: var(--danger, #c0504d);
+  color: var(--danger, #c0504d);
+}
+.builder-svc-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.builder-svc-card.open {
+  border-color: var(--amber);
+}
+.builder-svc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  background: var(--panel-2);
+}
+.builder-svc-name {
+  font-family: var(--disp);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--paper);
+}
+.builder-svc-id {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--fog);
+}
+.builder-svc-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.builder-svc-caret {
+  color: var(--fog);
+  font-size: 11px;
+}
+.builder-svc-body {
+  padding: 14px;
+}
+.builder-subcard {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: var(--panel);
+}
+.builder-subcard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--fog);
+  margin-bottom: 10px;
+}
+.builder-locked {
+  background: var(--panel-2);
+  border-style: dashed;
+}
+.builder-band-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.builder-band-label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fog);
+  flex-shrink: 0;
+}
+.builder-report-note {
+  font-size: 12px;
+  color: var(--fog);
+  flex: 1;
+}
+.builder-issues {
+  border: 1px solid var(--danger, #c0504d);
+  background: rgba(192, 80, 77, 0.07);
+  border-radius: 9px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+.builder-issues ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--paper);
+}
+.builder-summary-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.9;
+  color: var(--paper);
+}
+.builder-blank-card {
+  border-style: dashed;
+}
+.builder-preview-pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ink);
+}
+.builder-preview-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.builder-preview-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--fog);
+}
+.builder-preview-driver {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fog);
+}
+.builder-preview-driver input {
+  width: 80px;
+}
+.builder-preview-stagewrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  margin: 18px;
+}
+.builder-preview-canvas {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: center center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ink);
+}
+.builder-notes-preview {
+  flex: 1;
+  overflow-y: auto;
+  max-width: 560px;
+  width: 100%;
+  margin: 0 auto;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+}

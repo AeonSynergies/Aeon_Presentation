@@ -22,6 +22,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      web_url: ${{ steps.deploy.outputs.web_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -53,5 +55,43 @@ jobs:
             echo "- api: $API_URL"
             echo "- web: $WEB_URL"
           } >> "$GITHUB_STEP_SUMMARY"
+          echo "web_url=$WEB_URL" >> "$GITHUB_OUTPUT"
         env:
           AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+  # Live end-to-end check against the deployment that just went out — signs in and
+  # exercises the Deck Builder wizard + player through a real browser (see
+  # infra/e2e/wizard-e2e.mjs). Idempotent: first run creates the wizard's test deck
+  # through the UI; later runs verify it still behaves (pricing math, surcharges,
+  # Discovery tier gating, per-deck theming). This is the "verify live, not just a green
+  # build" gate — a deploy whose app is broken fails here instead of looking green.
+  live-e2e:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Playwright
+        working-directory: infra/e2e
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install chromium --with-deps
+
+      - name: Run live wizard E2E against the deployment
+        working-directory: infra/e2e
+        run: node wizard-e2e.mjs
+        env:
+          BASE_URL: ${{ needs.deploy.outputs.web_url }}
+
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: infra/e2e/e2e-artifacts/
+          if-no-files-found: ignore

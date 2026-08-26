@@ -9,9 +9,13 @@ This repository is being rebuilt from a single-file HTML prototype
 `CLAUDE.md` for the full project brief and `Aeon_Platform_Requirements_Spec.md` for the
 target feature set across all phases.
 
-**Current phase: Phase 2a** — three decks (Amazon DSP, Meridian Property Partners, FedEx
-P&D) rendering correctly with real pricing math and Discovery Notes behavior, behind real
-login, backed by a real database, each with its own accent colors and logo.
+**Current phase: Phase 2b** — the Deck Builder: new decks are created through the app
+itself at `/decks/new`, via a stepped wizard (Basics → Pricing Model → Services → Team →
+Content → Discovery Questions → Review) with a live preview that renders the real slide
+components. Cloning an existing deck is the default starting point; blank-slate also
+works. Deployed pushes run a post-deploy live E2E (`infra/e2e/wizard-e2e.mjs`) that
+exercises the wizard and verifies pricing math, surcharges, and Discovery tier gating
+against the real deployment.
 
 ## Monorepo layout
 

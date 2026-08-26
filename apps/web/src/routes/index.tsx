@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Header } from "~/components/layout/Header";
 import { RequireAuth } from "~/components/layout/RequireAuth";
 import { trpc } from "~/lib/trpc";
@@ -26,7 +26,14 @@ function HomePortal() {
         <span className="dot" />
         Aeon
       </div>
-      <h1 className="home-title">Your decks</h1>
+      <div className="home-controls">
+        <h1 className="home-title" style={{ margin: 0 }}>
+          Your decks
+        </h1>
+        <Link to="/decks/new" className="new-deck-btn">
+          ＋ New Deck
+        </Link>
+      </div>
       <p className="home-sub">Pick a deck to present, capture Discovery Notes, and quote live.</p>
 
       {isLoading && <div className="empty-state">Loading decks…</div>}

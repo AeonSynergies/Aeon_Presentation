@@ -1,0 +1,293 @@
+// Live end-to-end test of the Deck Builder wizard, run against a real deployment
+// (post-deploy job in .github/workflows/deploy-aws.yml) or a local dev server.
+//
+// What it does, through the actual UI — no API shortcuts:
+//   1. Signs in as the seeded demo user.
+//   2. If the test deck ("Harbor Lane Dental") doesn't exist yet: creates it through
+//      every wizard step from the blank-slate path — basics, pricing model, two services
+//      (one with a surcharge toggle, one priced by an alternate driver question), team,
+//      content, three-tier discovery questions — and saves it via deck.create.
+//   3. Verifies the created deck behaves identically to the seeded decks in the REAL
+//      player: per-deck colors, band math, surcharge math, alternate-driver math, and
+//      tier-3 Discovery gating.
+//   4. Verifies Home lists it with its own accent colors, and that clone-from-existing
+//      prefills the wizard.
+//
+// Idempotent by design: on re-runs (every push to main redeploys) the creation phase is
+// skipped when the deck already exists, and only the behavior checks run — so this is a
+// permanent live regression test, not a one-shot that would pile up harbor-lane-dental-2,
+// -3… in production.
+//
+// Env: BASE_URL (required), DEMO_EMAIL/DEMO_PASSWORD (default: the seeded demo user),
+// CHROMIUM_PATH (optional executable override; CI uses Playwright's own install),
+// OUT_DIR (screenshots, default ./e2e-artifacts).
+
+import { mkdirSync } from "node:fs";
+import { chromium } from "playwright";
+
+const BASE = process.env.BASE_URL;
+if (!BASE) {
+  console.error("BASE_URL is required");
+  process.exit(2);
+}
+const EMAIL = process.env.DEMO_EMAIL || "demo@aeonsynergies.com";
+const PASSWORD = process.env.DEMO_PASSWORD || "AeonDemo123!";
+const OUT = process.env.OUT_DIR || "./e2e-artifacts";
+mkdirSync(OUT, { recursive: true });
+
+const DECK_NAME = "Harbor Lane Dental";
+const DECK_SLUG = "harbor-lane-dental";
+
+const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
+const page = await browser.newPage();
+const pageErrors = [];
+page.on("pageerror", (e) => pageErrors.push("PAGE ERROR: " + e.message));
+
+const results = [];
+function check(name, ok, detail = "") {
+  results.push({ name, ok });
+  console.log(`${ok ? "PASS" : "FAIL"}: ${name}${detail ? " — " + detail : ""}`);
+}
+
+async function login() {
+  await page.goto(`${BASE}/login`, { waitUntil: "networkidle" });
+  await page.fill('input[type="email"]', EMAIL);
+  await page.fill('input[type="password"]', PASSWORD);
+  await Promise.all([page.waitForResponse((r) => r.url().includes("deck.list")), page.click('button[type="submit"]')]);
+  await page.waitForSelector(".deck-grid");
+}
+
+async function homeDeckNames() {
+  await page.goto(`${BASE}/`);
+  await page.waitForSelector(".deck-grid");
+  await page.waitForTimeout(400);
+  return page.$$eval(".deck-card .dc-name", (els) => els.map((el) => el.textContent));
+}
+
+// ---------- creation phase (skipped when the deck already exists) ----------
+async function createViaWizard() {
+  const form = page.locator(".builder-form-pane");
+  const fieldInput = (label) => form.locator(".q-block", { hasText: label }).first().locator('input[type="text"]').first();
+  const fieldTextarea = (label) => form.locator(".q-block", { hasText: label }).first().locator("textarea").first();
+  const chip = (label) => form.locator(".builder-step-chip", { hasText: label });
+  const svcBody = () => form.locator(".builder-svc-card.open .builder-svc-body");
+  const sIn = (label) => svcBody().locator(".q-block", { hasText: label }).first().locator('input[type="text"]').first();
+  const bandsBlock = () => svcBody().locator(".q-block", { hasText: "Price bands" });
+
+  await page.click(".new-deck-btn");
+  await page.waitForSelector(".builder-blank-card");
+  await page.click(".builder-blank-card");
+  await page.waitForSelector(".builder-form-pane");
+
+  // Basics
+  await fieldInput("Company / deck name").fill(DECK_NAME);
+  await fieldInput("Industry").fill("Dental Practice Management");
+  await fieldTextarea("Tagline").fill("Back-office support for growing dental practices.");
+  await form.locator(".q-block", { hasText: "Primary accent" }).locator('input[type="text"]').fill("#7C5CBF");
+  await form.locator(".q-block", { hasText: "Secondary accent" }).locator('input[type="text"]').fill("#2E8B74");
+  await page.waitForTimeout(300);
+  const previewVars = await page.$eval(".builder-preview-pane", (el) => el.getAttribute("style"));
+  check("wizard: preview picks up accent colors live", previewVars.includes("#7C5CBF") && previewVars.includes("#2E8B74"));
+
+  // Pricing Model
+  await chip("Pricing Model").click();
+  await fieldInput("Driver label").fill("Operatories");
+  await fieldInput("Unit (short, plural)").fill("operatories");
+  await fieldInput("Discovery question text").fill("How many operatories does the practice run?");
+
+  // Services — service 1 with surcharge. The first service starts open; close and
+  // reopen it so the open action (which snaps the preview to that service's slide)
+  // deterministically fires before the preview-follow check below.
+  await chip("Services").click();
+  const firstHead = form.locator(".builder-svc-card .builder-svc-head").first();
+  if (await svcBody().count()) await firstHead.click();
+  await firstHead.click();
+  await sIn("Service name").fill("Insurance Billing & Claims");
+  await sIn("Delivering team").fill("Billing Team");
+  await sIn("Band label").fill("Operatory-based · 3 bands");
+  await svcBody().locator(".q-block", { hasText: "What we handle" }).locator(".builder-list-row input").first().fill("Claims submission and tracking end-to-end");
+  const statsBlock = svcBody().locator(".q-block", { hasText: "Impact stats" });
+  await statsBlock.locator(".builder-list-row").nth(0).locator("input").nth(0).fill("↓ 40%");
+  await statsBlock.locator(".builder-list-row").nth(0).locator("input").nth(1).fill("Fewer rejected claims");
+  await statsBlock.locator(".builder-list-row").nth(1).locator(".mini-btn-danger").click();
+  await svcBody().locator(".q-block", { hasText: "Dashboards / reports" }).locator(".mini-btn", { hasText: "Add dashboard" }).click();
+  await svcBody().locator(".q-block", { hasText: "Dashboards / reports" }).locator(".builder-list-row input").first().fill("Claims Aging Dashboard");
+  await bandsBlock().locator(".builder-band-row").nth(0).locator("input").nth(0).fill("5");
+  await bandsBlock().locator(".builder-band-row").nth(0).locator("input").nth(1).fill("400");
+  await bandsBlock().locator(".mini-btn", { hasText: "Add band" }).click();
+  await bandsBlock().locator(".builder-band-row").nth(1).locator("input").nth(0).fill("10");
+  await bandsBlock().locator(".builder-band-row").nth(1).locator("input").nth(1).fill("600");
+  await bandsBlock().locator(".mini-btn", { hasText: "Add band" }).click();
+  await bandsBlock().locator(".builder-band-row").nth(2).locator("input").nth(1).fill("800");
+  await svcBody().locator(".mini-btn", { hasText: "Add surcharge toggle" }).click();
+  await svcBody().locator(".q-block", { hasText: "Amount added" }).locator("input").fill("250");
+  await svcBody().locator(".q-block", { hasText: "Toggle question label" }).locator("input").fill("Does the practice need aged-claims cleanup (claims older than 90 days)?");
+  await svcBody().locator(".q-block", { hasText: "“Off” option label" }).locator("input").fill("Current claims only");
+  await svcBody().locator(".q-block", { hasText: "“On” option label" }).locator("input").fill("Yes, cleanup needed");
+  await page.waitForTimeout(400);
+  const slideTitle = await page.$eval(".builder-preview-canvas .slide-title", (el) => el.textContent).catch(() => "");
+  check("wizard: preview follows to the real service slide", slideTitle.includes("Insurance Billing"), slideTitle);
+
+  // Services — service 2 (alternate driver wired after its question exists)
+  await form.locator(".mini-btn", { hasText: "Add service" }).click();
+  await sIn("Service name").fill("Patient Scheduling Support");
+  await sIn("Delivering team").fill("Front Office Team");
+  await svcBody().locator(".q-block", { hasText: "Category" }).locator("select").selectOption("strategic");
+  await sIn("Band label").fill("Hygienist-based · 2 bands");
+  await svcBody().locator(".q-block", { hasText: "What we handle" }).locator(".builder-list-row input").first().fill("Recall scheduling and no-show follow-up");
+  const stats2 = svcBody().locator(".q-block", { hasText: "Impact stats" });
+  await stats2.locator(".builder-list-row").nth(0).locator("input").nth(0).fill("↓ 25%");
+  await stats2.locator(".builder-list-row").nth(0).locator("input").nth(1).fill("Fewer no-shows");
+  await stats2.locator(".builder-list-row").nth(1).locator(".mini-btn-danger").click();
+  await bandsBlock().locator(".builder-band-row").nth(0).locator("input").nth(0).fill("3");
+  await bandsBlock().locator(".builder-band-row").nth(0).locator("input").nth(1).fill("300");
+  await bandsBlock().locator(".mini-btn", { hasText: "Add band" }).click();
+  await bandsBlock().locator(".builder-band-row").nth(1).locator("input").nth(1).fill("450");
+
+  // Discovery — general + tier-3 number question; verify live gating in the notes preview
+  await chip("Discovery Questions").click();
+  await form.locator(".mini-btn", { hasText: "Add general question" }).click();
+  let lastCard = form.locator(".builder-subcard").filter({ has: page.locator("input") }).last();
+  await lastCard.locator(".q-block", { hasText: "Question label" }).locator("input").fill("What practice management software do you use?");
+  await form.locator(".mini-btn", { hasText: "Add question for Patient Scheduling Support" }).click();
+  lastCard = form.locator(".builder-subcard").filter({ has: page.locator("input") }).last();
+  await lastCard.locator(".q-block", { hasText: "Question label" }).locator("input").fill("How many hygienists does the practice employ?");
+  await lastCard.locator(".q-block", { hasText: "Answer type" }).locator("select").selectOption("number");
+  const notesPreview = page.locator(".builder-notes-preview");
+  check("wizard: discovery preview is the real Notes panel (3 tiers)", (await notesPreview.locator(".tier-heading").count()) === 3);
+  const hygBefore = await notesPreview.locator(".q-label", { hasText: "hygienists" }).count();
+  await notesPreview.locator(".chip", { hasText: "Patient Scheduling Support" }).click();
+  await page.waitForTimeout(200);
+  const hygAfter = await notesPreview.locator(".q-label", { hasText: "hygienists" }).count();
+  check("wizard: tier-3 gating works live in preview", hygBefore === 1 && hygAfter === 0, `${hygBefore} -> ${hygAfter}`);
+  await notesPreview.locator(".chip", { hasText: "Patient Scheduling Support" }).click();
+  check("wizard: surcharge toggle shown locked in tier 3", (await form.locator(".builder-locked", { hasText: "aged-claims cleanup" }).count()) === 1);
+
+  // Back to Services: alternate pricing driver
+  await chip("Services").click();
+  await form.locator(".builder-svc-card", { hasText: "Patient Scheduling Support" }).locator(".builder-svc-head").click();
+  const pricedBy = svcBody().locator(".q-block", { hasText: "Priced by" }).locator("select");
+  check("wizard: number question offered as alternate pricing driver", (await pricedBy.locator("option").count()) === 2);
+  await pricedBy.selectOption({ index: 1 });
+  await svcBody().locator(".q-block", { hasText: "Driver label shown next" }).locator("input").fill("Number of hygienists");
+
+  // Team
+  await chip("Team").click();
+  await fieldInput("Name").fill("Rowan Patel");
+  await fieldInput("Title").fill("Practice Operations Lead");
+  await fieldInput("Email").fill("rowan@harborlanedental.com");
+  await fieldInput("Phone").fill("+1 (555) 010-2030");
+  check("wizard: initials auto-derived from name", (await fieldInput("Initials").inputValue()) === "RP");
+
+  // Content
+  await chip("Content").click();
+  await fieldTextarea("Subtitle").fill("We run the back office so your clinical team runs the practice.");
+  await form.locator(".builder-svc-head", { hasText: "ABOUT US" }).click();
+  await fieldTextarea("Body").fill("Harbor Lane Dental is a dedicated back-office team for dental practices.");
+  await form.locator(".q-block", { hasText: "Bullets" }).locator(".mini-btn", { hasText: "Add bullet" }).click();
+  await form.locator(".q-block", { hasText: "Bullets" }).locator(".builder-list-row input").first().fill("One team across billing, scheduling, and reporting");
+  await form.locator(".builder-svc-head", { hasText: "CHALLENGES" }).click();
+  const challenges = form.locator(".q-block", { hasText: "Challenge items" });
+  await challenges.locator(".mini-btn", { hasText: "Add challenge" }).click();
+  await challenges.locator(".builder-list-row input").nth(0).fill("Rejected insurance claims sitting unworked");
+  await challenges.locator(".mini-btn", { hasText: "Add challenge" }).click();
+  await challenges.locator(".builder-list-row input").nth(1).fill("Front desk overwhelmed by recall scheduling");
+  await form.locator(".builder-svc-head", { hasText: "BENEFITS" }).click();
+  const benefits = form.locator(".q-block", { hasText: "Benefit items" });
+  await benefits.locator(".mini-btn", { hasText: "Add benefit" }).click();
+  await benefits.locator(".builder-list-row input").nth(0).fill("Cleaner claims and faster reimbursement");
+  await benefits.locator(".mini-btn", { hasText: "Add benefit" }).click();
+  await benefits.locator(".builder-list-row input").nth(1).fill("Fuller schedules with fewer no-shows");
+  await form.locator(".builder-svc-head", { hasText: "Q&A / CONTACT" }).click();
+  await form.locator(".q-block", { hasText: "Email" }).locator("input").fill("hello@harborlanedental.com");
+  await form.locator(".q-block", { hasText: "Phone" }).locator("input").fill("+1 (555) 010-2000");
+  await form.locator(".q-block", { hasText: "Website" }).locator("input").fill("www.harborlanedental.com");
+  await form.locator(".q-block", { hasText: "Address" }).locator("input").fill("12 Harbor Lane, Portland, ME 04101");
+
+  // Review + create
+  await chip("Review").click();
+  const issueCount = await form.locator(".builder-issues li").count();
+  check("wizard: no validation issues on a fully-filled deck", issueCount === 0);
+  await page.screenshot({ path: `${OUT}/wizard-review.png`, fullPage: true });
+  await Promise.all([
+    page.waitForURL(`**/decks/${DECK_SLUG}`, { timeout: 20000 }),
+    form.locator(".btn-primary", { hasText: "Create deck" }).click(),
+  ]);
+  check("wizard: deck created and opened in the real player", page.url().includes(`/decks/${DECK_SLUG}`));
+}
+
+// ---------- behavior verification (always runs) ----------
+async function verifyDeckBehavior() {
+  await page.goto(`${BASE}/decks/${DECK_SLUG}`);
+  await page.waitForSelector(".chip-grid");
+  await page.waitForTimeout(400);
+
+  const playerVars = await page.$eval('[style*="--amber"]', (el) => el.getAttribute("style"));
+  check("player: created deck uses its own colors", playerVars.includes("#7C5CBF") && playerVars.includes("#2E8B74"));
+
+  await page.locator('.q-block:has-text("REQUIRED · DRIVES PRICING") input[type="number"]').first().fill("7");
+  await page.locator(".q-block", { hasText: "How many hygienists" }).first().locator("input").fill("2");
+  await page.waitForTimeout(200);
+  await page.locator(".routebar .stop", { hasText: "Pricing" }).click();
+  await page.waitForTimeout(300);
+  let total = await page.$eval(".tval", (el) => el.textContent.trim());
+  check("player: band math (7 operatories → $600, 2 hygienists → $300)", total === "$900", total);
+
+  await page.locator(".q-block", { hasText: "aged-claims cleanup" }).first().locator(".toggle-opt").nth(1).click();
+  await page.waitForTimeout(200);
+  total = await page.$eval(".tval", (el) => el.textContent.trim());
+  check("player: surcharge adds exactly $250 to its own service", total === "$1,150", total);
+
+  await page.locator(".q-block", { hasText: "How many hygienists" }).first().locator("input").fill("5");
+  await page.waitForTimeout(200);
+  total = await page.$eval(".tval", (el) => el.textContent.trim());
+  check("player: alternate-driver band change (5 hygienists → $450)", total === "$1,300", total);
+
+  // Deselecting removes that service's slide, shifting Pricing's index — re-navigate.
+  await page.locator(".chip", { hasText: "Patient Scheduling Support" }).click();
+  await page.waitForTimeout(200);
+  const hygVisible = await page.locator(".q-block", { hasText: "How many hygienists" }).count();
+  await page.locator(".routebar .stop", { hasText: "Pricing" }).click();
+  await page.waitForTimeout(300);
+  total = await page.$eval(".tval", (el) => el.textContent.trim());
+  check("player: tier-3 gating + pricing after deselect", hygVisible === 0 && total === "$850", `q=${hygVisible} total=${total}`);
+  await page.screenshot({ path: `${OUT}/player-pricing.png`, fullPage: true });
+}
+
+async function verifyHomeAndClone() {
+  const names = await homeDeckNames();
+  check("home: created deck listed alongside the seeded three", names.includes(DECK_NAME) && names.length >= 4, names.join(", "));
+  const badge = await page.$$eval(".deck-card", (els) => {
+    const card = els.find((el) => el.querySelector(".dc-name")?.textContent === "Harbor Lane Dental");
+    return card ? getComputedStyle(card.querySelector(".dc-badge")).backgroundImage : "NOT FOUND";
+  });
+  check("home: created deck badge uses its own colors", badge.includes("46, 139, 116") && badge.includes("124, 92, 191"), badge);
+  await page.screenshot({ path: `${OUT}/home.png`, fullPage: true });
+
+  await page.click(".new-deck-btn");
+  await page.waitForSelector(".builder-blank-card");
+  await page.locator(".deck-card", { hasText: "Meridian Property Partners" }).click();
+  await page.waitForSelector(".builder-form-pane");
+  const form = page.locator(".builder-form-pane");
+  const clonedName = await form.locator(".q-block", { hasText: "Company / deck name" }).locator('input[type="text"]').inputValue();
+  await form.locator(".builder-step-chip", { hasText: "Services" }).click();
+  const clonedSvcCount = await form.locator(".builder-svc-card").count();
+  check("wizard: clone-from-existing prefills (Meridian, 4 services)", clonedName === "Meridian Property Partners" && clonedSvcCount === 4);
+}
+
+// ---------- run ----------
+await login();
+const names = await homeDeckNames();
+if (names.includes(DECK_NAME)) {
+  console.log(`"${DECK_NAME}" already exists — skipping creation, running behavior checks only (idempotent re-run).`);
+} else {
+  await createViaWizard();
+}
+await verifyDeckBehavior();
+await verifyHomeAndClone();
+
+console.log("\nPage errors:", pageErrors.length ? pageErrors : "none");
+const failed = results.filter((r) => !r.ok);
+console.log(failed.length ? `${failed.length} CHECK(S) FAILED` : `ALL ${results.length} CHECKS PASSED`);
+await browser.close();
+process.exit(failed.length || pageErrors.length ? 1 : 0);
