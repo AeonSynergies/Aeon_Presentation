@@ -28,11 +28,14 @@ log() { echo "==> $*"; }
 aws_() { aws --region "$REGION" "$@"; }
 
 # Polls an App Runner service until it's RUNNING, logging the status each check (so a
-# stuck run is visible in the log instead of just going silent) and giving up loudly
-# after ~15 minutes or a terminal failure state — rather than looping on `= "RUNNING"`
-# forever, which is what actually happened here: a service that never reached RUNNING
-# just burned the entire 45-minute job timeout in silence, with the real status (visible
-# only via a live `describe-service`) never making it into the log at all.
+# stuck run is visible in the log instead of just going silent), and giving up — via
+# return 1, not exit — after ~15 minutes or a terminal failure state, rather than looping
+# on `= "RUNNING"` forever, which is what actually happened here: a service that never
+# reached RUNNING just burned the entire 45-minute job timeout in silence, with the real
+# status (visible only via a live `describe-service`) never making it into the log at
+# all. Returns non-zero instead of exiting so callers that have a recovery path (see
+# ensure_apprunner_service_usable below) can act on the failure instead of the whole
+# script dying here.
 wait_for_apprunner_service() {
   local service_arn="$1" label="$2"
   local max_attempts=60 attempt=0 status
@@ -43,17 +46,87 @@ wait_for_apprunner_service() {
       return 0
     fi
     if [ "$status" = "CREATE_FAILED" ] || [ "$status" = "DELETE_FAILED" ]; then
-      echo "App Runner service $label ended up in $status, not RUNNING — giving up rather than waiting out the job timeout." >&2
-      echo "Check the AWS console (App Runner -> $label -> Logs, both deployment and application logs) for why." >&2
-      exit 1
+      log "$label ended up in $status, not RUNNING"
+      return 1
     fi
     attempt=$((attempt + 1))
     if [ "$attempt" -ge "$max_attempts" ]; then
-      echo "App Runner service $label did not reach RUNNING after $((max_attempts * 15 / 60)) minutes (still $status) — giving up so this fails loudly instead of eating the whole job timeout." >&2
-      exit 1
+      log "$label did not reach RUNNING after $((max_attempts * 15 / 60)) minutes (still $status)"
+      return 1
     fi
     sleep 15
   done
+}
+
+# Hard-fails the whole script if the service doesn't reach RUNNING. Used right after a
+# fresh create/redeploy/update, where there's no recovery path left to try — unlike
+# ensure_apprunner_service_usable below, which handles a service found already broken.
+require_apprunner_running() {
+  local service_arn="$1" label="$2"
+  if ! wait_for_apprunner_service "$service_arn" "$label"; then
+    echo "App Runner service $label did not reach RUNNING — giving up rather than waiting out the job timeout." >&2
+    echo "Check the AWS console (App Runner -> $label -> Logs, both deployment and application logs) for why." >&2
+    exit 1
+  fi
+}
+
+# Looks up a service by name. list-services conveniently reports Status too, so this
+# covers what would otherwise be a separate describe-service call. Echoes "ARN STATUS",
+# or nothing if no service with this name exists.
+apprunner_find_service() {
+  local name="$1"
+  aws_ apprunner list-services \
+    --query "ServiceSummaryList[?ServiceName=='${name}'].[ServiceArn,Status] | [0]" --output text
+}
+
+# Deletes a service and waits for the delete to actually finish, so the caller can safely
+# create a replacement in its place afterward.
+delete_apprunner_service() {
+  local service_arn="$1" label="$2"
+  log "Deleting ${label} and waiting for the delete to finish"
+  aws_ apprunner delete-service --service-arn "$service_arn" >/dev/null
+  local attempt=0 status
+  while true; do
+    status="$(aws_ apprunner list-services --query "ServiceSummaryList[?ServiceArn=='${service_arn}'].Status | [0]" --output text)"
+    if [ -z "$status" ] || [ "$status" = "None" ] || [ "$status" = "DELETED" ]; then
+      log "${label} delete finished"
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 40 ]; then
+      echo "${label} was still ${status} after 10 minutes of trying to delete it — giving up." >&2
+      exit 1
+    fi
+    log "${label} delete in progress (status: ${status})"
+    sleep 15
+  done
+}
+
+# Given a service that list-services already found by name, decides whether it's safe to
+# StartDeployment on it (only works when it's RUNNING). A service can exist but be
+# unusable: still finishing a prior operation, or — as happened here — stuck in
+# CREATE_FAILED because a previous run's wait loop hung and the job got killed before it
+# could tell. Waits out an in-flight operation first; anything that isn't RUNNING after
+# that gets deleted so the caller creates a clean replacement instead of calling
+# StartDeployment on a service that can't accept one. Echoes the service's
+# StatusChangeReason (if the API reports one) so the actual cause shows up in the log.
+ensure_apprunner_service_usable() {
+  local service_arn="$1" label="$2" status="$3"
+  if [ "$status" = "OPERATION_IN_PROGRESS" ]; then
+    log "${label} is mid-operation — waiting for it to settle before deciding what to do"
+    if wait_for_apprunner_service "$service_arn" "$label"; then
+      return 0
+    fi
+    status="$(aws_ apprunner describe-service --service-arn "$service_arn" --query 'Service.Status' --output text)"
+  fi
+  if [ "$status" = "RUNNING" ]; then
+    return 0
+  fi
+  local reason
+  reason="$(aws_ apprunner describe-service --service-arn "$service_arn" --query 'Service.StatusChangeReason' --output text 2>/dev/null || echo "")"
+  log "${label} exists but is ${status} (reason: ${reason:-none reported}), not RUNNING — StartDeployment won't work on it"
+  delete_apprunner_service "$service_arn" "$label"
+  return 1
 }
 
 ACCOUNT_ID="$(aws_ sts get-caller-identity --query Account --output text)"
@@ -341,8 +414,16 @@ docker push "${ECR_API_URI}:${GIT_SHA}"
 # ============================================================
 # api App Runner service (create once, redeploy on subsequent runs)
 # ============================================================
-API_SERVICE_ARN="$(aws_ apprunner list-services --query "ServiceSummaryList[?ServiceName=='${PROJECT}-api'].ServiceArn | [0]" --output text)"
-if [ -z "$API_SERVICE_ARN" ] || [ "$API_SERVICE_ARN" = "None" ]; then
+API_SERVICE_INFO="$(apprunner_find_service "${PROJECT}-api")"
+API_SERVICE_ARN="$(awk '{print $1}' <<< "$API_SERVICE_INFO")"
+API_SERVICE_STATUS="$(awk '{print $2}' <<< "$API_SERVICE_INFO")"
+if [ "$API_SERVICE_ARN" = "None" ] || [ -z "$API_SERVICE_ARN" ]; then
+  API_SERVICE_ARN=""
+elif ! ensure_apprunner_service_usable "$API_SERVICE_ARN" "${PROJECT}-api" "$API_SERVICE_STATUS"; then
+  API_SERVICE_ARN=""
+fi
+
+if [ -z "$API_SERVICE_ARN" ]; then
   log "Creating App Runner service ${PROJECT}-api"
   SRC_CONFIG_FILE="$(mktemp)"
   cat > "$SRC_CONFIG_FILE" <<EOF
@@ -371,7 +452,7 @@ else
   log "Redeploying ${PROJECT}-api"
   aws_ apprunner start-deployment --service-arn "$API_SERVICE_ARN" >/dev/null
 fi
-wait_for_apprunner_service "$API_SERVICE_ARN" "${PROJECT}-api"
+require_apprunner_running "$API_SERVICE_ARN" "${PROJECT}-api"
 API_URL="https://$(aws_ apprunner describe-service --service-arn "$API_SERVICE_ARN" --query 'Service.ServiceUrl' --output text)"
 log "api service URL: $API_URL"
 
@@ -386,8 +467,16 @@ docker push "${ECR_WEB_URI}:${GIT_SHA}"
 # ============================================================
 # web App Runner service
 # ============================================================
-WEB_SERVICE_ARN="$(aws_ apprunner list-services --query "ServiceSummaryList[?ServiceName=='${PROJECT}-web'].ServiceArn | [0]" --output text)"
-if [ -z "$WEB_SERVICE_ARN" ] || [ "$WEB_SERVICE_ARN" = "None" ]; then
+WEB_SERVICE_INFO="$(apprunner_find_service "${PROJECT}-web")"
+WEB_SERVICE_ARN="$(awk '{print $1}' <<< "$WEB_SERVICE_INFO")"
+WEB_SERVICE_STATUS="$(awk '{print $2}' <<< "$WEB_SERVICE_INFO")"
+if [ "$WEB_SERVICE_ARN" = "None" ] || [ -z "$WEB_SERVICE_ARN" ]; then
+  WEB_SERVICE_ARN=""
+elif ! ensure_apprunner_service_usable "$WEB_SERVICE_ARN" "${PROJECT}-web" "$WEB_SERVICE_STATUS"; then
+  WEB_SERVICE_ARN=""
+fi
+
+if [ -z "$WEB_SERVICE_ARN" ]; then
   log "Creating App Runner service ${PROJECT}-web"
   WEB_SERVICE_ARN="$(aws_ apprunner create-service \
     --service-name "${PROJECT}-web" \
@@ -398,7 +487,7 @@ else
   log "Redeploying ${PROJECT}-web"
   aws_ apprunner start-deployment --service-arn "$WEB_SERVICE_ARN" >/dev/null
 fi
-wait_for_apprunner_service "$WEB_SERVICE_ARN" "${PROJECT}-web"
+require_apprunner_running "$WEB_SERVICE_ARN" "${PROJECT}-web"
 WEB_URL="https://$(aws_ apprunner describe-service --service-arn "$WEB_SERVICE_ARN" --query 'Service.ServiceUrl' --output text)"
 log "web service URL: $WEB_URL"
 
@@ -424,7 +513,7 @@ if [ "$CURRENT_WEB_ORIGIN" != "$WEB_URL" ]; then
     \"AuthenticationConfiguration\": {\"AccessRoleArn\": \"${ECR_ACCESS_ROLE_ARN}\"},
     \"AutoDeploymentsEnabled\": false
   }" >/dev/null
-  wait_for_apprunner_service "$API_SERVICE_ARN" "${PROJECT}-api"
+  require_apprunner_running "$API_SERVICE_ARN" "${PROJECT}-api"
 fi
 
 echo ""
