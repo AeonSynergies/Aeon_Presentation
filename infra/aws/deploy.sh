@@ -320,14 +320,31 @@ ECR_ACCESS_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT}-apprunner-ecr-ac
 
 ensure_role "${PROJECT}-apprunner-instance" "tasks.apprunner.amazonaws.com"
 INSTANCE_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT}-apprunner-instance"
+# Both params are SecureString, so reading them at runtime (App Runner's
+# RuntimeEnvironmentSecrets injection, done by this instance role before the container
+# ever starts) needs kms:Decrypt on the key that encrypted them, not just ssm:GetParameter
+# — a very easy permission to forget, and one that fails silently from this script's
+# point of view: the deployment just dies with Status=CREATE_FAILED and an empty
+# StatusChangeReason, since App Runner never gets far enough to run (or log) the
+# container. Scoped via ViaService instead of a hardcoded key ARN so it works with
+# whatever key SSM used (the account default alias/aws/ssm unless overridden) without an
+# extra lookup call.
 SSM_POLICY_DOC=$(cat <<EOF
 {
   "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Action": ["ssm:GetParameters", "ssm:GetParameter"],
-    "Resource": ["${DB_PARAM_ARN}", "${JWT_PARAM_ARN}"]
-  }]
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["ssm:GetParameters", "ssm:GetParameter"],
+      "Resource": ["${DB_PARAM_ARN}", "${JWT_PARAM_ARN}"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": "kms:Decrypt",
+      "Resource": "*",
+      "Condition": {"StringEquals": {"kms:ViaService": "ssm.${REGION}.amazonaws.com"}}
+    }
+  ]
 }
 EOF
 )
