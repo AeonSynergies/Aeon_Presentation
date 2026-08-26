@@ -6,11 +6,13 @@ export function StepReview({
   onCreate,
   creating,
   serverError,
+  editing = false,
 }: {
   deck: DeckConfig;
   onCreate: () => void;
   creating: boolean;
   serverError: string | null;
+  editing?: boolean;
 }) {
   const issues = validateDraft(deck);
   const tier2 = deck.discoveryQuestions.filter((q) => !q.relatedService && !q.surchargeFor).length;
@@ -20,8 +22,8 @@ export function StepReview({
   return (
     <>
       <p className="builder-step-intro">
-        Final check before the deck is created. Use the preview's arrows to click through every slide — it's the exact renderer the
-        presentation uses.
+        Final check before the deck is {editing ? "updated" : "created"}. Use the preview's arrows to click through every slide — it's
+        the exact renderer the presentation uses.
       </p>
 
       <div className="builder-subcard">
@@ -51,7 +53,7 @@ export function StepReview({
       {issues.length > 0 && (
         <div className="builder-issues">
           <div className="q-label" style={{ marginBottom: 8 }}>
-            Fix before creating:
+            Fix before {editing ? "saving" : "creating"}:
           </div>
           <ul>
             {issues.map((iss, i) => (
@@ -64,10 +66,12 @@ export function StepReview({
       {serverError && <div className="auth-error">{serverError}</div>}
 
       <button type="button" className="btn-primary" disabled={issues.length > 0 || creating} onClick={onCreate}>
-        {creating ? "Creating deck…" : "Create deck"}
+        {creating ? (editing ? "Saving changes…" : "Creating deck…") : editing ? "Save changes" : "Create deck"}
       </button>
       <div className="q-hint" style={{ marginTop: 10 }}>
-        Creating saves the deck to the database and opens it in the real player — it appears on Home for everyone immediately.
+        {editing
+          ? "Saving updates the deck in place — its URL stays the same, and anyone with it open sees the new version on next load."
+          : "Creating saves the deck to the database and opens it in the real player — it appears on Home for everyone immediately."}
       </div>
     </>
   );

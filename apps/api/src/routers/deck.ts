@@ -3,7 +3,7 @@ import type { DeckConfig } from "@aeon/types";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { deckConfigSchema, slugifyCompanyName } from "../lib/deck-config-schema.js";
-import { protectedProcedure, router } from "../trpc.js";
+import { protectedProcedure, requirePermission, router } from "../trpc.js";
 
 export const deckRouter = router({
   list: protectedProcedure.query(async () => {
@@ -43,7 +43,10 @@ export const deckRouter = router({
   // trap that hit TS2589 with Prisma's JsonValue — runtime validation is identical,
   // and the failure mode of a stale/hand-crafted client is a clean BAD_REQUEST with
   // zod's issue list instead of a silently-mistyped deck in the database.
-  create: protectedProcedure.input(z.object({ config: z.unknown() })).mutation(async ({ input }) => {
+  // Server-side enforcement, independent of the frontend: requirePermission runs before
+  // the handler, so a direct call from a role without "createDeck" (Operations Manager)
+  // never reaches parsing/DB work at all — it gets a clean FORBIDDEN.
+  create: requirePermission("createDeck").input(z.object({ config: z.unknown() })).mutation(async ({ input }) => {
     const parsed = deckConfigSchema.safeParse(input.config);
     if (!parsed.success) {
       const details = parsed.error.issues
@@ -76,4 +79,30 @@ export const deckRouter = router({
     });
     return { slug: deck.slug, dbId: deck.id };
   }),
+
+  // Edit Deck: same validation as create, but against an existing row and keeping its
+  // slug/id fixed — editing a deck must not change its URL out from under anyone who has
+  // it open or bookmarked.
+  update: requirePermission("editDeck")
+    .input(z.object({ slug: z.string(), config: z.unknown() }))
+    .mutation(async ({ input }) => {
+      const existing = await prisma.deck.findUnique({ where: { slug: input.slug } });
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Deck not found" });
+
+      const parsed = deckConfigSchema.safeParse(input.config);
+      if (!parsed.success) {
+        const details = parsed.error.issues
+          .map((iss) => (iss.path.length ? `${iss.path.join(".")}: ${iss.message}` : iss.message))
+          .join("; ");
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Invalid deck config — ${details}` });
+      }
+      const config = parsed.data;
+      config.id = existing.slug;
+
+      const deck = await prisma.deck.update({
+        where: { id: existing.id },
+        data: { companyName: config.companyName, industry: config.industry, config: config as object },
+      });
+      return { slug: deck.slug, dbId: deck.id };
+    }),
 });

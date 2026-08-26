@@ -1,3 +1,4 @@
+import { can } from "@aeon/types";
 import { Link } from "@tanstack/react-router";
 import { useAuth } from "~/hooks/useAuth";
 
@@ -13,6 +14,11 @@ export function Header() {
         <Link to="/" className="nav-item" activeProps={{ className: "nav-item active" }} activeOptions={{ exact: true }}>
           Home
         </Link>
+        {user && can(user.role, "manageUsers") && (
+          <Link to="/team" className="nav-item" activeProps={{ className: "nav-item active" }}>
+            Team
+          </Link>
+        )}
       </nav>
       {user && (
         <button

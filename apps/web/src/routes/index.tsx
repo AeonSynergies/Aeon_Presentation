@@ -1,6 +1,8 @@
+import { can } from "@aeon/types";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Header } from "~/components/layout/Header";
 import { RequireAuth } from "~/components/layout/RequireAuth";
+import { useAuth } from "~/hooks/useAuth";
 import { trpc } from "~/lib/trpc";
 
 export const Route = createFileRoute("/")({
@@ -18,7 +20,9 @@ function HomePage() {
 
 function HomePortal() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { data: decks, isLoading } = trpc.deck.list.useQuery();
+  const canCreate = !!user && can(user.role, "createDeck");
 
   return (
     <div className="home-view">
@@ -30,9 +34,11 @@ function HomePortal() {
         <h1 className="home-title" style={{ margin: 0 }}>
           Your decks
         </h1>
-        <Link to="/decks/new" className="new-deck-btn">
-          ＋ New Deck
-        </Link>
+        {canCreate && (
+          <Link to="/decks/new" className="new-deck-btn">
+            ＋ New Deck
+          </Link>
+        )}
       </div>
       <p className="home-sub">Pick a deck to present, capture Discovery Notes, and quote live.</p>
 

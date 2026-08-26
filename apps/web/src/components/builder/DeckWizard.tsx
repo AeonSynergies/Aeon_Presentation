@@ -101,15 +101,22 @@ function StartScreen({ onPick }: { onPick: (source: DeckConfig | null) => void }
   );
 }
 
-export function DeckWizard() {
+// editingSlug + initialDraft turn the same wizard into an editor for an existing deck:
+// the start screen is skipped, Review calls deck.update instead of deck.create, and
+// "Discard" returns to the deck itself rather than Home. One component, one code path —
+// editing isn't a fork of creating, just a different save target.
+export function DeckWizard({ editingSlug, initialDraft }: { editingSlug?: string; initialDraft?: DeckConfig }) {
   const navigate = useNavigate();
   const utils = trpc.useUtils();
-  const [draft, setDraft] = React.useState<DeckConfig | null>(null);
+  const editing = !!editingSlug;
+  const [draft, setDraft] = React.useState<DeckConfig | null>(initialDraft ?? null);
   const [stepIdx, setStepIdx] = React.useState(0);
   const [focusSlide, setFocusSlide] = React.useState<string | null>(null);
   const [serverError, setServerError] = React.useState<string | null>(null);
 
   const createDeck = trpc.deck.create.useMutation();
+  const updateDeck = trpc.deck.update.useMutation();
+  const saving = editing ? updateDeck.isPending : createDeck.isPending;
 
   const update: UpdateDraft = React.useCallback((mutate) => {
     setDraft((prev) => {
@@ -121,25 +128,38 @@ export function DeckWizard() {
   }, []);
 
   if (!draft) {
+    if (editing) return null; // caller (the edit route) supplies initialDraft once loaded
     return <StartScreen onPick={(source) => setDraft(source ?? blankDeck())} />;
   }
 
   const step = STEPS[stepIdx];
   const targetSlide = focusSlide ?? STEP_SLIDE[step.key] ?? null;
 
+  const discard = () => {
+    if (editing && editingSlug) navigate({ to: "/decks/$slug", params: { slug: editingSlug } });
+    else navigate({ to: "/" });
+  };
+
   const goTo = (idx: number) => {
     setStepIdx(Math.max(0, Math.min(STEPS.length - 1, idx)));
     setFocusSlide(null);
   };
 
-  const onCreate = async () => {
+  const onSave = async () => {
     setServerError(null);
     try {
-      const result = (await createDeck.mutateAsync({ config: draft })) as { slug: string };
-      await utils.deck.list.invalidate();
-      navigate({ to: "/decks/$slug", params: { slug: result.slug } });
+      if (editing && editingSlug) {
+        await updateDeck.mutateAsync({ slug: editingSlug, config: draft });
+        await utils.deck.getBySlug.invalidate({ slug: editingSlug });
+        await utils.deck.list.invalidate();
+        navigate({ to: "/decks/$slug", params: { slug: editingSlug } });
+      } else {
+        const result = (await createDeck.mutateAsync({ config: draft })) as { slug: string };
+        await utils.deck.list.invalidate();
+        navigate({ to: "/decks/$slug", params: { slug: result.slug } });
+      }
     } catch (err) {
-      setServerError(err instanceof Error ? err.message : "Creating the deck failed.");
+      setServerError(err instanceof Error ? err.message : `${editing ? "Saving" : "Creating"} the deck failed.`);
     }
   };
 
@@ -148,10 +168,11 @@ export function DeckWizard() {
       <div className="builder-form-pane">
         <div className="builder-form-head">
           <div className="builder-form-title">
-            New deck{draft.companyName ? `: ${draft.companyName}` : ""}
-            <Link to="/" className="back-home-btn" style={{ marginLeft: "auto" }}>
+            {editing ? "Edit deck" : "New deck"}
+            {draft.companyName ? `: ${draft.companyName}` : ""}
+            <button type="button" className="back-home-btn" style={{ marginLeft: "auto" }} onClick={discard}>
               ✕ Discard
-            </Link>
+            </button>
           </div>
           <div className="builder-steps">
             {STEPS.map((s, i) => (
@@ -175,7 +196,7 @@ export function DeckWizard() {
           {step.key === "content" && <StepContent deck={draft} update={update} onFocusSlide={setFocusSlide} />}
           {step.key === "discovery" && <StepDiscovery deck={draft} update={update} />}
           {step.key === "review" && (
-            <StepReview deck={draft} onCreate={() => void onCreate()} creating={createDeck.isPending} serverError={serverError} />
+            <StepReview deck={draft} onCreate={() => void onSave()} creating={saving} serverError={serverError} editing={editing} />
           )}
         </div>
 

@@ -24,6 +24,7 @@ jobs:
     timeout-minutes: 45
     outputs:
       web_url: ${{ steps.deploy.outputs.web_url }}
+      api_url: ${{ steps.deploy.outputs.api_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -56,19 +57,19 @@ jobs:
             echo "- web: $WEB_URL"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "web_url=$WEB_URL" >> "$GITHUB_OUTPUT"
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
         env:
           AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
 
-  # Live end-to-end check against the deployment that just went out — signs in and
-  # exercises the Deck Builder wizard + player through a real browser (see
-  # infra/e2e/wizard-e2e.mjs). Idempotent: first run creates the wizard's test deck
-  # through the UI; later runs verify it still behaves (pricing math, surcharges,
-  # Discovery tier gating, per-deck theming). This is the "verify live, not just a green
-  # build" gate — a deploy whose app is broken fails here instead of looking green.
+  # Live end-to-end checks against the deployment that just went out, through a real
+  # browser. Both scripts are idempotent (see their own headers) so re-deploys don't pile
+  # up duplicate test data — this is the permanent "verify live, not just a green build"
+  # gate: a deploy whose app is broken (wizard, pricing, or role enforcement) fails here
+  # instead of looking green.
   live-e2e:
     needs: deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -87,6 +88,17 @@ jobs:
         run: node wizard-e2e.mjs
         env:
           BASE_URL: ${{ needs.deploy.outputs.web_url }}
+
+      # Team & Role Management (Phase 2c): creates one QA test user per non-admin role
+      # through the real Team Management screen (Admin), then confirms — via raw HTTP
+      # calls to the API, bypassing the web UI entirely — that every permission each role
+      # lacks is genuinely rejected with FORBIDDEN, and everything it has succeeds.
+      - name: Run live role-enforcement E2E against the deployment
+        working-directory: infra/e2e
+        run: node role-enforcement-e2e.mjs
+        env:
+          BASE_URL: ${{ needs.deploy.outputs.web_url }}
+          API_URL: ${{ needs.deploy.outputs.api_url }}
 
       - name: Upload screenshots on failure
         if: failure()

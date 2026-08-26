@@ -9,13 +9,18 @@ This repository is being rebuilt from a single-file HTML prototype
 `CLAUDE.md` for the full project brief and `Aeon_Platform_Requirements_Spec.md` for the
 target feature set across all phases.
 
-**Current phase: Phase 2b** — the Deck Builder: new decks are created through the app
-itself at `/decks/new`, via a stepped wizard (Basics → Pricing Model → Services → Team →
-Content → Discovery Questions → Review) with a live preview that renders the real slide
-components. Cloning an existing deck is the default starting point; blank-slate also
-works. Deployed pushes run a post-deploy live E2E (`infra/e2e/wizard-e2e.mjs`) that
-exercises the wizard and verifies pricing math, surcharges, and Discovery tier gating
-against the real deployment.
+**Current phase: Phase 2c** — Team & Role Management, for real: the four-role permission
+matrix (Sales Executive, Operations Manager, BD Manager, Admin) is enforced server-side on
+every relevant tRPC procedure (`requirePermission()` in `apps/api/src/trpc.ts`, reading
+the same `can()` matrix from `@aeon/types` the frontend uses to decide what to show) —
+a hidden button was never the enforcement, and now nothing is. Admins manage accounts at
+`/team` (list, add, change role, remove); accounts are created there directly (no
+email-invite flow yet). Edit Deck, Export (rate-card CSV), and Send to Client are real,
+role-gated actions on the deck player. Deployed pushes run two post-deploy live E2E
+suites (`infra/e2e/`): `wizard-e2e.mjs` (Phase 2b) and `role-enforcement-e2e.mjs`, which
+creates one QA user per role through the real Team Management screen and then calls the
+API directly — bypassing the UI — to confirm every permission each role lacks is actually
+rejected (FORBIDDEN) and everything it has actually works, against the real deployment.
 
 ## Monorepo layout
 

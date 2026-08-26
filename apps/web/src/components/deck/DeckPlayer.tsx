@@ -1,18 +1,54 @@
+import { can } from "@aeon/types";
 import type { DeckConfig } from "@aeon/types";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
 import { DiscoveryNotesPanel } from "~/components/discovery/DiscoveryNotesPanel";
+import { useAuth } from "~/hooks/useAuth";
 import { useDeckSession } from "~/hooks/useDeckSession";
+import { trpc } from "~/lib/trpc";
 import { DeckLogo } from "./Logo";
+import { SendToClientDialog } from "./SendToClientDialog";
 import { deckColorVars } from "./deckColors";
 import { getSlides } from "./getSlides";
 
 export function DeckPlayer({ deck, dbId }: { deck: DeckConfig; dbId: string }) {
-  const { state, setState, clientName, setClientName } = useDeckSession(deck, dbId);
+  const { user } = useAuth();
+  const { state, setState, clientName, setClientName, meetingId } = useDeckSession(deck, dbId);
   const [idx, setIdx] = React.useState(0);
   const [notesOpen, setNotesOpen] = React.useState(true);
+  const [sendDialogOpen, setSendDialogOpen] = React.useState(false);
+  const [exportError, setExportError] = React.useState<string | null>(null);
+  const [exporting, setExporting] = React.useState(false);
   const stageRef = React.useRef<HTMLDivElement>(null);
   const slideContentRef = React.useRef<HTMLDivElement>(null);
+  const utils = trpc.useUtils();
+
+  const role = user?.role ?? "";
+
+  // Export runs on demand (not a live query) — pull the CSV, hand it to the browser as a
+  // download. requirePermission("export") is what actually stops a role without it; this
+  // is just the client-side trigger + file hand-off.
+  async function onExport() {
+    if (!meetingId) return;
+    setExportError(null);
+    setExporting(true);
+    try {
+      const res = await utils.meeting.export.fetch({ id: meetingId });
+      const blob = new Blob([res.csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = res.filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const slides = React.useMemo(() => getSlides(deck, state), [deck, state]);
   const clampedIdx = Math.min(idx, slides.length - 1);
@@ -70,11 +106,31 @@ export function DeckPlayer({ deck, dbId }: { deck: DeckConfig; dbId: string }) {
             <button className="icon-btn chrome-hide-present" onClick={() => setNotesOpen((v) => !v)}>
               {notesOpen ? "Hide" : "Show"} Discovery Notes
             </button>
+            {can(role, "editDeck") && (
+              <Link to="/decks/$slug/edit" params={{ slug: deck.id }} className="icon-btn chrome-hide-present">
+                ✎ Edit Deck
+              </Link>
+            )}
+            {can(role, "export") && (
+              <button className="icon-btn chrome-hide-present" onClick={() => void onExport()} disabled={exporting || !meetingId}>
+                {exporting ? "Exporting…" : "⬇ Export Rate Card"}
+              </button>
+            )}
+            {can(role, "sendToClient") && (
+              <button className="icon-btn chrome-hide-present" onClick={() => setSendDialogOpen(true)} disabled={!meetingId}>
+                ✉ Send to Client
+              </button>
+            )}
             <button className="icon-btn" id="presentBtn" onClick={toggleFullscreen}>
               ⛶ PRESENT
             </button>
           </div>
         </div>
+        {exportError && (
+          <div className="chrome-hide-present" style={{ padding: "8px 24px" }}>
+            <div className="auth-error">{exportError}</div>
+          </div>
+        )}
 
         <div className="viewport" onClick={onViewportClick}>
           <button className="nav-arrow prev chrome-hide-present" disabled={clampedIdx === 0} onClick={() => setIdx((i) => Math.max(i - 1, 0))}>
@@ -114,6 +170,14 @@ export function DeckPlayer({ deck, dbId }: { deck: DeckConfig; dbId: string }) {
         <div className="chrome-hide-present" style={{ width: 480, flexShrink: 0, borderLeft: "1px solid var(--line)", background: "var(--panel)" }}>
           <DiscoveryNotesPanel deck={deck} state={state} setState={setState} clientName={clientName} setClientName={setClientName} />
         </div>
+      )}
+
+      {sendDialogOpen && meetingId && (
+        <SendToClientDialog
+          meetingId={meetingId}
+          defaultSubject={`${deck.companyName} Proposal — ${clientName || "your organization"}`}
+          onClose={() => setSendDialogOpen(false)}
+        />
       )}
     </div>
   );

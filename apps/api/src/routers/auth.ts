@@ -45,18 +45,10 @@ export const authRouter = router({
       return { accessToken, user: { id: user.id, email: user.email, name: user.name, role: user.role } };
     }),
 
-  register: publicProcedure
-    .input(z.object({ email: z.email(), password: z.string().min(8), name: z.string().min(1) }))
-    .mutation(async ({ input, ctx }) => {
-      const existing = await prisma.user.findUnique({ where: { email: input.email.toLowerCase() } });
-      if (existing) throw new TRPCError({ code: "CONFLICT", message: "An account with that email already exists" });
-      const passwordHash = await bcrypt.hash(input.password, 10);
-      const user = await prisma.user.create({
-        data: { email: input.email.toLowerCase(), passwordHash, name: input.name },
-      });
-      const accessToken = await issueSession(ctx.res, user);
-      return { accessToken, user: { id: user.id, email: user.email, name: user.name, role: user.role } };
-    }),
+  // No public self-registration: accounts are created by an Admin via Team Management
+  // (user.create), which is how role assignment stays meaningful. A public signup
+  // endpoint would let anyone hand themselves an account regardless of the role
+  // enforcement the rest of this phase builds — see routers/user.ts.
 
   refresh: publicProcedure.mutation(async ({ ctx }) => {
     const token = ctx.req.cookies?.[REFRESH_COOKIE_NAME];

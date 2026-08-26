@@ -23,10 +23,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = React.useState<"loading" | "authed" | "anonymous">("loading");
 
   const loginMutation = trpc.auth.login.useMutation();
-  const registerMutation = trpc.auth.register.useMutation();
   const refreshMutation = trpc.auth.refresh.useMutation();
   const logoutMutation = trpc.auth.logout.useMutation();
-  void registerMutation;
 
   React.useEffect(() => {
     // On first load, try to silently exchange the httpOnly refresh cookie (if any) for a
