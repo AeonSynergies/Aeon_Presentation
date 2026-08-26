@@ -27,6 +27,35 @@ log() { echo "==> $*"; }
 
 aws_() { aws --region "$REGION" "$@"; }
 
+# Polls an App Runner service until it's RUNNING, logging the status each check (so a
+# stuck run is visible in the log instead of just going silent) and giving up loudly
+# after ~15 minutes or a terminal failure state — rather than looping on `= "RUNNING"`
+# forever, which is what actually happened here: a service that never reached RUNNING
+# just burned the entire 45-minute job timeout in silence, with the real status (visible
+# only via a live `describe-service`) never making it into the log at all.
+wait_for_apprunner_service() {
+  local service_arn="$1" label="$2"
+  local max_attempts=60 attempt=0 status
+  while true; do
+    status="$(aws_ apprunner describe-service --service-arn "$service_arn" --query 'Service.Status' --output text)"
+    log "$label status: $status (check $((attempt + 1))/$max_attempts)"
+    if [ "$status" = "RUNNING" ]; then
+      return 0
+    fi
+    if [ "$status" = "CREATE_FAILED" ] || [ "$status" = "DELETE_FAILED" ]; then
+      echo "App Runner service $label ended up in $status, not RUNNING — giving up rather than waiting out the job timeout." >&2
+      echo "Check the AWS console (App Runner -> $label -> Logs, both deployment and application logs) for why." >&2
+      exit 1
+    fi
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge "$max_attempts" ]; then
+      echo "App Runner service $label did not reach RUNNING after $((max_attempts * 15 / 60)) minutes (still $status) — giving up so this fails loudly instead of eating the whole job timeout." >&2
+      exit 1
+    fi
+    sleep 15
+  done
+}
+
 ACCOUNT_ID="$(aws_ sts get-caller-identity --query Account --output text)"
 log "Account: $ACCOUNT_ID  Region: $REGION"
 
@@ -342,9 +371,7 @@ else
   log "Redeploying ${PROJECT}-api"
   aws_ apprunner start-deployment --service-arn "$API_SERVICE_ARN" >/dev/null
 fi
-until [ "$(aws_ apprunner describe-service --service-arn "$API_SERVICE_ARN" --query 'Service.Status' --output text)" = "RUNNING" ]; do
-  sleep 15
-done
+wait_for_apprunner_service "$API_SERVICE_ARN" "${PROJECT}-api"
 API_URL="https://$(aws_ apprunner describe-service --service-arn "$API_SERVICE_ARN" --query 'Service.ServiceUrl' --output text)"
 log "api service URL: $API_URL"
 
@@ -371,9 +398,7 @@ else
   log "Redeploying ${PROJECT}-web"
   aws_ apprunner start-deployment --service-arn "$WEB_SERVICE_ARN" >/dev/null
 fi
-until [ "$(aws_ apprunner describe-service --service-arn "$WEB_SERVICE_ARN" --query 'Service.Status' --output text)" = "RUNNING" ]; do
-  sleep 15
-done
+wait_for_apprunner_service "$WEB_SERVICE_ARN" "${PROJECT}-web"
 WEB_URL="https://$(aws_ apprunner describe-service --service-arn "$WEB_SERVICE_ARN" --query 'Service.ServiceUrl' --output text)"
 log "web service URL: $WEB_URL"
 
@@ -399,9 +424,7 @@ if [ "$CURRENT_WEB_ORIGIN" != "$WEB_URL" ]; then
     \"AuthenticationConfiguration\": {\"AccessRoleArn\": \"${ECR_ACCESS_ROLE_ARN}\"},
     \"AutoDeploymentsEnabled\": false
   }" >/dev/null
-  until [ "$(aws_ apprunner describe-service --service-arn "$API_SERVICE_ARN" --query 'Service.Status' --output text)" = "RUNNING" ]; do
-    sleep 15
-  done
+  wait_for_apprunner_service "$API_SERVICE_ARN" "${PROJECT}-api"
 fi
 
 echo ""
