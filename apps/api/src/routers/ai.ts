@@ -104,6 +104,24 @@ export const aiRouter = router({
         // even if CloudWatch's capture cuts off the fuller dump that follows.
         console.error(`ai.draftDeck: Anthropic call failed [network error code: ${deepestErrnoCode(err) ?? "none found"}]`);
         console.error("ai.draftDeck: full error detail:", inspect(err, { depth: null }));
+
+        // TEMPORARY DIAGNOSTIC: a plain request to a different external host, through this
+        // exact same egress path (same container, same NAT Gateway, same VPC connector),
+        // right after the Anthropic call just failed. If THIS succeeds, the problem is
+        // specific to reaching Anthropic's IPs (possibly an MTU/PMTU blackhole on that
+        // route, or something else Anthropic-specific) rather than a general egress block —
+        // every generic AWS networking control was already confirmed open/correct.
+        try {
+          const start = Date.now();
+          const res = await fetch("https://api.github.com", { signal: AbortSignal.timeout(15_000) });
+          console.error(`ai.draftDeck: comparison request to api.github.com succeeded — status ${res.status}, ${Date.now() - start}ms`);
+        } catch (compareErr) {
+          console.error(
+            `ai.draftDeck: comparison request to api.github.com FAILED [network error code: ${deepestErrnoCode(compareErr) ?? "none found"}]`,
+            inspect(compareErr, { depth: null }),
+          );
+        }
+
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: err instanceof Error ? `AI drafting request failed: ${err.message}` : "AI drafting request failed.",
