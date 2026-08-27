@@ -70,6 +70,51 @@ jobs:
           # disabled (ai.draftDeck returns a clear "not configured" error) until it's added.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
+      # TEMPORARY — root-causing the "AI drafting request failed: Connection error." seen
+      # twice in a row in the live-e2e job. That message is just the Anthropic SDK's own
+      # generic wrapper for a fetch()-level failure (DNS/TCP/TLS all look identical from
+      # there); this step pulls the real underlying signal from three independent angles so
+      # the fix (if any) targets the right layer. Remove once root-caused.
+      - name: TEMP DIAGNOSTIC — AI drafting Connection error
+        if: always() && steps.deploy.outcome == 'success'
+        run: |
+          set +e
+          echo "## 1. api service CloudWatch logs (last 20 min, application + service streams)"
+          for GROUP in $(aws logs describe-log-groups --log-group-name-prefix "/aws/apprunner/aeon-api" --query 'logGroups[].logGroupName' --output text); do
+            echo "--- $GROUP ---"
+            aws logs tail "$GROUP" --since 20m --format short
+          done
+
+          echo
+          echo "## 2. ANTHROPIC_API_KEY SSM parameter metadata (no value — confirms it wasn't just rotated/recreated)"
+          aws ssm describe-parameters --parameter-filters "Key=Name,Values=/aeon/ANTHROPIC_API_KEY" \
+            --query 'Parameters[0].[Name,LastModifiedDate,Version]' --output table
+
+          echo
+          echo "## 3. NAT Gateway state (this is the api service's only outbound-internet path)"
+          aws ec2 describe-nat-gateways --filter "Name=tag:Name,Values=aeon-nat" \
+            --query 'NatGateways[].[NatGatewayId,State,FailureCode,FailureMessage]' --output table
+
+          echo
+          echo "## 4. App Runner VPC Connector state"
+          aws apprunner list-vpc-connectors --query "VpcConnectors[?VpcConnectorName=='aeon-connector'].[VpcConnectorName,Status]" --output table
+
+          echo
+          echo "## 5. Direct api.anthropic.com reachability + key check from THIS runner (general internet, NOT the api service's VPC path — isolates 'Anthropic/key side' from 'AWS network side')"
+          if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+            HTTP_CODE=$(curl -sS -o /tmp/anthropic-diag.json -w "%{http_code}" https://api.anthropic.com/v1/messages \
+              -H "content-type: application/json" -H "x-api-key: $ANTHROPIC_API_KEY" -H "anthropic-version: 2023-06-01" \
+              -d '{"model":"claude-sonnet-5","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}')
+            echo "HTTP status: $HTTP_CODE"
+            echo "Response body (key never appears in the response):"
+            cat /tmp/anthropic-diag.json
+          else
+            echo "ANTHROPIC_API_KEY not present in this step's env — skipping."
+          fi
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
   # Live end-to-end checks against the deployment that just went out, through a real
   # browser. Both scripts are idempotent (see their own headers) so re-deploys don't pile
   # up duplicate test data — this is the permanent "verify live, not just a green build"
