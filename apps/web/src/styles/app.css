@@ -1749,6 +1749,19 @@ select:focus {
   color: var(--fog);
   flex-shrink: 0;
 }
+.builder-pricing-mode-row {
+  display: flex;
+  gap: 18px;
+  margin-bottom: 10px;
+}
+.builder-pricing-mode-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--paper);
+  cursor: pointer;
+}
 .builder-report-note {
   font-size: 12px;
   color: var(--fog);

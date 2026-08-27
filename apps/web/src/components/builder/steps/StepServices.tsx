@@ -17,6 +17,16 @@ function findSurchargeQuestion(deck: DeckConfig, svc: DeckService) {
   return deck.discoveryQuestions.find((q) => q.id === svc.surcharge!.questionId);
 }
 
+// A service is "flat" exactly when it has one uncapped band — the same representation
+// the pricing engine and every seeded deck already use for a single price with no tiers.
+// This is purely a UI read of that shape, not a separate stored field: toggling the
+// Flat/Tiered choice below just rewrites priceBands into (or out of) that one-band shape,
+// so a deck that's always been flat (one band, upTo: null) reads as "Single flat price"
+// without anyone having touched it.
+function isFlatPricing(svc: DeckService): boolean {
+  return svc.priceBands.length === 1 && svc.priceBands[0].upTo === null;
+}
+
 function BandsEditor({
   deck,
   svcIdx,
@@ -31,11 +41,81 @@ function BandsEditor({
   onAiFieldReviewed: (key: string) => void;
 }) {
   const svc = deck.services[svcIdx];
+  const flat = isFlatPricing(svc);
+
+  const clearAiBadges = () => svc.priceBands.forEach((_, bi) => onAiFieldReviewed(`${svc.id}:${bi}`));
+
+  const switchToFlat = () => {
+    if (flat) return;
+    // The last tier is usually the service's "standard" ongoing price (and is already
+    // uncapped in most decks), so it's the more natural single price to keep — as
+    // opposed to the first tier, which is usually the smallest/introductory band.
+    const keepPrice = svc.priceBands[svc.priceBands.length - 1].price;
+    clearAiBadges();
+    update((d) => void (d.services[svcIdx].priceBands = [{ upTo: null, price: keepPrice }]));
+  };
+
+  const switchToTiered = () => {
+    if (!flat) return;
+    // Same operation "＋ Add band" already does: append a new uncapped band. The
+    // now-second-to-last band (the former flat price) is left with upTo: null too, same
+    // as clicking "Add band" on any deck today — the user fills in its real boundary,
+    // exactly the existing tiered-editing flow, not a new one.
+    clearAiBadges();
+    update((d) => void d.services[svcIdx].priceBands.push({ upTo: null, price: null }));
+  };
+
+  if (flat) {
+    const band = svc.priceBands[0];
+    const aiKey = `${svc.id}:0`;
+    const isAiSuggested = aiFields.has(aiKey);
+    return (
+      <Field label="Pricing structure">
+        <div className="builder-pricing-mode-row">
+          <label className="builder-pricing-mode-option">
+            <input type="radio" name={`pricing-mode-${svc.id}`} checked readOnly onClick={switchToFlat} />
+            Single flat price
+          </label>
+          <label className="builder-pricing-mode-option">
+            <input type="radio" name={`pricing-mode-${svc.id}`} checked={false} onChange={switchToTiered} />
+            Tiered / banded pricing
+          </label>
+        </div>
+        <div className="builder-band-row">
+          <span className="builder-band-label">$</span>
+          <input
+            type="number"
+            min={0}
+            placeholder="Custom Quote"
+            value={band.price === null ? "" : String(band.price)}
+            onChange={(e) => {
+              update((d) => void (d.services[svcIdx].priceBands[0].price = e.target.value === "" ? null : Number(e.target.value)));
+              onAiFieldReviewed(aiKey);
+            }}
+          />
+          <span className="builder-band-label">/ month</span>
+          {isAiSuggested && <span className="ai-badge" title="Populated by the AI draft — review before publishing.">✦ AI-suggested</span>}
+        </div>
+        <div className="q-hint">Leave the price empty for “Custom Quote”.</div>
+      </Field>
+    );
+  }
+
   return (
     <Field
-      label="Price bands (monthly $)"
+      label="Pricing structure"
       hint="Leave “up to” empty on the last band for an uncapped band; leave price empty for “Custom Quote”."
     >
+      <div className="builder-pricing-mode-row">
+        <label className="builder-pricing-mode-option">
+          <input type="radio" name={`pricing-mode-${svc.id}`} checked={false} onChange={switchToFlat} />
+          Single flat price
+        </label>
+        <label className="builder-pricing-mode-option">
+          <input type="radio" name={`pricing-mode-${svc.id}`} checked readOnly onClick={switchToTiered} />
+          Tiered / banded pricing
+        </label>
+      </div>
       {svc.priceBands.map((band, bi) => {
         const aiKey = `${svc.id}:${bi}`;
         const isAiSuggested = aiFields.has(aiKey);

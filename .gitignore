@@ -10,3 +10,4 @@ dist/
 .DS_Store
 /packages/database/prisma/generated/
 apps/web/src/routeTree.gen.ts
+infra/e2e/e2e-artifacts/

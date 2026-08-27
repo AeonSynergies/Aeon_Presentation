@@ -5,7 +5,7 @@ import { RequireAuth } from "~/components/layout/RequireAuth";
 import { useAuth } from "~/hooks/useAuth";
 import { trpc } from "~/lib/trpc";
 
-export const Route = createFileRoute("/decks/$slug/edit")({
+export const Route = createFileRoute("/decks/$slug_/edit")({
   component: EditDeckPage,
 });
 
