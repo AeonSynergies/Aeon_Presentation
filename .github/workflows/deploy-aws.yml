@@ -120,14 +120,34 @@ jobs:
           echo
           echo "## 6. Network ACLs for the VPC connector's actual subnets (NACLs are stateless — a custom one blocking the ephemeral-port return traffic on 443 produces this exact ETIMEDOUT signature even with an open security group)"
           CONNECTOR_ARN="$(aws apprunner list-vpc-connectors --query "VpcConnectors[?VpcConnectorName=='aeon-connector' && Status=='ACTIVE'].VpcConnectorArn | [0]" --output text)"
+          CONNECTOR_SUBNETS=""
           if [ -n "$CONNECTOR_ARN" ] && [ "$CONNECTOR_ARN" != "None" ]; then
-            for SUBNET in $(aws apprunner describe-vpc-connector --vpc-connector-arn "$CONNECTOR_ARN" --query 'VpcConnector.Subnets' --output text); do
+            CONNECTOR_SUBNETS="$(aws apprunner describe-vpc-connector --vpc-connector-arn "$CONNECTOR_ARN" --query 'VpcConnector.Subnets' --output text)"
+            for SUBNET in $CONNECTOR_SUBNETS; do
               echo "--- subnet $SUBNET ---"
               aws ec2 describe-network-acls --filters "Name=association.subnet-id,Values=$SUBNET" \
                 --query 'NetworkAcls[].Entries' --output json
             done
           else
             echo "Could not resolve an ACTIVE aeon-connector ARN — skipping NACL check."
+          fi
+
+          # SG and NACLs both confirmed open — the one thing never directly checked is
+          # whether the connector's OWN specific subnets actually route 0.0.0.0/0 at the
+          # NAT Gateway (deploy.sh associates every default-VPC subnet with the NAT-routed
+          # table, but "every subnet we know about" isn't the same as "the exact subnet(s)
+          # the connector's ENIs actually landed in" if the connector was created earlier,
+          # from a different subnet set, before this route-table pass ever ran).
+          echo
+          echo "## 7. Route table actually associated with the connector's exact subnets, and whether it has a 0.0.0.0/0 route to the NAT Gateway"
+          if [ -n "$CONNECTOR_SUBNETS" ]; then
+            for SUBNET in $CONNECTOR_SUBNETS; do
+              echo "--- subnet $SUBNET ---"
+              aws ec2 describe-route-tables --filters "Name=association.subnet-id,Values=$SUBNET" \
+                --query 'RouteTables[].[RouteTableId,Routes[?DestinationCidrBlock==`0.0.0.0/0`]]' --output json
+            done
+          else
+            echo "No connector subnets resolved above — skipping route table check."
           fi
         env:
           AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
