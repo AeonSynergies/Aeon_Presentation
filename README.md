@@ -164,7 +164,12 @@ setup (see "What it provisions" below), which uses several EC2 actions the deplo
 credentials may not have needed before: `ec2:CreateSubnet`, `ec2:DescribeInternetGateways`,
 `ec2:CreateRouteTable`, `ec2:CreateRoute`, `ec2:DescribeRouteTables`,
 `ec2:AssociateRouteTable`, `ec2:ReplaceRouteTableAssociation`, `ec2:AllocateAddress`,
-`ec2:DescribeAddresses`, `ec2:CreateNatGateway`, `ec2:DescribeNatGateways`. If the deploy
+`ec2:DescribeAddresses`, `ec2:CreateNatGateway`, `ec2:DescribeNatGateways`, and
+**`ec2:CreateTags`** — a separate permission from the create-* actions themselves, needed
+because every one of those resources is tagged inline (`--tag-specifications`) at creation
+time; a policy that grants `ec2:CreateSubnet` etc. without `ec2:CreateTags` fails on the
+tagging step, not the resource creation itself (confirmed live: the first deploy attempt
+got past `CreateSubnet` cleanly and failed on `CreateTags` specifically). If the deploy
 credentials' policy is scoped narrower than a blanket `ec2:*`, add these (same pattern as
 the `apprunner:DeleteService` and `kms:Decrypt` additions earlier in this project's
 history — each surfaced as a real `AccessDenied` from a live run, added once discovered).
