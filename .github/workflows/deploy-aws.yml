@@ -149,6 +149,16 @@ jobs:
           else
             echo "No connector subnets resolved above — skipping route table check."
           fi
+
+          # SG, NACLs, and routing all confirmed correct — the one thing never directly
+          # checked is whether aeon-api's App Runner service is actually configured to use
+          # this VPC connector for egress at all, rather than App Runner's own DEFAULT
+          # (non-VPC) egress path.
+          echo
+          echo "## 8. aeon-api App Runner service's actual egress configuration"
+          aws apprunner describe-service \
+            --service-arn "$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='aeon-api'].ServiceArn | [0]" --output text)" \
+            --query 'Service.NetworkConfiguration.EgressConfiguration' --output json
         env:
           AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
