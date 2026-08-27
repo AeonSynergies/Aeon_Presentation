@@ -71,6 +71,11 @@ export const aiRouter = router({
           tool_choice: { type: "tool", name: "submit_deck_draft" },
         });
       } catch (err) {
+        // err.message alone (e.g. the Anthropic SDK's generic "Connection error.") hides
+        // the actual cause — DNS/TCP/TLS failures all produce that same message. Logging
+        // the full error here (App Runner ships stdout/stderr to CloudWatch automatically)
+        // is what makes the underlying cause visible when this fails in production.
+        console.error("ai.draftDeck: Anthropic call failed", err);
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: err instanceof Error ? `AI drafting request failed: ${err.message}` : "AI drafting request failed.",
