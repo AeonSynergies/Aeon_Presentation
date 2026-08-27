@@ -67,7 +67,17 @@ export const aiRouter = router({
       // generation still counts against the limit instead of being a free retry.
       await prisma.aiDraftRequest.create({ data: { userId: ctx.user.id } });
 
-      const anthropic = new Anthropic();
+      // TEMPORARY DIAGNOSTIC (Phase 3a "Connection error" investigation): the SDK's own
+      // default (10 min, and 2 retries) already dwarfs any plausible latency the VPC
+      // connector's Hyperplane ENI path adds — but that default governs the overall
+      // request's abort timer, not the OS-level TCP connect() that actually produced the
+      // ETIMEDOUT seen in production. An explicit, generous timeout here can't fix a
+      // connect()-level timeout (that's kernel-governed, below any application timeout's
+      // reach), but it's a cheap, safe way to confirm or rule that reasoning out directly
+      // rather than by theory. Revert to new Anthropic() once this either fails identically
+      // (theory confirmed — connect()-level issue, look elsewhere) or succeeds (theory
+      // wrong — this was genuinely a timeout tuning problem).
+      const anthropic = new Anthropic({ timeout: 90_000 });
       let response: Anthropic.Message;
       try {
         response = await anthropic.messages.create({
