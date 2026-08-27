@@ -75,32 +75,29 @@ jobs:
       # generic wrapper for a fetch()-level failure (DNS/TCP/TLS all look identical from
       # there); this step pulls the real underlying signal from three independent angles so
       # the fix (if any) targets the right layer. Remove once root-caused.
-      - name: TEMP DIAGNOSTIC — AI drafting Connection error
+      - name: TEMP DIAGNOSTIC — AI drafting Connection error (static state)
+        # CloudWatch log tailing moved to the live-e2e job (see below): this job finishes
+        # BEFORE live-e2e ever exercises ai.draftDeck, so a log check here only ever sees
+        # container-startup output, never the actual failing request. Everything else here
+        # is deploy-time state that doesn't depend on that ordering.
         if: always() && steps.deploy.outcome == 'success'
         run: |
           set +e
-          echo "## 1. api service CloudWatch logs (last 20 min, application + service streams)"
-          for GROUP in $(aws logs describe-log-groups --log-group-name-prefix "/aws/apprunner/aeon-api" --query 'logGroups[].logGroupName' --output text); do
-            echo "--- $GROUP ---"
-            aws logs tail "$GROUP" --since 20m --format short
-          done
-
-          echo
-          echo "## 2. ANTHROPIC_API_KEY SSM parameter metadata (no value — confirms it wasn't just rotated/recreated)"
+          echo "## 1. ANTHROPIC_API_KEY SSM parameter metadata (no value — confirms it wasn't just rotated/recreated)"
           aws ssm describe-parameters --parameter-filters "Key=Name,Values=/aeon/ANTHROPIC_API_KEY" \
             --query 'Parameters[0].[Name,LastModifiedDate,Version]' --output table
 
           echo
-          echo "## 3. NAT Gateway state (this is the api service's only outbound-internet path)"
+          echo "## 2. NAT Gateway state (this is the api service's only outbound-internet path)"
           aws ec2 describe-nat-gateways --filter "Name=tag:Name,Values=aeon-nat" \
             --query 'NatGateways[].[NatGatewayId,State,FailureCode,FailureMessage]' --output table
 
           echo
-          echo "## 4. App Runner VPC Connector state"
+          echo "## 3. App Runner VPC Connector state"
           aws apprunner list-vpc-connectors --query "VpcConnectors[?VpcConnectorName=='aeon-connector'].[VpcConnectorName,Status]" --output table
 
           echo
-          echo "## 5. Direct api.anthropic.com reachability + key check from THIS runner (general internet, NOT the api service's VPC path — isolates 'Anthropic/key side' from 'AWS network side')"
+          echo "## 4. Direct api.anthropic.com reachability + key check from THIS runner (general internet, NOT the api service's VPC path — isolates 'Anthropic/key side' from 'AWS network side')"
           if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
             HTTP_CODE=$(curl -sS -o /tmp/anthropic-diag.json -w "%{http_code}" https://api.anthropic.com/v1/messages \
               -H "content-type: application/json" -H "x-api-key: $ANTHROPIC_API_KEY" -H "anthropic-version: 2023-06-01" \
@@ -126,6 +123,15 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+
+      # Only needed for the TEMP DIAGNOSTIC step below (CloudWatch log tail after the
+      # AI-drafting E2E runs) — nothing else in this job touches AWS directly.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
       - uses: actions/setup-node@v4
         with:
@@ -174,12 +180,28 @@ jobs:
       # rejected, and the browser network tab never carries the API key or an Anthropic
       # request.
       - name: Run live AI-drafting E2E against the deployment
+        id: ai_draft
         if: needs.deploy.outputs.ai_configured == 'true'
         working-directory: infra/e2e
         run: node ai-draft-e2e.mjs
         env:
           BASE_URL: ${{ needs.deploy.outputs.web_url }}
           API_URL: ${{ needs.deploy.outputs.api_url }}
+
+      # TEMPORARY — the deploy job's own diagnostic step runs before this one and can only
+      # ever see container-startup logs, never a request this job itself just triggered.
+      # Placed right after the step that actually calls ai.draftDeck, so the CloudWatch
+      # window covers the exact failing request. Remove once root-caused.
+      - name: TEMP DIAGNOSTIC — api service CloudWatch logs after AI-drafting E2E
+        if: always() && needs.deploy.outputs.ai_configured == 'true' && steps.ai_draft.outcome == 'failure'
+        run: |
+          set +e
+          for GROUP in $(aws logs describe-log-groups --log-group-name-prefix "/aws/apprunner/aeon-api" --query 'logGroups[].logGroupName' --output text); do
+            echo "--- $GROUP ---"
+            aws logs tail "$GROUP" --since 10m --format short
+          done
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
 
       - name: Upload screenshots on failure
         if: failure()
