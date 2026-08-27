@@ -109,6 +109,16 @@ jobs:
           BASE_URL: ${{ needs.deploy.outputs.web_url }}
           API_URL: ${{ needs.deploy.outputs.api_url }}
 
+      # Pricing editing in Edit Deck (Phase 5b). Depends on both suites above: the Harbor
+      # Lane Dental deck from wizard-e2e.mjs, and the QA Operations Manager account from
+      # role-enforcement-e2e.mjs (used to confirm the pricing section inherits Edit Deck's
+      # existing role check rather than adding a separate one).
+      - name: Run live pricing-edit E2E against the deployment
+        working-directory: infra/e2e
+        run: node pricing-edit-e2e.mjs
+        env:
+          BASE_URL: ${{ needs.deploy.outputs.web_url }}
+
       # AI-assisted deck drafting (Phase 3a). Skips itself (not the job — a skip, not a
       # failure) when ANTHROPIC_API_KEY hasn't been added as a repo secret yet, since
       # ai.draftDeck is then correctly disabled rather than broken. Confirms the real

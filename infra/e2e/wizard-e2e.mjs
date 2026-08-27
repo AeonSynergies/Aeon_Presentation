@@ -72,7 +72,18 @@ async function createViaWizard() {
   const chip = (label) => form.locator(".builder-step-chip", { hasText: label });
   const svcBody = () => form.locator(".builder-svc-card.open .builder-svc-body");
   const sIn = (label) => svcBody().locator(".q-block", { hasText: label }).first().locator('input[type="text"]').first();
-  const bandsBlock = () => svcBody().locator(".q-block", { hasText: "Price bands" });
+  const bandsBlock = () => svcBody().locator(".q-block", { hasText: "Pricing structure" });
+  // New services start in flat mode (blankService()'s single uncapped band) — switch to
+  // Tiered before touching band rows, or nth(0)'s single input targets the flat price
+  // field instead of a tier's "up to" boundary. Idempotent: a no-op if already tiered.
+  // The toggle leaves 2 bands (a single band with upTo:null is indistinguishable from
+  // flat pricing, so the app can't land on a 1-band "tiered" state) — the fill sequences
+  // below fill both of those bands directly instead of "Add band"-ing the second one.
+  const switchToTiered = async () => {
+    const tieredRadio = bandsBlock().locator(".builder-pricing-mode-option", { hasText: "Tiered" }).locator('input[type="radio"]');
+    if (await tieredRadio.isChecked()) return;
+    await tieredRadio.click();
+  };
 
   await page.click(".new-deck-btn");
   await page.waitForSelector(".builder-blank-card");
@@ -112,9 +123,10 @@ async function createViaWizard() {
   await statsBlock.locator(".builder-list-row").nth(1).locator(".mini-btn-danger").click();
   await svcBody().locator(".q-block", { hasText: "Dashboards / reports" }).locator(".mini-btn", { hasText: "Add dashboard" }).click();
   await svcBody().locator(".q-block", { hasText: "Dashboards / reports" }).locator(".builder-list-row input").first().fill("Claims Aging Dashboard");
+  check("wizard: new services start in flat pricing mode", await bandsBlock().locator(".builder-pricing-mode-option", { hasText: "Single flat" }).locator('input[type="radio"]').isChecked());
+  await switchToTiered();
   await bandsBlock().locator(".builder-band-row").nth(0).locator("input").nth(0).fill("5");
   await bandsBlock().locator(".builder-band-row").nth(0).locator("input").nth(1).fill("400");
-  await bandsBlock().locator(".mini-btn", { hasText: "Add band" }).click();
   await bandsBlock().locator(".builder-band-row").nth(1).locator("input").nth(0).fill("10");
   await bandsBlock().locator(".builder-band-row").nth(1).locator("input").nth(1).fill("600");
   await bandsBlock().locator(".mini-btn", { hasText: "Add band" }).click();
@@ -139,9 +151,9 @@ async function createViaWizard() {
   await stats2.locator(".builder-list-row").nth(0).locator("input").nth(0).fill("↓ 25%");
   await stats2.locator(".builder-list-row").nth(0).locator("input").nth(1).fill("Fewer no-shows");
   await stats2.locator(".builder-list-row").nth(1).locator(".mini-btn-danger").click();
+  await switchToTiered();
   await bandsBlock().locator(".builder-band-row").nth(0).locator("input").nth(0).fill("3");
   await bandsBlock().locator(".builder-band-row").nth(0).locator("input").nth(1).fill("300");
-  await bandsBlock().locator(".mini-btn", { hasText: "Add band" }).click();
   await bandsBlock().locator(".builder-band-row").nth(1).locator("input").nth(1).fill("450");
 
   // Discovery — general + tier-3 number question; verify live gating in the notes preview
