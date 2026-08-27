@@ -108,6 +108,27 @@ jobs:
           else
             echo "ANTHROPIC_API_KEY not present in this step's env — skipping."
           fi
+
+          # ETIMEDOUT (confirmed in deploy run #25's live-e2e diagnostic — a SYN with no
+          # reply, the standard signature of a security group or NACL silently dropping
+          # egress, not a rejection or DNS failure) narrows this to two candidates below.
+          echo
+          echo "## 5. aeon-apprunner-sg egress rules (attached to the VPC connector's ENIs) — deploy.sh never calls authorize/revoke-security-group-egress on this group, so this should still be the AWS-default allow-all-outbound rule unless something else touched it"
+          aws ec2 describe-security-groups --filters "Name=group-name,Values=aeon-apprunner-sg" \
+            --query 'SecurityGroups[0].IpPermissionsEgress' --output json
+
+          echo
+          echo "## 6. Network ACLs for the VPC connector's actual subnets (NACLs are stateless — a custom one blocking the ephemeral-port return traffic on 443 produces this exact ETIMEDOUT signature even with an open security group)"
+          CONNECTOR_ARN="$(aws apprunner list-vpc-connectors --query "VpcConnectors[?VpcConnectorName=='aeon-connector' && Status=='ACTIVE'].VpcConnectorArn | [0]" --output text)"
+          if [ -n "$CONNECTOR_ARN" ] && [ "$CONNECTOR_ARN" != "None" ]; then
+            for SUBNET in $(aws apprunner describe-vpc-connector --vpc-connector-arn "$CONNECTOR_ARN" --query 'VpcConnector.Subnets' --output text); do
+              echo "--- subnet $SUBNET ---"
+              aws ec2 describe-network-acls --filters "Name=association.subnet-id,Values=$SUBNET" \
+                --query 'NetworkAcls[].Entries' --output json
+            done
+          else
+            echo "Could not resolve an ACTIVE aeon-connector ARN — skipping NACL check."
+          fi
         env:
           AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
