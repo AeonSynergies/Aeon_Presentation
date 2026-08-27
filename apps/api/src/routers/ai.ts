@@ -2,10 +2,27 @@ import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@aeon/database";
 import type { DeckConfig } from "@aeon/types";
 import { TRPCError } from "@trpc/server";
+import { inspect } from "node:util";
 import { z } from "zod";
 import { deckConfigSchema } from "../lib/deck-config-schema.js";
 import { AI_DRAFT_SYSTEM_PROMPT, AI_DRAFT_TOOL_SCHEMA, aiDraftInputSchema, normalizeDraft } from "../lib/ai-draft.js";
 import { requirePermission, router } from "../trpc.js";
+
+// A "Connection error." from the Anthropic SDK is APIConnectionError wrapping Node's
+// `TypeError: fetch failed`, which itself wraps the real network error (ECONNREFUSED,
+// ETIMEDOUT, ENOTFOUND, etc. — each a different root cause: security group, routing/
+// timeout, or DNS, respectively). Walking .cause chains by hand here rather than trusting
+// console.error(err)'s default formatting to survive CloudWatch's line/byte capture intact.
+function deepestErrnoCode(err: unknown): string | undefined {
+  let current = err;
+  let code: string | undefined;
+  for (let i = 0; i < 10 && current instanceof Error; i++) {
+    const maybeCode = (current as NodeJS.ErrnoException).code;
+    if (maybeCode) code = maybeCode;
+    current = current.cause;
+  }
+  return code;
+}
 
 // AI-assisted deck drafting (Phase 3a). This mutation NEVER writes to the decks table —
 // it only ever returns a DeckConfig-shaped draft for the client to load into the exact
@@ -72,10 +89,11 @@ export const aiRouter = router({
         });
       } catch (err) {
         // err.message alone (e.g. the Anthropic SDK's generic "Connection error.") hides
-        // the actual cause — DNS/TCP/TLS failures all produce that same message. Logging
-        // the full error here (App Runner ships stdout/stderr to CloudWatch automatically)
-        // is what makes the underlying cause visible when this fails in production.
-        console.error("ai.draftDeck: Anthropic call failed", err);
+        // the actual cause — DNS/TCP/TLS failures all produce that same message. The errno
+        // code goes out as its own dedicated line FIRST — guaranteed short, so it survives
+        // even if CloudWatch's capture cuts off the fuller dump that follows.
+        console.error(`ai.draftDeck: Anthropic call failed [network error code: ${deepestErrnoCode(err) ?? "none found"}]`);
+        console.error("ai.draftDeck: full error detail:", inspect(err, { depth: null }));
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: err instanceof Error ? `AI drafting request failed: ${err.message}` : "AI drafting request failed.",
