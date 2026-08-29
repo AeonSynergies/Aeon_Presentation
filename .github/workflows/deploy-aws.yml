@@ -36,6 +36,58 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
+      # ONE-TIME REMEDIATION — every AWS networking layer checked so far (security group,
+      # NACLs, NAT Gateway "available" status, route tables, App Runner egress config) came
+      # back clean, yet aeon-api genuinely cannot reach ANY external host (confirmed via a
+      # comparison request to a second host, same connect()-stage timeout as Anthropic).
+      # NAT Gateway metrics for the actual failure window showed near-zero
+      # BytesOutToDestination with ErrorPortAllocation clean (rules out port exhaustion) —
+      # inconclusive on its own, but combined with every configuration check already
+      # passing, a NAT Gateway that's reached a subtly broken state despite reporting
+      # healthy is the standard remaining explanation. Deletes and recreates it, reusing the
+      # same tagged subnet/EIP so deploy.sh's own idempotent lookups keep working
+      # afterward, then re-points the existing private route table's default route at the
+      # new NAT Gateway ID (deploy.sh's own route-creation is a create-once, at-table-
+      # creation-time operation — it would never notice or fix a stale target on an
+      # already-existing route table on its own). Remove this whole step once done — it's
+      # not meant to run on every future deploy.
+      - name: ONE-TIME — recreate the NAT Gateway
+        run: |
+          set -euo pipefail
+          OLD_NAT_ID="$(aws ec2 describe-nat-gateways --filter "Name=tag:Name,Values=aeon-nat" "Name=state,Values=available,pending" --query 'NatGateways[0].NatGatewayId' --output text)"
+          if [ -n "$OLD_NAT_ID" ] && [ "$OLD_NAT_ID" != "None" ]; then
+            echo "Deleting NAT Gateway $OLD_NAT_ID"
+            aws ec2 delete-nat-gateway --nat-gateway-id "$OLD_NAT_ID" >/dev/null
+            echo "Waiting for it to finish deleting..."
+            aws ec2 wait nat-gateway-deleted --nat-gateway-ids "$OLD_NAT_ID"
+          else
+            echo "No existing available/pending aeon-nat NAT Gateway found — nothing to delete."
+          fi
+
+          NAT_SUBNET_ID="$(aws ec2 describe-subnets --filters "Name=tag:Name,Values=aeon-nat-subnet" --query 'Subnets[0].SubnetId' --output text)"
+          EIP_ALLOC_ID="$(aws ec2 describe-addresses --filters "Name=tag:Name,Values=aeon-nat-eip" --query 'Addresses[0].AllocationId' --output text)"
+          if [ -z "$NAT_SUBNET_ID" ] || [ "$NAT_SUBNET_ID" = "None" ] || [ -z "$EIP_ALLOC_ID" ] || [ "$EIP_ALLOC_ID" = "None" ]; then
+            echo "::error::Could not resolve the existing aeon-nat-subnet / aeon-nat-eip — aborting rather than guessing." >&2
+            exit 1
+          fi
+
+          echo "Creating a fresh NAT Gateway in $NAT_SUBNET_ID using EIP allocation $EIP_ALLOC_ID"
+          NEW_NAT_ID="$(aws ec2 create-nat-gateway --subnet-id "$NAT_SUBNET_ID" --allocation-id "$EIP_ALLOC_ID" \
+            --tag-specifications "ResourceType=natgateway,Tags=[{Key=Name,Value=aeon-nat}]" --query 'NatGateway.NatGatewayId' --output text)"
+          echo "Waiting for $NEW_NAT_ID to become available..."
+          aws ec2 wait nat-gateway-available --nat-gateway-ids "$NEW_NAT_ID"
+
+          PRIVATE_RT_ID="$(aws ec2 describe-route-tables --filters "Name=tag:Name,Values=aeon-private-rt" --query 'RouteTables[0].RouteTableId' --output text)"
+          if [ -z "$PRIVATE_RT_ID" ] || [ "$PRIVATE_RT_ID" = "None" ]; then
+            echo "::error::Could not resolve the existing aeon-private-rt route table — aborting rather than guessing." >&2
+            exit 1
+          fi
+          echo "Re-pointing $PRIVATE_RT_ID's 0.0.0.0/0 route at $NEW_NAT_ID"
+          aws ec2 replace-route --route-table-id "$PRIVATE_RT_ID" --destination-cidr-block 0.0.0.0/0 --nat-gateway-id "$NEW_NAT_ID"
+          echo "Done — new NAT Gateway: $NEW_NAT_ID"
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+
       - name: Provision (idempotent) + build + deploy
         id: deploy
         # GitHub's default shell for a `run:` block is `bash -e {0}` — no `pipefail` — so
