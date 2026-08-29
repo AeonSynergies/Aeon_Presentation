@@ -251,6 +251,24 @@ jobs:
             echo "--- $GROUP ---"
             aws logs tail "$GROUP" --since 10m --format short
           done
+
+          # The comparison request to a second external host (api.github.com) failed
+          # identically to Anthropic (same connect()-stage timeout) — ruling out anything
+          # Anthropic-specific and pointing at whether the NAT Gateway is actually
+          # forwarding traffic in practice, not just reporting a healthy status. A 15-minute
+          # window comfortably covers the AI-drafting E2E step that just ran immediately
+          # before this one, without needing a hardcoded timestamp.
+          echo
+          echo "## NAT Gateway (nat-0c3c06851c05d7e33) CloudWatch metrics for this run's window"
+          END_TIME="$(date -u +%Y-%m-%dT%H:%M:%S)"
+          START_TIME="$(date -u -d '15 minutes ago' +%Y-%m-%dT%H:%M:%S)"
+          for METRIC in BytesOutToDestination PacketsOutToDestination ErrorPortAllocation ActiveConnectionCount; do
+            echo "--- $METRIC ---"
+            aws cloudwatch get-metric-statistics --namespace AWS/NATGateway --metric-name "$METRIC" \
+              --dimensions Name=NatGatewayId,Value=nat-0c3c06851c05d7e33 \
+              --start-time "$START_TIME" --end-time "$END_TIME" --period 60 --statistics Sum \
+              --query 'Datapoints[].[Timestamp,Sum]' --output json
+          done
         env:
           AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
 
