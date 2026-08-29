@@ -1,6 +1,7 @@
 import { prisma } from "@aeon/database";
-import { computePricingSummary, finalPriceFor, fmtMoney, type DeckConfig, type DiscountConfig, type SessionState } from "@aeon/types";
+import { computePricingSummary, finalPriceFor, fmtMoney, type DeckConfig, type DiscountConfig, type MeetingOutcome, type SessionState } from "@aeon/types";
 import { TRPCError } from "@trpc/server";
+import PDFDocument from "pdfkit";
 import { z } from "zod";
 import { protectedProcedure, requirePermission, router } from "../trpc.js";
 
@@ -17,9 +18,25 @@ interface MeetingDTO {
   toggles: Record<string, boolean>;
   answers: Record<string, string | number | boolean | null>;
   discount: DiscountConfig;
+  meetingOutcome: MeetingOutcome | null;
+  completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
+
+// MeetingOutcome (packages/types/src/session.ts) is the prototype's own outcome shape,
+// ported verbatim in Phase 1 alongside SessionState — this is the "status, follow-up,
+// notes" the prototype tracked when a Discovery Notes session ended, not a new shape
+// invented for Phase 5a.
+const meetingOutcomeSchema = z.object({
+  followUp: z.boolean(),
+  followUpDate: z.string(),
+  followUpTime: z.string(),
+  deckRequested: z.boolean(),
+  status: z.string().min(1),
+  otherStatus: z.string(),
+  additionalNotes: z.string().max(2000).optional(),
+});
 
 function toMeetingDTO(m: {
   id: string;
@@ -30,6 +47,8 @@ function toMeetingDTO(m: {
   toggles: unknown;
   answers: unknown;
   discount: unknown;
+  meetingOutcome: unknown;
+  completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }): MeetingDTO {
@@ -42,6 +61,8 @@ function toMeetingDTO(m: {
     toggles: m.toggles as Record<string, boolean>,
     answers: m.answers as Record<string, string | number | boolean | null>,
     discount: m.discount as DiscountConfig,
+    meetingOutcome: (m.meetingOutcome as MeetingOutcome | null) ?? null,
+    completedAt: m.completedAt,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
   };
@@ -56,9 +77,9 @@ const discountSchema = z.object({
 });
 
 // Rebuilds the pricing engine's SessionState shape from a persisted Meeting row — the
-// same reshaping toMeetingDTO does for the client, needed here so export/sendToClient
-// can run the identical @aeon/types pricing math the live Present-mode pricing slide
-// uses, rather than recomputing anything independently.
+// same reshaping toMeetingDTO does for the client, needed here so export/complete can run
+// the identical @aeon/types pricing math the live Present-mode pricing slide uses, rather
+// than recomputing anything independently.
 function meetingToSessionState(m: {
   driverValue: string | null;
   selected: unknown;
@@ -87,6 +108,123 @@ const stateInput = z.object({
   discount: discountSchema.optional(),
   clientName: z.string().nullable().optional(),
 });
+
+interface QuoteSnapshotRow {
+  service: string;
+  team: string;
+  driverVal: string;
+  base: string;
+  surcharge: boolean;
+  final: string;
+  discounted: boolean;
+}
+
+// The quoted-deck data behind every downstream artifact: the live CSV export, a saved
+// Meeting Record's frozen pricingSnapshot, its text summary, and its regenerated PDF all
+// build from THIS one shape, computed with the exact same @aeon/types pricing engine the
+// live Pricing slide uses. Built once here rather than four times independently, so those
+// four surfaces can never silently disagree with each other about a given deck+state.
+interface QuoteSnapshot {
+  companyName: string;
+  industry: string;
+  clientName: string | null;
+  driverLabel: string;
+  driverValue: string | null;
+  rows: QuoteSnapshotRow[];
+  totalLabel: string;
+  computedAt: string;
+}
+
+function buildQuoteSnapshot(config: DeckConfig, state: SessionState, clientName: string | null): QuoteSnapshot {
+  const chosen = config.services.filter((s) => state.selected.includes(s.id));
+  const rows: QuoteSnapshotRow[] = chosen.map((svc) => {
+    const driverVal = svc.pricingDriverField ? state.answers[svc.pricingDriverField] : state.driverValue;
+    const { base, final, discounted } = finalPriceFor(svc, state);
+    const surchargeActive = !!(svc.surcharge && state.toggles[svc.surcharge.questionId]);
+    return {
+      service: svc.name,
+      team: svc.team,
+      driverVal: driverVal === null || driverVal === undefined ? "" : String(driverVal),
+      base: fmtMoney(base),
+      surcharge: surchargeActive,
+      final: discounted ? `${fmtMoney(final)} (discounted from ${fmtMoney(base)})` : fmtMoney(final),
+      discounted,
+    };
+  });
+  const summary = computePricingSummary(config.services, state);
+  const totalLabel = fmtMoney(summary.total) + (summary.hasCustom || summary.hasPending ? " +" : "");
+  return {
+    companyName: config.companyName,
+    industry: config.industry,
+    clientName,
+    driverLabel: config.pricingDriver.label,
+    driverValue: state.driverValue === null ? null : String(state.driverValue),
+    rows,
+    totalLabel,
+    computedAt: new Date().toISOString(),
+  };
+}
+
+function snapshotToCsv(snapshot: QuoteSnapshot, driverLabel: string): string {
+  const rows: string[][] = [["Service", "Team", `${driverLabel} / driver`, "Base Price", "Surcharge Applied", "Final Price"]];
+  for (const r of snapshot.rows) {
+    rows.push([r.service, r.team, r.driverVal, r.base, r.surcharge ? "Yes" : "No", r.final]);
+  }
+  rows.push([]);
+  rows.push(["", "", "", "", "Estimated Total / Month", snapshot.totalLabel]);
+  return rows.map((r) => r.map(csvCell).join(",")).join("\n");
+}
+
+function snapshotToText(snapshot: QuoteSnapshot): string {
+  const lines: string[] = [];
+  lines.push(`${snapshot.companyName} — ${snapshot.industry}`);
+  lines.push(`Client: ${snapshot.clientName ?? "(not recorded)"}`);
+  lines.push(`${snapshot.driverLabel}: ${snapshot.driverValue ?? "(not recorded)"}`);
+  lines.push(`Snapshot taken: ${new Date(snapshot.computedAt).toLocaleString("en-US")}`);
+  lines.push("");
+  for (const r of snapshot.rows) {
+    lines.push(`- ${r.service} (${r.team}): ${r.final}${r.surcharge ? " [surcharge applied]" : ""}`);
+  }
+  lines.push("");
+  lines.push(`Estimated Total / Month: ${snapshot.totalLabel}`);
+  return lines.join("\n");
+}
+
+function safeFilenamePart(v: string): string {
+  return v.replace(/[^a-zA-Z0-9-]+/g, "_");
+}
+
+function buildQuotePdfBuffer(snapshot: QuoteSnapshot): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 50, size: "LETTER" });
+    const chunks: Buffer[] = [];
+    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    doc.fontSize(20).text(snapshot.companyName, { continued: false });
+    doc.fontSize(11).fillColor("#555").text(snapshot.industry);
+    doc.moveDown(1);
+    doc.fillColor("#000").fontSize(12).text(`Client: ${snapshot.clientName ?? "(not recorded)"}`);
+    doc.text(`${snapshot.driverLabel}: ${snapshot.driverValue ?? "(not recorded)"}`);
+    doc.fontSize(9).fillColor("#555").text(`Quote snapshot taken ${new Date(snapshot.computedAt).toLocaleString("en-US")}`);
+    doc.moveDown(1);
+
+    doc.fillColor("#000").fontSize(13).text("Services", { underline: true });
+    doc.moveDown(0.5);
+    for (const r of snapshot.rows) {
+      doc.fontSize(11).text(`${r.service} — ${r.team}`, { continued: false });
+      doc.fontSize(10).fillColor("#333").text(`${r.final}${r.surcharge ? "  (surcharge applied)" : ""}`);
+      doc.fillColor("#000");
+      doc.moveDown(0.4);
+    }
+
+    doc.moveDown(0.5);
+    doc.fontSize(14).text(`Estimated Total / Month: ${snapshot.totalLabel}`, { align: "right" });
+
+    doc.end();
+  });
+}
 
 export const meetingRouter = router({
   create: protectedProcedure
@@ -142,29 +280,10 @@ export const meetingRouter = router({
 
     const config = meeting.deck.config as unknown as DeckConfig;
     const state = meetingToSessionState(meeting);
-    const chosen = config.services.filter((s) => state.selected.includes(s.id));
-
-    const rows: string[][] = [["Service", "Team", `${config.pricingDriver.label} / driver`, "Base Price", "Surcharge Applied", "Final Price"]];
-    for (const svc of chosen) {
-      const driverVal = svc.pricingDriverField ? state.answers[svc.pricingDriverField] : state.driverValue;
-      const { base, final, discounted } = finalPriceFor(svc, state);
-      const surchargeActive = !!(svc.surcharge && state.toggles[svc.surcharge.questionId]);
-      rows.push([
-        svc.name,
-        svc.team,
-        driverVal === null || driverVal === undefined ? "" : String(driverVal),
-        fmtMoney(base),
-        surchargeActive ? "Yes" : "No",
-        discounted ? `${fmtMoney(final)} (discounted from ${fmtMoney(base)})` : fmtMoney(final),
-      ]);
-    }
-    const summary = computePricingSummary(config.services, state);
-    rows.push([]);
-    rows.push(["", "", "", "", "Estimated Total / Month", fmtMoney(summary.total) + (summary.hasCustom || summary.hasPending ? " +" : "")]);
-
-    const csv = rows.map((r) => r.map(csvCell).join(",")).join("\n");
+    const snapshot = buildQuoteSnapshot(config, state, meeting.clientName);
+    const csv = snapshotToCsv(snapshot, config.pricingDriver.label);
     const clientPart = meeting.clientName ? `-${meeting.clientName}` : "";
-    const filename = `${config.companyName}${clientPart}-rate-card`.replace(/[^a-zA-Z0-9-]+/g, "_") + ".csv";
+    const filename = safeFilenamePart(`${config.companyName}${clientPart}-rate-card`) + ".csv";
     return { filename, csv };
   }),
 
@@ -196,4 +315,107 @@ export const meetingRouter = router({
       const mailto = `mailto:${encodeURIComponent(input.clientEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
       return { mailto, subject, body };
     }),
+
+  // Meeting Records (Phase 5a) — saves the current live session as a permanent record:
+  // freezes today's pricing into pricingSnapshot and stores the outcome. Gated on
+  // "meetingRecords", a permission distinct from discoveryNotes: every role can run a live
+  // session, but only Sales Executive/BD Manager/Admin can turn one into a lasting record.
+  complete: requirePermission("meetingRecords")
+    .input(z.object({ id: z.string(), outcome: meetingOutcomeSchema }))
+    .mutation(async ({ input, ctx }) => {
+      const meeting = await prisma.meeting.findFirst({
+        where: { id: input.id, createdById: ctx.user.id },
+        include: { deck: true },
+      });
+      if (!meeting) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting not found" });
+
+      const config = meeting.deck.config as unknown as DeckConfig;
+      const state = meetingToSessionState(meeting);
+      const snapshot = buildQuoteSnapshot(config, state, meeting.clientName);
+
+      const updated = await prisma.meeting.update({
+        where: { id: meeting.id },
+        data: {
+          meetingOutcome: input.outcome,
+          pricingSnapshot: snapshot as unknown as object,
+          completedAt: new Date(),
+        },
+      });
+      return toMeetingDTO(updated);
+    }),
+
+  // Lists only meetings explicitly saved via complete() above (completedAt set) — every
+  // deck open creates a Meeting row for live-session sync, but a session someone merely
+  // opened and never saved as a record shouldn't clutter this screen. Spans every deck
+  // (not a per-deck view), scoped to the caller's own meetings — consistent with get/
+  // export/sendToClient above, all of which already scope by createdById.
+  listRecords: requirePermission("meetingRecords")
+    .input(
+      z.object({
+        deckId: z.string().optional(),
+        from: z.string().optional(),
+        to: z.string().optional(),
+        search: z.string().optional(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const where: Record<string, unknown> = { createdById: ctx.user.id, completedAt: { not: null } };
+      if (input.deckId) where.deckId = input.deckId;
+      if (input.from || input.to) {
+        const range: Record<string, Date> = {};
+        if (input.from) range.gte = new Date(input.from);
+        if (input.to) range.lte = new Date(input.to);
+        where.completedAt = { ...(where.completedAt as object), ...range };
+      }
+
+      const meetings = await prisma.meeting.findMany({
+        where,
+        include: { deck: true },
+        orderBy: { completedAt: "desc" },
+      });
+
+      const search = input.search?.trim().toLowerCase();
+      const filtered = search
+        ? meetings.filter(
+            (m) => (m.clientName ?? "").toLowerCase().includes(search) || m.deck.companyName.toLowerCase().includes(search)
+          )
+        : meetings;
+
+      return filtered.map((m) => ({
+        ...toMeetingDTO(m),
+        deckCompanyName: m.deck.companyName,
+        deckIndustry: m.deck.industry,
+        totalLabel: (m.pricingSnapshot as unknown as QuoteSnapshot | null)?.totalLabel ?? null,
+      }));
+    }),
+
+  // Plain-text summary of a saved record's frozen pricingSnapshot — never recomputed from
+  // the deck's current config, so an Edit Deck change made after this meeting was saved
+  // can never alter what this download says was quoted.
+  exportRecordText: requirePermission("meetingRecords").input(z.object({ id: z.string() })).query(async ({ input, ctx }) => {
+    const meeting = await prisma.meeting.findFirst({ where: { id: input.id, createdById: ctx.user.id } });
+    if (!meeting || !meeting.completedAt || !meeting.pricingSnapshot) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Meeting record not found" });
+    }
+    const snapshot = meeting.pricingSnapshot as unknown as QuoteSnapshot;
+    const clientPart = meeting.clientName ? `-${meeting.clientName}` : "";
+    const filename = safeFilenamePart(`${snapshot.companyName}${clientPart}-meeting-summary`) + ".txt";
+    return { filename, text: snapshotToText(snapshot) };
+  }),
+
+  // Regenerates the actual quoted deck as a PDF from a saved record's frozen
+  // pricingSnapshot (never the deck's current live config/state) — a base64 string since
+  // this API has no superjson/binary transformer wired up; the client decodes it into a
+  // Blob for download.
+  generateQuotePdf: requirePermission("meetingRecords").input(z.object({ id: z.string() })).query(async ({ input, ctx }) => {
+    const meeting = await prisma.meeting.findFirst({ where: { id: input.id, createdById: ctx.user.id } });
+    if (!meeting || !meeting.completedAt || !meeting.pricingSnapshot) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Meeting record not found" });
+    }
+    const snapshot = meeting.pricingSnapshot as unknown as QuoteSnapshot;
+    const buffer = await buildQuotePdfBuffer(snapshot);
+    const clientPart = meeting.clientName ? `-${meeting.clientName}` : "";
+    const filename = safeFilenamePart(`${snapshot.companyName}${clientPart}-quote`) + ".pdf";
+    return { filename, base64: buffer.toString("base64") };
+  }),
 });

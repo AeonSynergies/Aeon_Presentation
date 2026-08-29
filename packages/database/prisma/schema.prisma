@@ -85,11 +85,27 @@ model Meeting {
 
   meetingOutcome Json?
 
+  // Set only when a Discovery Notes session is explicitly saved as a Meeting Record
+  // (meeting.complete, Phase 5a) — the pricing computed from that moment's driver/services/
+  // discount, frozen at save time. Meeting Records reads/exports/regenerates a PDF from
+  // THIS, never by recomputing from the deck's current (possibly since-edited) config, so
+  // a historical record's quoted numbers never silently drift with later deck edits.
+  pricingSnapshot Json?
+
+  // Set at the same time as pricingSnapshot, by the same meeting.complete call — the
+  // definitive "this session was saved as a Meeting Record" marker. A plain DateTime null
+  // check (completedAt: { not: null }) is what Meeting Records' list query filters on,
+  // rather than inspecting meetingOutcome/pricingSnapshot's JSON-vs-SQL-null semantics —
+  // every live session still creates a Meeting row via meeting.create, but only ones an
+  // eligible role explicitly completed should ever show up as a record.
+  completedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([deckId])
   @@index([createdById])
+  @@index([completedAt])
   @@map("meetings")
 }
 

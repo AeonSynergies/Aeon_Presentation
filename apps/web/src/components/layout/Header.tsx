@@ -14,9 +14,19 @@ export function Header() {
         <Link to="/" className="nav-item" activeProps={{ className: "nav-item active" }} activeOptions={{ exact: true }}>
           Home
         </Link>
+        {user && can(user.role, "meetingRecords") && (
+          <Link to="/meeting-records" className="nav-item" activeProps={{ className: "nav-item active" }}>
+            Meeting Records
+          </Link>
+        )}
         {user && can(user.role, "manageUsers") && (
           <Link to="/team" className="nav-item" activeProps={{ className: "nav-item active" }}>
             Team
+          </Link>
+        )}
+        {user && (
+          <Link to="/profile" className="nav-item" activeProps={{ className: "nav-item active" }}>
+            Profile
           </Link>
         )}
       </nav>

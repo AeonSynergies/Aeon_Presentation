@@ -223,6 +223,21 @@ jobs:
           BASE_URL: ${{ needs.deploy.outputs.web_url }}
           API_URL: ${{ needs.deploy.outputs.api_url }}
 
+      # Meeting Records (Phase 5a). Creates its own dedicated fixture deck via a raw API
+      # call, saves a real Discovery Notes session as a Meeting Record, confirms the
+      # list/search/filters on /meeting-records, downloads the text summary + regenerated
+      # PDF, and — the core guarantee — edits the fixture deck's pricing AFTER the record
+      # was saved and confirms the record's listed total and both downloads still reflect
+      # the OLD frozen pricing, never the deck's current config. Depends on
+      # role-enforcement-e2e.mjs above for the QA Operations Manager account, used to
+      # confirm meetingRecords (deliberately narrower than discoveryNotes) blocks that role.
+      - name: Run live meeting-records E2E against the deployment
+        working-directory: infra/e2e
+        run: node meeting-records-e2e.mjs
+        env:
+          BASE_URL: ${{ needs.deploy.outputs.web_url }}
+          API_URL: ${{ needs.deploy.outputs.api_url }}
+
       # AI-assisted deck drafting (Phase 3a). Skips itself (not the job — a skip, not a
       # failure) when ANTHROPIC_API_KEY hasn't been added as a repo secret yet, since
       # ai.draftDeck is then correctly disabled rather than broken. Confirms the real

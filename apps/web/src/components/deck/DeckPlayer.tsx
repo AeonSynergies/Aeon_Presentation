@@ -6,6 +6,7 @@ import { DiscoveryNotesPanel } from "~/components/discovery/DiscoveryNotesPanel"
 import { useAuth } from "~/hooks/useAuth";
 import { useDeckSession } from "~/hooks/useDeckSession";
 import { trpc } from "~/lib/trpc";
+import { CompleteMeetingDialog } from "./CompleteMeetingDialog";
 import { DeckLogo } from "./Logo";
 import { SendToClientDialog } from "./SendToClientDialog";
 import { deckColorVars } from "./deckColors";
@@ -17,6 +18,8 @@ export function DeckPlayer({ deck, dbId }: { deck: DeckConfig; dbId: string }) {
   const [idx, setIdx] = React.useState(0);
   const [notesOpen, setNotesOpen] = React.useState(true);
   const [sendDialogOpen, setSendDialogOpen] = React.useState(false);
+  const [completeDialogOpen, setCompleteDialogOpen] = React.useState(false);
+  const [recordSaved, setRecordSaved] = React.useState(false);
   const [exportError, setExportError] = React.useState<string | null>(null);
   const [exporting, setExporting] = React.useState(false);
   const stageRef = React.useRef<HTMLDivElement>(null);
@@ -121,6 +124,16 @@ export function DeckPlayer({ deck, dbId }: { deck: DeckConfig; dbId: string }) {
                 ✉ Send to Client
               </button>
             )}
+            {can(role, "meetingRecords") && (
+              <button
+                className="icon-btn chrome-hide-present"
+                onClick={() => setCompleteDialogOpen(true)}
+                disabled={!meetingId}
+                title="Save the current pricing and outcome as a permanent Meeting Record"
+              >
+                {recordSaved ? "✓ Record Saved" : "💾 Save Meeting Record"}
+              </button>
+            )}
             <button className="icon-btn" id="presentBtn" onClick={toggleFullscreen}>
               ⛶ PRESENT
             </button>
@@ -178,6 +191,10 @@ export function DeckPlayer({ deck, dbId }: { deck: DeckConfig; dbId: string }) {
           defaultSubject={`${deck.companyName} Proposal — ${clientName || "your organization"}`}
           onClose={() => setSendDialogOpen(false)}
         />
+      )}
+
+      {completeDialogOpen && meetingId && (
+        <CompleteMeetingDialog meetingId={meetingId} onClose={() => setCompleteDialogOpen(false)} onSaved={() => setRecordSaved(true)} />
       )}
     </div>
   );
