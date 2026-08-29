@@ -3,7 +3,7 @@ import { ROLES } from "@aeon/types";
 import { TRPCError } from "@trpc/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import { requirePermission, router } from "../trpc.js";
+import { protectedProcedure, requirePermission, router } from "../trpc.js";
 
 // Team Management — Admin-only (manageUsers permission), enforced at requirePermission,
 // not by anything the frontend hides. This is the ONLY way accounts get created now that
@@ -79,4 +79,50 @@ export const userRouter = router({
     await prisma.user.delete({ where: { id: input.id } });
     return { ok: true };
   }),
+
+  // Profile & Settings (Phase 5a) — self-service, every logged-in role, own account only.
+  // Distinct from the manageUsers-gated mutations above: no role is editable here, and
+  // there's no target-user id in the input — ctx.user.id is the only account this can
+  // ever touch.
+  updateProfile: protectedProcedure
+    .input(z.object({ name: z.string().min(1).optional(), email: z.email().optional(), currentPassword: z.string().optional() }))
+    .mutation(async ({ input, ctx }) => {
+      const user = await prisma.user.findUnique({ where: { id: ctx.user.id } });
+      if (!user) throw new TRPCError({ code: "UNAUTHORIZED" });
+
+      const data: { name?: string; email?: string } = {};
+      if (input.name !== undefined) data.name = input.name;
+
+      const newEmail = input.email?.toLowerCase();
+      if (newEmail !== undefined && newEmail !== user.email) {
+        // Changing the login email is a sensitive change — require the current password,
+        // same bar as changePassword below, rather than trusting a live session alone.
+        if (!input.currentPassword) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Enter your current password to change your email." });
+        }
+        const valid = await bcrypt.compare(input.currentPassword, user.passwordHash);
+        if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "Current password is incorrect." });
+        const existing = await prisma.user.findUnique({ where: { email: newEmail } });
+        if (existing && existing.id !== user.id) {
+          throw new TRPCError({ code: "CONFLICT", message: "An account with that email already exists" });
+        }
+        data.email = newEmail;
+      }
+
+      if (Object.keys(data).length === 0) return toUserDTO(user);
+      const updated = await prisma.user.update({ where: { id: user.id }, data });
+      return toUserDTO(updated);
+    }),
+
+  changePassword: protectedProcedure
+    .input(z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(8) }))
+    .mutation(async ({ input, ctx }) => {
+      const user = await prisma.user.findUnique({ where: { id: ctx.user.id } });
+      if (!user) throw new TRPCError({ code: "UNAUTHORIZED" });
+      const valid = await bcrypt.compare(input.currentPassword, user.passwordHash);
+      if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "Current password is incorrect." });
+      const passwordHash = await bcrypt.hash(input.newPassword, 10);
+      await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+      return { ok: true };
+    }),
 });

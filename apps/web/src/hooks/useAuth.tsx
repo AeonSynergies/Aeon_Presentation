@@ -14,6 +14,7 @@ interface AuthContextValue {
   status: "loading" | "authed" | "anonymous";
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  updateUser: (patch: Partial<Pick<AuthUser, "name" | "email">>) => void;
 }
 
 const AuthContext = React.createContext<AuthContextValue | null>(null);
@@ -61,7 +62,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setStatus("anonymous");
   }, [logoutMutation]);
 
-  const value = React.useMemo(() => ({ user, status, login, logout }), [user, status, login, logout]);
+  // Patches the locally-cached user after Profile & Settings saves a change, so the
+  // Header/other screens reflect it immediately without forcing a full refresh-token
+  // round trip (the JWT itself still carries the old email/name until the next refresh —
+  // fine for display purposes, and it's re-signed with the new values then anyway).
+  const updateUser = React.useCallback((patch: Partial<Pick<AuthUser, "name" | "email">>) => {
+    setUser((prev) => (prev ? { ...prev, ...patch } : prev));
+  }, []);
+
+  const value = React.useMemo(() => ({ user, status, login, logout, updateUser }), [user, status, login, logout, updateUser]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
