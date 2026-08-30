@@ -1,0 +1,39 @@
+name: TEMP - Login request comparison diagnostic
+
+# One-off diagnostic — NOT part of the normal deploy pipeline. Runs role-enforcement-e2e.mjs
+# with DEBUG_LOGIN=1 against the already-deployed app (known stable App Runner URLs, no
+# redeploy needed) to capture the exact raw request the UI-driven login sends alongside the
+# exact raw request the raw-HTTP apiLogin() path sends, for a live admin-login mismatch
+# investigation. Delete this workflow once no longer needed.
+on:
+  push:
+    branches: [claude/aeon-phase-1-scaffold-0iezbw]
+    paths: [".github/workflows/temp-login-diag.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  login-diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Playwright
+        working-directory: infra/e2e
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install chromium --with-deps
+
+      - name: Run role-enforcement-e2e.mjs with DEBUG_LOGIN=1
+        working-directory: infra/e2e
+        run: node role-enforcement-e2e.mjs
+        env:
+          BASE_URL: https://mmmi3mct2q.us-east-1.awsapprunner.com
+          API_URL: https://mhsuyfmuam.us-east-1.awsapprunner.com
+          DEBUG_LOGIN: "1"
