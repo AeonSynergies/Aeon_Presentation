@@ -14,7 +14,8 @@ import { getSlides } from "./getSlides";
 
 export function DeckPlayer({ deck, dbId }: { deck: DeckConfig; dbId: string }) {
   const { user } = useAuth();
-  const { state, setState, clientName, setClientName, meetingId } = useDeckSession(deck, dbId);
+  const [isPresenting, setIsPresenting] = React.useState(false);
+  const { state, setState, clientName, setClientName, meetingId } = useDeckSession(deck, dbId, isPresenting);
   const [idx, setIdx] = React.useState(0);
   const [notesOpen, setNotesOpen] = React.useState(true);
   const [sendDialogOpen, setSendDialogOpen] = React.useState(false);
@@ -87,6 +88,29 @@ export function DeckPlayer({ deck, dbId }: { deck: DeckConfig; dbId: string }) {
     }
   }
 
+  // Tracked in real React state (not just read ad hoc off document.fullscreenElement)
+  // because it needs to drive an actual conditional render: Discovery Notes must not just
+  // be CSS-hidden while presenting, it must not be in the DOM at all — a screen/window
+  // share can't leak a panel that was never mounted. See the popped-out notes window this
+  // gates in favor of (decks.$slug_.notes.tsx) for where editing moves to instead.
+  React.useEffect(() => {
+    function onFullscreenChange() {
+      setIsPresenting(!!document.fullscreenElement);
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
+    };
+  }, []);
+
+  function openNotesWindow() {
+    if (!meetingId) return;
+    const url = `/decks/${encodeURIComponent(deck.id)}/notes?meetingId=${encodeURIComponent(meetingId)}`;
+    window.open(url, "aeon-discovery-notes", "width=560,height=860,noopener");
+  }
+
   function onViewportClick(e: React.MouseEvent) {
     if (!isFullscreen()) return;
     const target = e.target as HTMLElement;
@@ -134,6 +158,16 @@ export function DeckPlayer({ deck, dbId }: { deck: DeckConfig; dbId: string }) {
                 {recordSaved ? "✓ Record Saved" : "💾 Save Meeting Record"}
               </button>
             )}
+            {isPresenting && (
+              <button
+                className="icon-btn present-notes-btn"
+                onClick={openNotesWindow}
+                disabled={!meetingId}
+                title="Opens Discovery Notes in a separate window — safe to have open while sharing this one"
+              >
+                🗒 Discovery Notes
+              </button>
+            )}
             <button className="icon-btn" id="presentBtn" onClick={toggleFullscreen}>
               ⛶ PRESENT
             </button>
@@ -179,8 +213,8 @@ export function DeckPlayer({ deck, dbId }: { deck: DeckConfig; dbId: string }) {
         </div>
       </div>
 
-      {notesOpen && (
-        <div className="chrome-hide-present" style={{ width: 480, flexShrink: 0, borderLeft: "1px solid var(--line)", background: "var(--panel)" }}>
+      {notesOpen && !isPresenting && (
+        <div style={{ width: 480, flexShrink: 0, borderLeft: "1px solid var(--line)", background: "var(--panel)" }}>
           <DiscoveryNotesPanel deck={deck} state={state} setState={setState} clientName={clientName} setClientName={setClientName} />
         </div>
       )}

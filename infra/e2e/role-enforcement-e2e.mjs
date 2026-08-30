@@ -14,7 +14,9 @@
 //      actual test of "genuinely rejected... at the API level", not the UI-hiding, which
 //      is checked separately as the secondary layer.
 //   3. Confirms Admin can list every user (including all three QA accounts) with correct
-//      roles, and that the self-lockout guards (can't remove/demote the sole Admin) hold.
+//      roles, and that the self-lockout guards (can't remove self; can't demote self while
+//      the sole Admin — this specific assertion is skipped, not failed, if a second real
+//      Admin account exists) hold.
 //
 // Idempotent by design, matching the Phase 2b wizard-e2e.mjs pattern: QA users have fixed
 // emails and are only created once; the one action that persists new data on success
@@ -77,7 +79,14 @@ async function callTrpc(kind, path, token, input) {
 }
 
 async function apiLogin(email, password) {
+  if (globalThis.__DEBUG_LOGIN__) {
+    const body = JSON.stringify({ 0: { email, password } });
+    console.log(`[DEBUG_LOGIN] raw HTTP request: POST ${API}/api/trpc/auth.login?batch=1\n[DEBUG_LOGIN] raw HTTP request body: ${body}`);
+  }
   const res = await callTrpc("mutation", "auth.login", null, { email, password });
+  if (globalThis.__DEBUG_LOGIN__) {
+    console.log(`[DEBUG_LOGIN] raw HTTP response: httpStatus=${res.httpStatus} trpcCode=${res.trpcCode} message=${JSON.stringify(res.message)} ok=${res.ok}`);
+  }
   return { token: res.data?.accessToken, user: res.data?.user, ok: res.ok };
 }
 
@@ -86,9 +95,29 @@ async function createOwnMeeting(token) {
   return callTrpc("mutation", "meeting.create", token, { deckId: deck.data.dbId });
 }
 
+// TEMPORARY — DEBUG_LOGIN=1 dumps the exact raw request the UI-driven login sends
+// (intercepted network request) side by side with the exact raw body the raw-HTTP
+// apiLogin() path sends, to root-cause a live failure where the two disagreed on the same
+// credentials. Remove this flag and its call sites once root-caused.
+const DEBUG_LOGIN = process.env.DEBUG_LOGIN === "1";
+globalThis.__DEBUG_LOGIN__ = DEBUG_LOGIN; // apiLogin() is defined above this line, before DEBUG_LOGIN exists
+
 const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
 const page = await browser.newPage();
 page.on("pageerror", (e) => console.log("PAGE ERROR:", e.message));
+if (DEBUG_LOGIN) {
+  page.on("request", (req) => {
+    if (req.url().includes("auth.login")) {
+      console.log(`[DEBUG_LOGIN] UI request: ${req.method()} ${req.url()}\n[DEBUG_LOGIN] UI request body: ${JSON.stringify(req.postData())}`);
+    }
+  });
+  page.on("response", async (res) => {
+    if (res.url().includes("auth.login")) {
+      const body = await res.text().catch((e) => `<failed to read body: ${e.message}>`);
+      console.log(`[DEBUG_LOGIN] UI response: ${res.status()} ${res.url()}\n[DEBUG_LOGIN] UI response body: ${body}`);
+    }
+  });
+}
 
 async function uiLogin(email, password) {
   await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
@@ -101,6 +130,14 @@ async function uiLogin(email, password) {
   await page.waitForSelector('input[type="email"]', { timeout: 15000 });
   await page.fill('input[type="email"]', email);
   await page.fill('input[type="password"]', password);
+  if (DEBUG_LOGIN) {
+    const [emailVal, passwordVal] = await Promise.all([
+      page.inputValue('input[type="email"]'),
+      page.inputValue('input[type="password"]'),
+    ]);
+    console.log(`[DEBUG_LOGIN] UI form field values just before submit: email=${JSON.stringify(emailVal)} password=${JSON.stringify(passwordVal)}`);
+    console.log(`[DEBUG_LOGIN] values passed to uiLogin(): email=${JSON.stringify(email)} password=${JSON.stringify(password)}`);
+  }
   await Promise.all([page.waitForResponse((r) => r.url().includes("deck.list")), page.click('button[type="submit"]')]);
   await page.waitForSelector(".deck-grid", { timeout: 15000 });
 }
@@ -153,8 +190,24 @@ await page.screenshot({ path: `${OUT}/team-roster.png`, fullPage: true });
 // Self-lockout guards
 const removeSelf = await callTrpc("mutation", "user.remove", adminApiLogin.token, { id: adminApiLogin.user.id });
 check("admin cannot remove own account", !removeSelf.ok && removeSelf.trpcCode === "BAD_REQUEST", removeSelf.message);
-const demoteSelf = await callTrpc("mutation", "user.updateRole", adminApiLogin.token, { id: adminApiLogin.user.id, role: "SALES_EXECUTIVE" });
-check("admin cannot demote self as the last Admin", !demoteSelf.ok && demoteSelf.trpcCode === "BAD_REQUEST", demoteSelf.message);
+
+// "Can't demote the last Admin" only actually rejects when ADMIN_EMAIL genuinely is the
+// last Admin. This deployment now has a second, real, ongoing Admin account
+// (test.admin@aeonsynergies.com, used for live Microsoft sign-in testing) — with 2+ Admins,
+// the guard correctly ALLOWS self-demotion, since there's a fallback Admin. This suite must
+// never actually exercise that success path against the real seeded ADMIN_EMAIL account:
+// doing so would genuinely demote it in production, not just assert a boolean. So only
+// attempt the mutation (and assert rejection) when ADMIN_EMAIL is provably the sole Admin;
+// otherwise skip without touching real state.
+const currentAdminCount = roster.filter((r) => r.role === "ADMIN").length;
+if (currentAdminCount <= 1) {
+  const demoteSelf = await callTrpc("mutation", "user.updateRole", adminApiLogin.token, { id: adminApiLogin.user.id, role: "SALES_EXECUTIVE" });
+  check("admin cannot demote self as the last Admin", !demoteSelf.ok && demoteSelf.trpcCode === "BAD_REQUEST", demoteSelf.message);
+} else {
+  console.log(
+    `SKIPPED: admin cannot demote self as the last Admin — ${currentAdminCount} Admins currently exist (${ADMIN_EMAIL} is not the last one); skipping rather than actually demoting a real Admin account.`,
+  );
+}
 
 // ========== Operations Manager: only Present + Discovery Notes ==========
 console.log("\n=== Operations Manager ===");
