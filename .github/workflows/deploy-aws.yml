@@ -249,20 +249,6 @@ jobs:
           BASE_URL: ${{ needs.deploy.outputs.web_url }}
           API_URL: ${{ needs.deploy.outputs.api_url }}
 
-      # TEMPORARY — one-time live confirmation of Phase 4a Part 1's non-Azure-credential
-      # paths. The sandbox this was built in has no direct network access to the deployed
-      # AWS domains at all (confirmed via both curl and a real browser — an environment-
-      # level egress restriction, not anything about the app), so this couldn't be checked
-      # from there; the GitHub Actions runner running this job can reach it directly.
-      # Remove this step once its log output has been read once and confirmed correct.
-      - name: TEMP DIAGNOSTIC — Microsoft sign-in unconfigured-state paths (Phase 4a Part 1)
-        run: |
-          echo "## auth.config (expect microsoftEnabled:false — Azure AD secrets aren't set yet)"
-          curl -s "${{ needs.deploy.outputs.api_url }}/api/trpc/auth.config?batch=1&input=%7B%220%22%3A%7B%7D%7D"
-          echo
-          echo "## /api/auth/microsoft/start (expect a clean redirect to a login error, not a crash/500)"
-          curl -s -i "${{ needs.deploy.outputs.api_url }}/api/auth/microsoft/start" | head -10
-
       # AI-assisted deck drafting (Phase 3a). Skips itself (not the job — a skip, not a
       # failure) when ANTHROPIC_API_KEY hasn't been added as a repo secret yet, since
       # ai.draftDeck is then correctly disabled rather than broken. Confirms the real
