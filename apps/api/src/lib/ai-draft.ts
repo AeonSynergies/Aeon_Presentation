@@ -1,4 +1,4 @@
-import type { DeckConfig, DiscoveryQuestionType } from "@aeon/types";
+import type { DeckConfig, DeckTemplate, DiscoveryQuestionType } from "@aeon/types";
 import { z } from "zod";
 
 // AI-assisted deck drafting (Phase 3a). The model never sees or assigns real deck/service
@@ -274,6 +274,41 @@ export const AI_DRAFT_TOOL_SCHEMA = {
 } as const;
 
 export const AI_DRAFT_SYSTEM_PROMPT = `You help sales teams at a business-services consultancy draft a first-pass client pitch deck from a short description of a prospective client's industry. You must call the submit_deck_draft tool exactly once with a complete, plausible draft — realistic service names, sensible monthly price bands in USD (increasing with usage/scale), concrete "what we handle" bullets, and short benefit-style stats. Never invent real people, real company names that could be mistaken for an actual known company, or real contact details — use clearly generic/placeholder names, emails, and phone numbers for the team and Q&A sections. This is a first draft a human will review and edit before anything is saved or shown to a client.`;
+
+function formatBandPattern(bands: DeckConfig["services"][number]["priceBands"]): string {
+  return bands
+    .map((b) => `up to ${b.upTo ?? "∞"} → ${b.price === null ? "custom quote" : `$${b.price}`}`)
+    .join(", ");
+}
+
+// Phase 5c: when a user picks a template as structural grounding, this turns that
+// template's DeckConfig into a compact reference block prepended to the user's own
+// prompt — enough for the model to mirror the STRUCTURE (how many services, their
+// category mix, price-band shape, question style) without copying the template's actual
+// wording, since the instruction below is explicit that the model must adapt, not copy.
+// Deliberately omits anything the model isn't asked to produce anyway (ids, surcharge/
+// alternate-driver wiring, tier-3 discovery questions, report slides) — those stay
+// wizard/human territory exactly as they already are for a template-free draft.
+export function buildTemplateGroundingBlock(template: DeckTemplate): string {
+  const c = template.config;
+  const serviceLines = c.services
+    .map(
+      (s) =>
+        `  - "${s.name}" (${s.category}, ${s.team}) — ${s.bandLabel}; ${s.priceBands.length} price band${s.priceBands.length === 1 ? "" : "s"}: ${formatBandPattern(s.priceBands)}`,
+    )
+    .join("\n");
+  const generalQuestions = c.discoveryQuestions.filter((q) => !q.relatedService && q.section === "general");
+  const questionLines = generalQuestions.map((q) => `  - (${q.type}) ${q.label}`).join("\n") || "  (none)";
+
+  return [
+    `Structural reference — a template called "${template.label}" (${c.industry}). Adapt its SHAPE (how many services, the mix of major/strategic categories, how price bands scale, the tone of the general discovery questions) to the industry described below. Do NOT reuse its exact service names, wording, or price figures verbatim, and do NOT mention this reference template or its industry by name in the draft — treat it only as a structural pattern to follow for a genuinely different client.`,
+    `Reference pricing driver: "${c.pricingDriver.label}" (${c.pricingDriver.unit}).`,
+    `Reference services (${c.services.length}):`,
+    serviceLines,
+    `Reference general discovery questions:`,
+    questionLines,
+  ].join("\n");
+}
 
 /** Expands the model's (validated) draft into a full DeckConfig — same shape and same
  * defaults-for-what-the-model-didn't-touch that apps/web's draft.ts blankDeck() uses, so

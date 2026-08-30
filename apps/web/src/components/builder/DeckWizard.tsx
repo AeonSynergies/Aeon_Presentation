@@ -1,9 +1,9 @@
-import type { DeckConfig } from "@aeon/types";
+import { DECK_TEMPLATES, type DeckConfig } from "@aeon/types";
 import { Link, useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 import { trpc } from "~/lib/trpc";
 import { WizardPreview } from "./WizardPreview";
-import { blankDeck, cloneDeckAsDraft } from "./draft";
+import { blankDeck, templateAsDraft } from "./draft";
 import { StepBasics, type UpdateDraft } from "./steps/StepBasics";
 import { StepContent } from "./steps/StepContent";
 import { StepDiscovery } from "./steps/StepDiscovery";
@@ -14,8 +14,12 @@ import { StepTeam } from "./steps/StepTeam";
 
 // The Deck Builder wizard. A short sequence of focused steps with a live preview
 // alongside — explicitly NOT a port of the prototype's single long scrolling form,
-// which was flagged as a weak creation experience. Cloning an existing deck is the
-// default starting point; blank-slate exists but is listed last.
+// which was flagged as a weak creation experience.
+//
+// Starting points (Phase 5c): purpose-built templates (packages/types/src/templates.ts),
+// not cloning a real client's live deck — a real client's deck should never double as
+// someone else's starting point. AI drafting can optionally use a chosen template as
+// structural grounding (see AiDraftCard); blank-slate exists but is listed last.
 
 const STEPS = [
   { key: "basics", label: "Basics" },
@@ -48,13 +52,14 @@ const AI_PROMPT_MAX_LEN = 800;
 function AiDraftCard({ onDraft }: { onDraft: (config: DeckConfig, aiSuggestedFields: string[]) => void }) {
   const [open, setOpen] = React.useState(false);
   const [prompt, setPrompt] = React.useState("");
+  const [templateKey, setTemplateKey] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const draftDeck = trpc.ai.draftDeck.useMutation();
 
   const generate = async () => {
     setError(null);
     try {
-      const result = await draftDeck.mutateAsync({ prompt });
+      const result = await draftDeck.mutateAsync({ prompt, templateKey: templateKey || undefined });
       onDraft(result.config, result.aiSuggestedFields);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Drafting failed — please try again.");
@@ -96,6 +101,18 @@ function AiDraftCard({ onDraft }: { onDraft: (config: DeckConfig, aiSuggestedFie
       <div className="builder-ai-count">
         {prompt.length} / {AI_PROMPT_MAX_LEN}
       </div>
+      <div className="q-block" style={{ marginTop: 8, marginBottom: 0 }}>
+        <div className="q-label">Ground this draft in a template (optional)</div>
+        <select value={templateKey} onChange={(e) => setTemplateKey(e.target.value)} disabled={draftDeck.isPending}>
+          <option value="">No template — free-form</option>
+          {DECK_TEMPLATES.map((t) => (
+            <option key={t.key} value={t.key}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+        <div className="q-hint">Adapts that template's service/pricing/question shape to the industry you describe, instead of generating from scratch.</div>
+      </div>
       {error && <div className="builder-ai-error">{error}</div>}
       <div className="builder-ai-actions">
         <button type="button" className="mini-btn" onClick={() => setOpen(false)} disabled={draftDeck.isPending}>
@@ -113,6 +130,11 @@ function AiDraftCard({ onDraft }: { onDraft: (config: DeckConfig, aiSuggestedFie
   );
 }
 
+const CATEGORY_LABEL: Record<(typeof DECK_TEMPLATES)[number]["category"], string> = {
+  generic: "GENERIC TEMPLATE",
+  anonymized: "TEMPLATE · BASED ON A PAST ENGAGEMENT SHAPE",
+};
+
 function StartScreen({
   onPick,
   onAiDraft,
@@ -120,20 +142,6 @@ function StartScreen({
   onPick: (source: DeckConfig | null) => void;
   onAiDraft: (config: DeckConfig, aiSuggestedFields: string[]) => void;
 }) {
-  const { data: decks, isLoading } = trpc.deck.list.useQuery();
-  const utils = trpc.useUtils();
-  const [loadingSlug, setLoadingSlug] = React.useState<string | null>(null);
-
-  const pickClone = async (slug: string) => {
-    setLoadingSlug(slug);
-    try {
-      const full = await utils.deck.getBySlug.fetch({ slug });
-      onPick(cloneDeckAsDraft(full.config));
-    } finally {
-      setLoadingSlug(null);
-    }
-  };
-
   return (
     <div className="home-view">
       <div className="home-wordmark">
@@ -142,23 +150,24 @@ function StartScreen({
       </div>
       <h1 className="home-title">New deck</h1>
       <p className="home-sub">
-        Start from an existing deck — its services, pricing structure, and discovery questions become your editable starting point. Or
-        start blank, or let AI draft a first pass from a short description.
+        Start from a purpose-built template — its services, pricing structure, and discovery questions become your editable starting
+        point, with no real client's name, logo, or contacts attached. Or start blank, or let AI draft a first pass from a short
+        description.
       </p>
-      {isLoading && <div className="empty-state">Loading decks…</div>}
       <div className="deck-grid">
-        {decks?.map((deck: { id: string; slug: string; companyName: string; industry: string; tagline: string; colors: { amber: string; teal: string } }) => (
-          <div key={deck.id} className="deck-card" onClick={() => void pickClone(deck.slug)}>
-            <div className="dc-badge" style={{ background: `linear-gradient(135deg, ${deck.colors.teal}, ${deck.colors.amber})` }}>
-              {loadingSlug === deck.slug ? "…" : "⧉"}
+        {DECK_TEMPLATES.map((t) => (
+          <div key={t.key} className="deck-card" onClick={() => onPick(templateAsDraft(t.config))}>
+            <div
+              className="dc-badge"
+              style={{ background: `linear-gradient(135deg, ${t.config.colors.teal}, ${t.config.colors.amber})` }}
+            >
+              ⧉
             </div>
             <div>
-              <div className="dc-industry">START FROM</div>
-              <div className="dc-name">{deck.companyName}</div>
+              <div className="dc-industry">{CATEGORY_LABEL[t.category]}</div>
+              <div className="dc-name">{t.label}</div>
             </div>
-            <div className="dc-tagline">
-              {deck.industry} — clones its services, price bands, surcharges, and discovery questions as an editable draft.
-            </div>
+            <div className="dc-tagline">{t.summary}</div>
           </div>
         ))}
         <AiDraftCard onDraft={onAiDraft} />

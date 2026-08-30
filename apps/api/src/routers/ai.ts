@@ -1,11 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@aeon/database";
-import type { DeckConfig } from "@aeon/types";
+import { findDeckTemplate, type DeckConfig } from "@aeon/types";
 import { TRPCError } from "@trpc/server";
 import { inspect } from "node:util";
 import { z } from "zod";
 import { deckConfigSchema } from "../lib/deck-config-schema.js";
-import { AI_DRAFT_SYSTEM_PROMPT, AI_DRAFT_TOOL_SCHEMA, aiDraftInputSchema, normalizeDraft } from "../lib/ai-draft.js";
+import { AI_DRAFT_SYSTEM_PROMPT, AI_DRAFT_TOOL_SCHEMA, aiDraftInputSchema, buildTemplateGroundingBlock, normalizeDraft } from "../lib/ai-draft.js";
 import { requirePermission, router } from "../trpc.js";
 
 // A "Connection error." from the Anthropic SDK is APIConnectionError wrapping Node's
@@ -38,7 +38,16 @@ const PROMPT_MAX_LEN = 800;
 
 export const aiRouter = router({
   draftDeck: requirePermission("createDeck")
-    .input(z.object({ prompt: z.string().trim().min(PROMPT_MIN_LEN, "Tell us a bit more about the client.").max(PROMPT_MAX_LEN, `Keep the description under ${PROMPT_MAX_LEN} characters.`) }))
+    .input(
+      z.object({
+        prompt: z.string().trim().min(PROMPT_MIN_LEN, "Tell us a bit more about the client.").max(PROMPT_MAX_LEN, `Keep the description under ${PROMPT_MAX_LEN} characters.`),
+        // Phase 5c: optional structural grounding — a DECK_TEMPLATES key the user picked
+        // in the wizard's "Draft with AI" card. Silently ignored if unknown (e.g. a stale
+        // client build after a template is renamed/removed) rather than rejecting the
+        // whole request over a cosmetic mismatch.
+        templateKey: z.string().optional(),
+      }),
+    )
     .mutation(async ({ input, ctx }) => {
       // The Anthropic API key never leaves this process — it's read from an env var
       // (SSM SecureString in production, see infra/aws/deploy.sh) and only ever used
@@ -77,6 +86,9 @@ export const aiRouter = router({
       // rather than by theory. Revert to new Anthropic() once this either fails identically
       // (theory confirmed — connect()-level issue, look elsewhere) or succeeds (theory
       // wrong — this was genuinely a timeout tuning problem).
+      const template = input.templateKey ? findDeckTemplate(input.templateKey) : undefined;
+      const userMessage = template ? `${buildTemplateGroundingBlock(template)}\n\nNew client to draft for:\n${input.prompt}` : input.prompt;
+
       const anthropic = new Anthropic({ timeout: 90_000 });
       let response: Anthropic.Message;
       try {
@@ -87,7 +99,7 @@ export const aiRouter = router({
           // tool call that never resolves to a usable submit_deck_draft input.
           max_tokens: 8000,
           system: AI_DRAFT_SYSTEM_PROMPT,
-          messages: [{ role: "user", content: input.prompt }],
+          messages: [{ role: "user", content: userMessage }],
           tools: [
             {
               name: "submit_deck_draft",

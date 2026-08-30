@@ -10,8 +10,10 @@
 //   3. Verifies the created deck behaves identically to the seeded decks in the REAL
 //      player: per-deck colors, band math, surcharge math, alternate-driver math, and
 //      tier-3 Discovery gating.
-//   4. Verifies Home lists it with its own accent colors, and that clone-from-existing
-//      prefills the wizard.
+//   4. Verifies Home lists it with its own accent colors, that Create Deck's start screen
+//      no longer offers cloning any live deck (Phase 5c removed that entirely) and instead
+//      lists purpose-built templates, and that picking one prefills the wizard with that
+//      template's structure — no real company name attached.
 //
 // Idempotent by design: on re-runs (every push to main redeploys) the creation phase is
 // skipped when the deck already exists, and only the behavior checks run — so this is a
@@ -266,7 +268,20 @@ async function verifyDeckBehavior() {
   await page.screenshot({ path: `${OUT}/player-pricing.png`, fullPage: true });
 }
 
-async function verifyHomeAndClone() {
+// Phase 5c: a real client's live deck should never double as another client's template,
+// so Create Deck's start screen no longer offers cloning ANY live deck — not the seeded
+// ones, not the one this suite just created. Templates (packages/types/src/templates.ts)
+// replace that entirely; this checks both the removal and the replacement.
+const LIVE_DECK_NAMES = ["Amazon DSP", "Meridian Property Partners", "FedEx P&D", DECK_NAME];
+const TEMPLATE_LABELS = [
+  "Field Services Operations",
+  "Professional Services Retainer",
+  "Last-Mile Delivery Operations",
+  "Property Management Back Office",
+  "Contracted Delivery Operations",
+];
+
+async function verifyHomeAndTemplates() {
   const names = await homeDeckNames();
   check("home: created deck listed alongside the seeded three", names.includes(DECK_NAME) && names.length >= 4, names.join(", "));
   const badge = await page.$$eval(".deck-card", (els) => {
@@ -278,13 +293,33 @@ async function verifyHomeAndClone() {
 
   await page.click(".new-deck-btn");
   await page.waitForSelector(".builder-blank-card");
-  await page.locator(".deck-card", { hasText: "Meridian Property Partners" }).click();
+  const startNames = await page.$$eval(".deck-card .dc-name", (els) => els.map((el) => el.textContent));
+  check(
+    "wizard: start screen no longer offers cloning any live deck",
+    LIVE_DECK_NAMES.every((n) => !startNames.includes(n)),
+    startNames.join(", "),
+  );
+  check(
+    "wizard: start screen lists all 5 purpose-built templates",
+    TEMPLATE_LABELS.every((l) => startNames.includes(l)),
+    startNames.join(", "),
+  );
+
+  await page.locator(".deck-card", { hasText: "Property Management Back Office" }).click();
   await page.waitForSelector(".builder-form-pane");
   const form = page.locator(".builder-form-pane");
-  const clonedName = await form.locator(".q-block", { hasText: "Company / deck name" }).locator('input[type="text"]').inputValue();
+  const templateCompanyName = await form.locator(".q-block", { hasText: "Company / deck name" }).locator('input[type="text"]').inputValue();
+  const templateDriverLabel = await (async () => {
+    await form.locator(".builder-step-chip", { hasText: "Pricing Model" }).click();
+    return form.locator(".q-block", { hasText: "Driver label" }).locator('input[type="text"]').first().inputValue();
+  })();
   await form.locator(".builder-step-chip", { hasText: "Services" }).click();
-  const clonedSvcCount = await form.locator(".builder-svc-card").count();
-  check("wizard: clone-from-existing prefills (Meridian, 4 services)", clonedName === "Meridian Property Partners" && clonedSvcCount === 4);
+  const templateSvcCount = await form.locator(".builder-svc-card").count();
+  check(
+    "wizard: picking a template prefills its structure with no real company name",
+    templateCompanyName === "" && templateDriverLabel === "Units managed" && templateSvcCount === 4,
+    `company="${templateCompanyName}" driver="${templateDriverLabel}" services=${templateSvcCount}`,
+  );
 }
 
 // ---------- run ----------
@@ -296,7 +331,7 @@ if (names.includes(DECK_NAME)) {
   await createViaWizard();
 }
 await verifyDeckBehavior();
-await verifyHomeAndClone();
+await verifyHomeAndTemplates();
 
 console.log("\nPage errors:", pageErrors.length ? pageErrors : "none");
 const failed = results.filter((r) => !r.ok);
