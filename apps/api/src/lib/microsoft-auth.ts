@@ -23,7 +23,7 @@ function requiredEnv(name: string): string | undefined {
 }
 
 export function isMicrosoftAuthConfigured(): boolean {
-  return !!(requiredEnv("AZURE_AD_CLIENT_ID") && requiredEnv("AZURE_AD_TENANT_ID") && requiredEnv("AZURE_AD_CLIENT_SECRET"));
+  return !!(requiredEnv("AZURE_CLIENT_ID") && requiredEnv("AZURE_TENANT_ID") && requiredEnv("AZURE_CLIENT_SECRET"));
 }
 
 /** The API's own public origin — needed to build the redirect_uri Azure AD sends the
@@ -43,11 +43,11 @@ let cachedClient: ConfidentialClientApplication | null = null;
 
 function msalClient(): ConfidentialClientApplication {
   if (cachedClient) return cachedClient;
-  const clientId = requiredEnv("AZURE_AD_CLIENT_ID");
-  const tenantId = requiredEnv("AZURE_AD_TENANT_ID");
-  const clientSecret = requiredEnv("AZURE_AD_CLIENT_SECRET");
+  const clientId = requiredEnv("AZURE_CLIENT_ID");
+  const tenantId = requiredEnv("AZURE_TENANT_ID");
+  const clientSecret = requiredEnv("AZURE_CLIENT_SECRET");
   if (!clientId || !tenantId || !clientSecret) {
-    throw new Error("Microsoft sign-in isn't configured (AZURE_AD_CLIENT_ID/TENANT_ID/CLIENT_SECRET)");
+    throw new Error("Microsoft sign-in isn't configured (AZURE_CLIENT_ID/TENANT_ID/CLIENT_SECRET)");
   }
   cachedClient = new ConfidentialClientApplication({
     auth: { clientId, clientSecret, authority: `https://login.microsoftonline.com/${tenantId}` },
