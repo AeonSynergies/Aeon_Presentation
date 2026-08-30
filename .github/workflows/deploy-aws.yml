@@ -205,21 +205,6 @@ jobs:
           npm install --no-audit --no-fund
           npx playwright install chromium --with-deps
 
-      # TEMPORARY — live-verifying the Azure secret rename fix (PR #28): the deploy job's
-      # own azure_configured output flipping to true only proves deploy.sh's own SSM check
-      # passed, not that the running container actually got the renamed env vars. This
-      # confirms GET /api/trpc/auth.config on the real deployed API reports
-      # microsoftEnabled: true. Remove once confirmed.
-      - name: TEMP DIAGNOSTIC — live auth.config check (Microsoft sign-in)
-        if: needs.deploy.outputs.azure_configured == 'true'
-        run: |
-          set +e
-          echo "## GET /api/trpc/auth.config on the deployed API"
-          curl -sS "${API_URL}/api/trpc/auth.config"
-          echo
-        env:
-          API_URL: ${{ needs.deploy.outputs.api_url }}
-
       - name: Run live wizard E2E against the deployment
         working-directory: infra/e2e
         run: node wizard-e2e.mjs

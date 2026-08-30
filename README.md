@@ -183,6 +183,24 @@ To get real values:
    `openid`/`profile`/`email` scopes, not delegated Graph access, so there's no
    admin-consent step to grant.
 
+**This app registration lives in Aeon Synergies' real, existing corporate Microsoft 365
+tenant — it is not an isolated sandbox.** This was confirmed directly: the browser-side
+authorize URL check for Phase 4a Part 1 showed Microsoft's account picker listing real,
+already-signed-in `@aeonsynergies.com` employee accounts. Treat this Azure AD app
+registration, its client secret, and every account visible through it as real
+infrastructure with real people behind it, not disposable test scaffolding. Concretely,
+that means:
+- Never complete a sign-in using an account that isn't yours or a dedicated test/service
+  account you've been given permission to use — an account being one click away in the
+  picker is not the same as having permission to use it.
+- Full end-to-end verification of this feature (an actual completed Microsoft sign-in,
+  confirmed to map to the correct existing user/role) has to be done deliberately by a
+  real person on the team, ideally with a genuine test or service account rather than a
+  named employee's.
+- Rotating or deleting the client secret, or removing the app registration, affects real
+  production auth for this tenant, not a scratch environment — coordinate before doing
+  either.
+
 A successful Microsoft sign-in maps to an **existing** row in the `users` table by email —
 it never creates one. Exactly like password accounts, an Admin has to create the account
 via Team Management first (same "no public self-registration" stance as password login);
