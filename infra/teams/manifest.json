@@ -1,0 +1,37 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.16",
+  "version": "1.0.0",
+  "id": "b13a49c9-f78a-4e4c-8354-f7c877d2f1c6",
+  "packageName": "com.aeonsynergies.presentationplatform",
+  "developer": {
+    "name": "Aeon Synergies",
+    "websiteUrl": "https://mmmi3mct2q.us-east-1.awsapprunner.com",
+    "privacyUrl": "https://mmmi3mct2q.us-east-1.awsapprunner.com",
+    "termsOfUseUrl": "https://mmmi3mct2q.us-east-1.awsapprunner.com"
+  },
+  "name": {
+    "short": "Aeon Presentation",
+    "full": "Aeon Presentation Platform"
+  },
+  "description": {
+    "short": "Present client decks and capture Discovery Notes live, right inside Teams.",
+    "full": "Aeon Presentation Platform brings the deck library, live Discovery Notes capture, and dynamic pricing that Sales, BD, and Operations teams already use on the web into a Teams tab — sign in once, pick a deck, and present or take notes without leaving Teams."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#16A6CE",
+  "staticTabs": [
+    {
+      "entityId": "home",
+      "name": "Decks",
+      "contentUrl": "https://mmmi3mct2q.us-east-1.awsapprunner.com/",
+      "websiteUrl": "https://mmmi3mct2q.us-east-1.awsapprunner.com/",
+      "scopes": ["personal"]
+    }
+  ],
+  "permissions": [],
+  "validDomains": ["mmmi3mct2q.us-east-1.awsapprunner.com"]
+}

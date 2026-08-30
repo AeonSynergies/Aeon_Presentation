@@ -9,7 +9,10 @@ export const trpc = createTRPCReact<AppRouter>();
 // (the registrable domain is the same), so talking to the API directly — no dev proxy —
 // works fine locally. Production sets VITE_API_URL to the deployed API's own origin,
 // which is genuinely cross-site; see the sameSite:"none" cookie config in apps/api.
-const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:4000";
+// Exported: the "Sign in with Microsoft" button (apps/web/src/routes/login.tsx) needs the
+// API's raw origin too, for a full-page navigation to its redirect-based OAuth route —
+// something a tRPC link can't drive.
+export const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
 export function createTrpcClient() {
   return trpc.createClient({
