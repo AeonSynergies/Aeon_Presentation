@@ -118,10 +118,11 @@ export function validateDraft(deck: DeckConfig): string[] {
   return issues;
 }
 
-/** Deep-copies a deck to use as a wizard starting point. Strips the source's identity
- * (id/slug is re-derived from the new company name server-side) but keeps everything
- * else, including report slides and question wiring. */
-export function cloneDeckAsDraft(source: DeckConfig): DeckConfig {
+/** Deep-copies a template's DeckConfig to use as a wizard starting point (Phase 5c —
+ * replaces cloning from a live deck, which let a real client's deck double as another
+ * client's template). Strips id (re-derived from the new company name server-side); the
+ * template itself already leaves identity fields (companyName/logo/team/contact) blank. */
+export function templateAsDraft(source: DeckConfig): DeckConfig {
   const copy: DeckConfig = JSON.parse(JSON.stringify(source));
   copy.id = "";
   return copy;
