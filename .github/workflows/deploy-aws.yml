@@ -26,6 +26,7 @@ jobs:
       web_url: ${{ steps.deploy.outputs.web_url }}
       api_url: ${{ steps.deploy.outputs.api_url }}
       ai_configured: ${{ steps.deploy.outputs.ai_configured }}
+      azure_ad_configured: ${{ steps.deploy.outputs.azure_ad_configured }}
     steps:
       - uses: actions/checkout@v4
 
@@ -49,6 +50,7 @@ jobs:
           API_URL=$(grep -oP '(?<= api: )\S+' /tmp/deploy.log | tail -1)
           WEB_URL=$(grep -oP '(?<= web: )\S+' /tmp/deploy.log | tail -1)
           AI_CONFIGURED=$(grep -oP '(?<= ai_configured: )\S+' /tmp/deploy.log | tail -1)
+          AZURE_AD_CONFIGURED=$(grep -oP '(?<= azure_ad_configured: )\S+' /tmp/deploy.log | tail -1)
           if [ -z "$API_URL" ] || [ -z "$WEB_URL" ]; then
             echo "::error::deploy.sh reported success but didn't print both service URLs — treating as a failure."
             exit 1
@@ -58,10 +60,12 @@ jobs:
             echo "- api: $API_URL"
             echo "- web: $WEB_URL"
             echo "- AI drafting configured: ${AI_CONFIGURED:-false}"
+            echo "- Microsoft sign-in configured: ${AZURE_AD_CONFIGURED:-false}"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "web_url=$WEB_URL" >> "$GITHUB_OUTPUT"
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
           echo "ai_configured=${AI_CONFIGURED:-false}" >> "$GITHUB_OUTPUT"
+          echo "azure_ad_configured=${AZURE_AD_CONFIGURED:-false}" >> "$GITHUB_OUTPUT"
         env:
           AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
           # Phase 3a (AI-assisted deck drafting). Optional on purpose: deploy.sh stores
@@ -69,6 +73,13 @@ jobs:
           # — so a repo without this secret still deploys fine, just with AI drafting
           # disabled (ai.draftDeck returns a clear "not configured" error) until it's added.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Phase 4a Part 1 ("Sign in with Microsoft"). Same optional-until-configured
+          # pattern as ANTHROPIC_API_KEY: all three are needed together before Microsoft
+          # sign-in counts as configured (see deploy.sh) — until then it stays hidden
+          # (auth.config reports microsoftEnabled: false) rather than failing the deploy.
+          AZURE_AD_CLIENT_ID: ${{ secrets.AZURE_AD_CLIENT_ID }}
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          AZURE_AD_CLIENT_SECRET: ${{ secrets.AZURE_AD_CLIENT_SECRET }}
 
       # TEMPORARY — root-causing the "AI drafting request failed: Connection error." seen
       # twice in a row in the live-e2e job. That message is just the Anthropic SDK's own

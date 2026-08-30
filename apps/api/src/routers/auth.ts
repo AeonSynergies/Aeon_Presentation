@@ -10,6 +10,7 @@ import {
   signAccessToken,
   verifyAccessToken,
 } from "../lib/auth.js";
+import { isMicrosoftAuthConfigured } from "../lib/microsoft-auth.js";
 import { protectedProcedure, publicProcedure, router } from "../trpc.js";
 
 // Production serves web and api from different origins, so the refresh cookie must be
@@ -25,7 +26,11 @@ const cookieOptions = {
   path: "/",
 };
 
-async function issueSession(res: import("express").Response, user: { id: string; email: string; role: string }) {
+// Exported (not just used locally below) so the plain-Express Microsoft OAuth callback
+// route (apps/api/src/index.ts — a redirect flow, not a tRPC call, so it can't go through
+// this router directly) issues sessions the exact same way password login does: same JWT
+// claims, same refresh-cookie mechanics, same everything downstream of "who is this".
+export async function issueSession(res: import("express").Response, user: { id: string; email: string; role: string }) {
   const accessToken = signAccessToken({ sub: user.id, email: user.email, role: user.role });
   const { token, hash, expiresAt } = generateRefreshToken();
   await prisma.refreshToken.create({ data: { userId: user.id, tokenHash: hash, expiresAt } });
@@ -82,6 +87,11 @@ export const authRouter = router({
     if (!user) throw new TRPCError({ code: "UNAUTHORIZED" });
     return { id: user.id, email: user.email, name: user.name, role: user.role };
   }),
+
+  // Lets the login page know whether to show "Sign in with Microsoft" at all — a plain
+  // feature-detection query, not an auth decision (the real gate is isMicrosoftAuthConfigured()
+  // being checked again server-side by the /api/auth/microsoft/* routes themselves).
+  config: publicProcedure.query(() => ({ microsoftEnabled: isMicrosoftAuthConfigured() })),
 });
 
 // Re-exported for callers that only need to validate a bearer token outside tRPC context

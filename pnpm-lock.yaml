@@ -26,6 +26,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.121.0
         version: 0.121.0(zod@4.4.3)
+      '@azure/msal-node':
+        specifier: ^2.16.2
+        version: 2.16.3
       '@trpc/server':
         specifier: ^11.18.0
         version: 11.18.0(typescript@5.9.3)
@@ -84,6 +87,9 @@ importers:
       '@aeon/types':
         specifier: workspace:*
         version: link:../../packages/types
+      '@microsoft/teams-js':
+        specifier: ^2.35.0
+        version: 2.55.0
       '@tanstack/react-query':
         specifier: ^5.101.4
         version: 5.101.4(react@19.2.8)
@@ -190,6 +196,14 @@ packages:
     peerDependenciesMeta:
       zod:
         optional: true
+
+  '@azure/msal-common@14.16.1':
+    resolution: {integrity: sha512-nyxsA6NA4SVKh5YyRpbSXiMr7oQbwark7JU9LMeg6tJYTSPyAGkdx61wPT4gyxZfxlSxMMEyAsWaubBlNyIa1w==}
+    engines: {node: '>=0.8.0'}
+
+  '@azure/msal-node@2.16.3':
+    resolution: {integrity: sha512-CO+SE4weOsfJf+C5LM8argzvotrXw252/ZU6SM2Tz63fEblhH1uuVaaO4ISYFuN4Q6BhTo7I3qIdi8ydUQCqhw==}
+    engines: {node: '>=16'}
 
   '@babel/code-frame@7.27.1':
     resolution: {integrity: sha512-cjQ7ZlQ0Mv3b47hABuTevyTuYN4i+loJKGeV9flcCgIK37cCXRh+L1bd3iBHlynerhQ7BhCkn2BPbQUL+rGqFg==}
@@ -437,6 +451,9 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@microsoft/teams-js@2.55.0':
+    resolution: {integrity: sha512-2WuCoqdkF7CRhVvvBJbKWZL6OTSNr+rrrRAK5akV0VoEnil6f1OyMvKvwCUCe5fCM91uKIjC4NGjWfyp6JEwrw==}
 
   '@oozcitak/dom@2.0.2':
     resolution: {integrity: sha512-GjpKhkSYC3Mj4+lfwEyI1dqnsKTgwGy48ytZEhm4A/xnH/8z9M3ZVXKr/YGQi3uCLs1AEBS+x5T2JPiueEDW8w==}
@@ -2222,6 +2239,11 @@ packages:
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
+  uuid@8.3.2:
+    resolution: {integrity: sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==}
+    deprecated: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+    hasBin: true
+
   vary@1.1.2:
     resolution: {integrity: sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==}
     engines: {node: '>= 0.8'}
@@ -2313,6 +2335,14 @@ snapshots:
       standardwebhooks: 1.0.0
     optionalDependencies:
       zod: 4.4.3
+
+  '@azure/msal-common@14.16.1': {}
+
+  '@azure/msal-node@2.16.3':
+    dependencies:
+      '@azure/msal-common': 14.16.1
+      jsonwebtoken: 9.0.3
+      uuid: 8.3.2
 
   '@babel/code-frame@7.27.1':
     dependencies:
@@ -2518,6 +2548,13 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@microsoft/teams-js@2.55.0':
+    dependencies:
+      base64-js: 1.5.1
+      debug: 4.4.3
+    transitivePeerDependencies:
+      - supports-color
 
   '@oozcitak/dom@2.0.2':
     dependencies:
@@ -4215,6 +4252,8 @@ snapshots:
   use-sync-external-store@1.6.0(react@19.2.8):
     dependencies:
       react: 19.2.8
+
+  uuid@8.3.2: {}
 
   vary@1.1.2: {}
 

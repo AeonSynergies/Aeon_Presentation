@@ -11,3 +11,4 @@ dist/
 /packages/database/prisma/generated/
 apps/web/src/routeTree.gen.ts
 infra/e2e/e2e-artifacts/
+infra/teams/teams-app-package.zip

@@ -26,6 +26,19 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   const [queryClient] = React.useState(() => new QueryClient());
   const [trpcClient] = React.useState(() => createTrpcClient());
 
+  // Teams tab readiness (Phase 4a Part 1) — this app is otherwise unaware of Teams; when
+  // it happens to be running inside a real Teams client (see infra/teams/manifest.json),
+  // Teams withholds the tab's "loading" spinner until app.initialize() resolves, so a
+  // Teams-hosted tab that never calls this would look stuck. Outside Teams (every browser
+  // visit today) the SDK's handshake with a Teams host simply never completes, so this is
+  // a harmless, silently-ignored no-op — nothing here has been exercised inside a real
+  // Teams client yet (blocked on real Teams access, see the root README).
+  React.useEffect(() => {
+    import("@microsoft/teams-js")
+      .then(({ app }) => app.initialize())
+      .catch(() => undefined);
+  }, []);
+
   return (
     <html lang="en">
       <head>

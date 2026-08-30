@@ -159,6 +159,37 @@ time — the next push to `main` picks it up and updates the running api service
 (deploy.sh stores it in SSM and re-checks whether the running service needs the update,
 it doesn't require deleting/recreating anything).
 
+Optionally also `AZURE_AD_CLIENT_ID` / `AZURE_AD_TENANT_ID` / `AZURE_AD_CLIENT_SECRET` as
+repo secrets (all three together, or none), to enable "Sign in with Microsoft" (Phase 4a
+Part 1). Without them, deploys still succeed; the login page simply doesn't show the
+Microsoft button (`auth.config` reports `microsoftEnabled: false`) and
+`/api/auth/microsoft/*` redirects to a clean "not configured" error rather than crashing.
+To get real values:
+1. In the Azure Portal (a plain Azure Free Account works — this doesn't need the
+   Microsoft 365 Developer Program sandbox), go to **Azure Active Directory → App
+   registrations → New registration**.
+2. Name it anything (e.g. "Aeon Presentation Platform"), leave the supported-account-types
+   default, and under **Redirect URI** add a **Web** platform entry pointing at the
+   deployed api service's own URL + `/api/auth/microsoft/callback` (e.g.
+   `https://<api-service>.awsapprunner.com/api/auth/microsoft/callback` — the api
+   service's URL is printed by every deploy run, `api: https://...`, and stored in
+   `API_ORIGIN` on the running service once Azure is configured).
+3. Copy the **Application (client) ID** and **Directory (tenant) ID** from the
+   registration's Overview page — these are `AZURE_AD_CLIENT_ID` and `AZURE_AD_TENANT_ID`.
+4. Under **Certificates & secrets → Client secrets → New client secret**, create one and
+   copy its **Value** immediately (Azure only shows it once) — that's
+   `AZURE_AD_CLIENT_SECRET`.
+5. No Microsoft Graph API permissions are needed — sign-in only requests the standard
+   `openid`/`profile`/`email` scopes, not delegated Graph access, so there's no
+   admin-consent step to grant.
+
+A successful Microsoft sign-in maps to an **existing** row in the `users` table by email —
+it never creates one. Exactly like password accounts, an Admin has to create the account
+via Team Management first (same "no public self-registration" stance as password login);
+Microsoft sign-in is an alternate way to authenticate into that same account, not a second
+signup path. Signing in with an email that has no matching account redirects back to
+`/login` with a clear explanation instead of silently creating one.
+
 **IAM note (Phase 3a):** the AI-drafting feature needed a NAT Gateway added to the network
 setup (see "What it provisions" below), which uses several EC2 actions the deploy
 credentials may not have needed before: `ec2:CreateSubnet`, `ec2:DescribeInternetGateways`,

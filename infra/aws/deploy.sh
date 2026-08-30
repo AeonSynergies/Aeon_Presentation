@@ -405,6 +405,37 @@ fi
 ANTHROPIC_PARAM_ARN="arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter${ANTHROPIC_PARAM_NAME}"
 
 # ============================================================
+# Azure AD (Phase 4a, "Sign in with Microsoft") — three secrets, all required together
+# before Microsoft sign-in counts as configured (client id/tenant id aren't strictly
+# secret, but SecureString keeps the pattern uniform and simple). Same idempotent
+# "configured or not" pattern as ANTHROPIC_API_KEY above: an unset repo secret this run
+# leaves whatever's already stored from a previous run untouched; if none was ever stored,
+# Microsoft sign-in stays disabled (auth.config reports microsoftEnabled: false, and the
+# /api/auth/microsoft/* routes redirect to a clean "not configured" error) rather than
+# failing the whole deploy over one optional feature's credentials.
+# ============================================================
+AZURE_CLIENT_ID_PARAM_NAME="/${PROJECT}/AZURE_AD_CLIENT_ID"
+AZURE_TENANT_ID_PARAM_NAME="/${PROJECT}/AZURE_AD_TENANT_ID"
+AZURE_CLIENT_SECRET_PARAM_NAME="/${PROJECT}/AZURE_AD_CLIENT_SECRET"
+if [ -n "${AZURE_AD_CLIENT_ID:-}" ] && [ -n "${AZURE_AD_TENANT_ID:-}" ] && [ -n "${AZURE_AD_CLIENT_SECRET:-}" ]; then
+  log "Storing AZURE_AD_CLIENT_ID/TENANT_ID/CLIENT_SECRET in SSM Parameter Store"
+  aws_ ssm put-parameter --name "$AZURE_CLIENT_ID_PARAM_NAME" --type SecureString --value "$AZURE_AD_CLIENT_ID" --overwrite >/dev/null
+  aws_ ssm put-parameter --name "$AZURE_TENANT_ID_PARAM_NAME" --type SecureString --value "$AZURE_AD_TENANT_ID" --overwrite >/dev/null
+  aws_ ssm put-parameter --name "$AZURE_CLIENT_SECRET_PARAM_NAME" --type SecureString --value "$AZURE_AD_CLIENT_SECRET" --overwrite >/dev/null
+fi
+AZURE_AD_CONFIGURED=false
+if aws_ ssm get-parameter --name "$AZURE_CLIENT_ID_PARAM_NAME" >/dev/null 2>&1 \
+  && aws_ ssm get-parameter --name "$AZURE_TENANT_ID_PARAM_NAME" >/dev/null 2>&1 \
+  && aws_ ssm get-parameter --name "$AZURE_CLIENT_SECRET_PARAM_NAME" >/dev/null 2>&1; then
+  AZURE_AD_CONFIGURED=true
+else
+  log "Azure AD credentials not fully set (need all 3: AZURE_AD_CLIENT_ID/TENANT_ID/CLIENT_SECRET) — Microsoft sign-in stays disabled until they're added as repo secrets."
+fi
+AZURE_CLIENT_ID_PARAM_ARN="arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter${AZURE_CLIENT_ID_PARAM_NAME}"
+AZURE_TENANT_ID_PARAM_ARN="arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter${AZURE_TENANT_ID_PARAM_NAME}"
+AZURE_CLIENT_SECRET_PARAM_ARN="arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter${AZURE_CLIENT_SECRET_PARAM_NAME}"
+
+# ============================================================
 # IAM roles for App Runner
 # ============================================================
 ensure_role() {
@@ -448,6 +479,9 @@ INSTANCE_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT}-apprunner-instance
 SSM_SECRET_RESOURCES="\"${DB_PARAM_ARN}\", \"${JWT_PARAM_ARN}\""
 if [ "$ANTHROPIC_CONFIGURED" = true ]; then
   SSM_SECRET_RESOURCES="${SSM_SECRET_RESOURCES}, \"${ANTHROPIC_PARAM_ARN}\""
+fi
+if [ "$AZURE_AD_CONFIGURED" = true ]; then
+  SSM_SECRET_RESOURCES="${SSM_SECRET_RESOURCES}, \"${AZURE_CLIENT_ID_PARAM_ARN}\", \"${AZURE_TENANT_ID_PARAM_ARN}\", \"${AZURE_CLIENT_SECRET_PARAM_ARN}\""
 fi
 SSM_POLICY_DOC=$(cat <<EOF
 {
@@ -555,6 +589,9 @@ API_SECRETS_JSON="\"DATABASE_URL\": \"${DB_PARAM_ARN}\", \"JWT_ACCESS_SECRET\": 
 if [ "$ANTHROPIC_CONFIGURED" = true ]; then
   API_SECRETS_JSON="${API_SECRETS_JSON}, \"ANTHROPIC_API_KEY\": \"${ANTHROPIC_PARAM_ARN}\""
 fi
+if [ "$AZURE_AD_CONFIGURED" = true ]; then
+  API_SECRETS_JSON="${API_SECRETS_JSON}, \"AZURE_AD_CLIENT_ID\": \"${AZURE_CLIENT_ID_PARAM_ARN}\", \"AZURE_AD_TENANT_ID\": \"${AZURE_TENANT_ID_PARAM_ARN}\", \"AZURE_AD_CLIENT_SECRET\": \"${AZURE_CLIENT_SECRET_PARAM_ARN}\""
+fi
 
 API_SERVICE_INFO="$(apprunner_find_service "${PROJECT}-api")"
 API_SERVICE_ARN="$(awk '{print $1}' <<< "$API_SERVICE_INFO")"
@@ -635,30 +672,41 @@ log "web service URL: $WEB_URL"
 
 # ============================================================
 # Point the api service's WEB_ORIGIN at the web service (needed for CORS + the
-# refresh-token cookie) — only update if it's missing or stale, to avoid an
-# unnecessary redeploy on every run. Also covers the case where ANTHROPIC_API_KEY was
-# just added as a repo secret for the first time: the api service already exists from an
-# earlier deploy, so a plain start-deployment redeploy (used above when nothing else
-# changed) wouldn't pick up a newly-available secret — only create-service and this
-# update-service call actually set RuntimeEnvironmentSecrets.
+# refresh-token cookie) and API_ORIGIN at itself (needed to build the Microsoft OAuth
+# redirect_uri, apps/api/src/lib/microsoft-auth.ts — only known once the api service
+# exists, same constraint WEB_ORIGIN already has) — only update if something's missing or
+# stale, to avoid an unnecessary redeploy on every run. Also covers the case where
+# ANTHROPIC_API_KEY or the AZURE_AD_* secrets were just added as repo secrets for the
+# first time: the api service already exists from an earlier deploy, so a plain
+# start-deployment redeploy (used above when nothing else changed) wouldn't pick up a
+# newly-available secret — only create-service and this update-service call actually set
+# RuntimeEnvironmentSecrets.
 # ============================================================
 CURRENT_WEB_ORIGIN="$(aws_ apprunner describe-service --service-arn "$API_SERVICE_ARN" \
   --query 'Service.SourceConfiguration.ImageRepository.ImageConfiguration.RuntimeEnvironmentVariables.WEB_ORIGIN' --output text)"
+CURRENT_API_ORIGIN="$(aws_ apprunner describe-service --service-arn "$API_SERVICE_ARN" \
+  --query 'Service.SourceConfiguration.ImageRepository.ImageConfiguration.RuntimeEnvironmentVariables.API_ORIGIN' --output text)"
 CURRENT_ANTHROPIC_SECRET="$(aws_ apprunner describe-service --service-arn "$API_SERVICE_ARN" \
   --query 'Service.SourceConfiguration.ImageRepository.ImageConfiguration.RuntimeEnvironmentSecrets.ANTHROPIC_API_KEY' --output text)"
+CURRENT_AZURE_SECRET="$(aws_ apprunner describe-service --service-arn "$API_SERVICE_ARN" \
+  --query 'Service.SourceConfiguration.ImageRepository.ImageConfiguration.RuntimeEnvironmentSecrets.AZURE_AD_CLIENT_SECRET' --output text)"
 NEEDS_ANTHROPIC_UPDATE=false
 if [ "$ANTHROPIC_CONFIGURED" = true ] && { [ "$CURRENT_ANTHROPIC_SECRET" = "None" ] || [ -z "$CURRENT_ANTHROPIC_SECRET" ]; }; then
   NEEDS_ANTHROPIC_UPDATE=true
 fi
-if [ "$CURRENT_WEB_ORIGIN" != "$WEB_URL" ] || [ "$NEEDS_ANTHROPIC_UPDATE" = true ]; then
-  log "Updating api service (WEB_ORIGIN and/or newly-added ANTHROPIC_API_KEY) and redeploying"
+NEEDS_AZURE_UPDATE=false
+if [ "$AZURE_AD_CONFIGURED" = true ] && { [ "$CURRENT_AZURE_SECRET" = "None" ] || [ -z "$CURRENT_AZURE_SECRET" ]; }; then
+  NEEDS_AZURE_UPDATE=true
+fi
+if [ "$CURRENT_WEB_ORIGIN" != "$WEB_URL" ] || [ "$CURRENT_API_ORIGIN" != "$API_URL" ] || [ "$NEEDS_ANTHROPIC_UPDATE" = true ] || [ "$NEEDS_AZURE_UPDATE" = true ]; then
+  log "Updating api service (WEB_ORIGIN/API_ORIGIN and/or newly-added ANTHROPIC_API_KEY/AZURE_AD_* secrets) and redeploying"
   aws_ apprunner update-service --service-arn "$API_SERVICE_ARN" --source-configuration "{
     \"ImageRepository\": {
       \"ImageIdentifier\": \"${ECR_API_URI}:latest\",
       \"ImageRepositoryType\": \"ECR\",
       \"ImageConfiguration\": {
         \"Port\": \"4000\",
-        \"RuntimeEnvironmentVariables\": {\"NODE_ENV\": \"production\", \"WEB_ORIGIN\": \"${WEB_URL}\"},
+        \"RuntimeEnvironmentVariables\": {\"NODE_ENV\": \"production\", \"WEB_ORIGIN\": \"${WEB_URL}\", \"API_ORIGIN\": \"${API_URL}\"},
         \"RuntimeEnvironmentSecrets\": {${API_SECRETS_JSON}}
       }
     },
@@ -673,4 +721,5 @@ echo "============================================================"
 echo " api: $API_URL"
 echo " web: $WEB_URL"
 echo " ai_configured: $ANTHROPIC_CONFIGURED"
+echo " azure_ad_configured: $AZURE_AD_CONFIGURED"
 echo "============================================================"

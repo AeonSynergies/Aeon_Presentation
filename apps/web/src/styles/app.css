@@ -1457,6 +1457,24 @@ select:focus {
   opacity: 0.5;
   cursor: default;
 }
+.btn-secondary {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  letter-spacing: 0.03em;
+  padding: 11px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--paper);
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: none;
+}
+.btn-secondary:hover {
+  border-color: var(--fog);
+}
 
 @media (max-width: 900px) {
   .grid-2 {
