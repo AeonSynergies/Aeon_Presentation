@@ -159,7 +159,7 @@ time — the next push to `main` picks it up and updates the running api service
 (deploy.sh stores it in SSM and re-checks whether the running service needs the update,
 it doesn't require deleting/recreating anything).
 
-Optionally also `AZURE_AD_CLIENT_ID` / `AZURE_AD_TENANT_ID` / `AZURE_AD_CLIENT_SECRET` as
+Optionally also `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_CLIENT_SECRET` as
 repo secrets (all three together, or none), to enable "Sign in with Microsoft" (Phase 4a
 Part 1). Without them, deploys still succeed; the login page simply doesn't show the
 Microsoft button (`auth.config` reports `microsoftEnabled: false`) and
@@ -175,10 +175,10 @@ To get real values:
    service's URL is printed by every deploy run, `api: https://...`, and stored in
    `API_ORIGIN` on the running service once Azure is configured).
 3. Copy the **Application (client) ID** and **Directory (tenant) ID** from the
-   registration's Overview page — these are `AZURE_AD_CLIENT_ID` and `AZURE_AD_TENANT_ID`.
+   registration's Overview page — these are `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`.
 4. Under **Certificates & secrets → Client secrets → New client secret**, create one and
    copy its **Value** immediately (Azure only shows it once) — that's
-   `AZURE_AD_CLIENT_SECRET`.
+   `AZURE_CLIENT_SECRET`.
 5. No Microsoft Graph API permissions are needed — sign-in only requests the standard
    `openid`/`profile`/`email` scopes, not delegated Graph access, so there's no
    admin-consent step to grant.

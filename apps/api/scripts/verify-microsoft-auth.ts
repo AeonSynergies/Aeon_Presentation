@@ -2,11 +2,11 @@
 // suite wired into deploy-aws.yml, and NOT run against the deployed app: it can't be
 // either of those yet, since there's no real Azure AD tenant to actually authenticate
 // against (the Microsoft 365 Developer Program sandbox isn't available; a plain Azure
-// Free Account is being set up separately). Once that exists and AZURE_AD_CLIENT_ID/
+// Free Account is being set up separately). Once that exists and AZURE_CLIENT_ID/
 // TENANT_ID/CLIENT_SECRET are wired in (see the root README's Azure AD setup steps), THIS
 // is the point to replace with a real browser-driven suite (Playwright signing into a
 // real test Microsoft account) mirroring wizard-e2e.mjs/role-enforcement-e2e.mjs's
-// pattern, wired into deploy-aws.yml gated on an `azure_ad_configured` output exactly like
+// pattern, wired into deploy-aws.yml gated on an `azure_configured` output exactly like
 // ai-draft-e2e.mjs is gated on `ai_configured`.
 //
 // What THIS verifies, against a real local Postgres and a real running local api server —
