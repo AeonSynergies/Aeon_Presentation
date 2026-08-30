@@ -411,14 +411,18 @@ body {
   padding: 14px 18px 0;
 }
 .stage:fullscreen #presentBtn,
-.stage:-webkit-full-screen #presentBtn {
+.stage:-webkit-full-screen #presentBtn,
+.stage:fullscreen .present-notes-btn,
+.stage:-webkit-full-screen .present-notes-btn {
   opacity: 0.35;
   font-size: 10px;
   padding: 6px 12px;
   transition: opacity 0.2s;
 }
 .stage:fullscreen #presentBtn:hover,
-.stage:-webkit-full-screen #presentBtn:hover {
+.stage:-webkit-full-screen #presentBtn:hover,
+.stage:fullscreen .present-notes-btn:hover,
+.stage:-webkit-full-screen .present-notes-btn:hover {
   opacity: 1;
 }
 .stage:fullscreen .viewport,

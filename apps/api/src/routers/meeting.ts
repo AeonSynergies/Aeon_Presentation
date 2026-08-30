@@ -1,5 +1,14 @@
-import { prisma } from "@aeon/database";
-import { computePricingSummary, finalPriceFor, fmtMoney, type DeckConfig, type DiscountConfig, type MeetingOutcome, type SessionState } from "@aeon/types";
+import { Prisma, prisma } from "@aeon/database";
+import {
+  computePricingSummary,
+  finalPriceFor,
+  fmtMoney,
+  initialSessionStateForDeck,
+  type DeckConfig,
+  type DiscountConfig,
+  type MeetingOutcome,
+  type SessionState,
+} from "@aeon/types";
 import { TRPCError } from "@trpc/server";
 import PDFDocument from "pdfkit";
 import { z } from "zod";
@@ -232,8 +241,20 @@ export const meetingRouter = router({
     .mutation(async ({ input, ctx }) => {
       const deck = await prisma.deck.findUnique({ where: { id: input.deckId } });
       if (!deck) throw new TRPCError({ code: "NOT_FOUND", message: "Deck not found" });
+      // Seeded with this deck's real starting state (every service opted in, etc.) up
+      // front, rather than bare column defaults (selected: [] and so on) — Present mode's
+      // Discovery Notes window (decks.$slug_.notes.tsx) can read this row back the moment
+      // it exists, and a row that only ever had defaults briefly, before the client's own
+      // debounced save caught up, would be a real race for whoever reads it first.
+      const initial = initialSessionStateForDeck(deck.config as unknown as DeckConfig);
       const meeting = await prisma.meeting.create({
-        data: { deckId: deck.id, createdById: ctx.user.id },
+        data: {
+          deckId: deck.id,
+          createdById: ctx.user.id,
+          selected: initial.selected,
+          toggles: initial.toggles as Prisma.InputJsonValue,
+          discount: initial.discount as unknown as Prisma.InputJsonValue,
+        },
       });
       return toMeetingDTO(meeting);
     }),

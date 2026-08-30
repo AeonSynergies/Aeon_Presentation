@@ -46,3 +46,24 @@ export function freshSessionState(): SessionState {
     discount: { enabled: false, scope: "all", services: [], type: "percent", value: 0 },
   };
 }
+
+// Ported from Presentation_Platform.html's initStateForDeck(): every service starts
+// opted-in, and the discount's service list mirrors that until an internal discount is
+// configured. Shared between the client (DeckPlayer's very first render, before any
+// backend round trip) and the server (meeting.create, so a freshly-created Meeting row
+// reflects this deck's actual starting state immediately — never a gap where the row only
+// has bare column defaults that a later client save has to catch up on).
+export function initialSessionStateForDeck(deck: { services: { id: string }[]; discoveryQuestions: { id: string; type: string }[] }): SessionState {
+  const allServiceIds = deck.services.map((s) => s.id);
+  const toggles: DiscoveryToggles = {};
+  for (const q of deck.discoveryQuestions) {
+    if (q.type === "toggle") toggles[q.id] = false;
+  }
+  return {
+    driverValue: null,
+    selected: allServiceIds,
+    toggles,
+    answers: {},
+    discount: { enabled: false, scope: "all", services: allServiceIds, type: "percent", value: 0 },
+  };
+}

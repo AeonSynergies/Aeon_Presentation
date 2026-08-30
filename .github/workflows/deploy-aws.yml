@@ -211,6 +211,17 @@ jobs:
         env:
           BASE_URL: ${{ needs.deploy.outputs.web_url }}
 
+      # Present-mode Discovery Notes popout window (safety fix): confirms Discovery Notes
+      # is genuinely absent from the DOM while presenting (not just CSS-hidden), that the
+      # popout control opens a real separate window, and that edits made there reach the
+      # presenting window's Pricing slide through the real backend — not direct
+      # window-to-window messaging.
+      - name: Run live notes-window E2E against the deployment
+        working-directory: infra/e2e
+        run: node notes-window-e2e.mjs
+        env:
+          BASE_URL: ${{ needs.deploy.outputs.web_url }}
+
       # Team & Role Management (Phase 2c): creates one QA test user per non-admin role
       # through the real Team Management screen (Admin), then confirms — via raw HTTP
       # calls to the API, bypassing the web UI entirely — that every permission each role
