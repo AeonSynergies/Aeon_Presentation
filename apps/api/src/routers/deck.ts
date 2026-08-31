@@ -5,9 +5,25 @@ import { z } from "zod";
 import { deckConfigSchema, slugifyCompanyName } from "../lib/deck-config-schema.js";
 import { protectedProcedure, requirePermission, router } from "../trpc.js";
 
+// Shared by create (new slug from scratch) and duplicate (new slug from a copied deck's
+// new name) — "new" stays reserved either way since /decks/new is the Deck Builder route.
+const RESERVED_SLUGS = new Set(["new"]);
+async function findFreeSlug(companyName: string): Promise<string> {
+  const base = slugifyCompanyName(companyName);
+  let slug = base;
+  for (let n = 2; RESERVED_SLUGS.has(slug) || (await prisma.deck.findUnique({ where: { slug } })); n++) {
+    if (n > 50) throw new TRPCError({ code: "CONFLICT", message: "Could not find a free slug for this deck name" });
+    slug = `${base}-${n}`;
+  }
+  return slug;
+}
+
 export const deckRouter = router({
+  // Archived decks (Home's "Remove") are excluded here — Archived Files (Admin-only) is
+  // the only other place they're still visible, via archive.listDecks below.
   list: protectedProcedure.query(async () => {
     const decks = await prisma.deck.findMany({
+      where: { archivedAt: null },
       select: { id: true, slug: true, companyName: true, industry: true, config: true },
       orderBy: { createdAt: "asc" },
     });
@@ -29,9 +45,13 @@ export const deckRouter = router({
     );
   }),
 
+  // Archived decks 404 here too, same as list — a "removed" deck can't still be opened,
+  // presented, or edited by URL just because someone has it bookmarked. Existing Meeting
+  // Records referencing it are unaffected: those read the deck's name/industry through
+  // their own Meeting.deck relation, never through this procedure.
   getBySlug: protectedProcedure.input(z.object({ slug: z.string() })).query(async ({ input }) => {
     const deck = await prisma.deck.findUnique({ where: { slug: input.slug } });
-    if (!deck) throw new TRPCError({ code: "NOT_FOUND", message: "Deck not found" });
+    if (!deck || deck.archivedAt) throw new TRPCError({ code: "NOT_FOUND", message: "Deck not found" });
     // dbId is the Prisma row id (needed to create a Meeting FK) — distinct from
     // DeckConfig.id, which is the prototype's own slug-like identifier.
     return { dbId: deck.id, config: deck.config as unknown as DeckConfig };
@@ -57,16 +77,8 @@ export const deckRouter = router({
     const config = parsed.data;
 
     // Slug (and config.id, kept equal to it like every seeded deck) comes from the
-    // company name, uniquified with a numeric suffix on collision. "new" is reserved:
-    // the web app's /decks/new route (the Deck Builder itself) would shadow a deck at
-    // that slug.
-    const RESERVED_SLUGS = new Set(["new"]);
-    const base = slugifyCompanyName(config.companyName);
-    let slug = base;
-    for (let n = 2; RESERVED_SLUGS.has(slug) || (await prisma.deck.findUnique({ where: { slug } })); n++) {
-      if (n > 50) throw new TRPCError({ code: "CONFLICT", message: "Could not find a free slug for this deck name" });
-      slug = `${base}-${n}`;
-    }
+    // company name, uniquified with a numeric suffix on collision.
+    const slug = await findFreeSlug(config.companyName);
     config.id = slug;
 
     const deck = await prisma.deck.create({
@@ -105,4 +117,57 @@ export const deckRouter = router({
       });
       return { slug: deck.slug, dbId: deck.id };
     }),
+
+  // Distinct from the live-deck-cloning deliberately removed from Create Deck's start
+  // screen in Phase 5c: that was about not using a real client's deck as a starting point
+  // for a different client's proposal. This is a user copying their OWN deck for a
+  // legitimate variant — same permission as create (a duplicate is a new deck), and the
+  // result is immediately, independently editable — pricing/team/content changes here
+  // never touch the source deck.
+  duplicate: requirePermission("createDeck")
+    .input(z.object({ slug: z.string(), newName: z.string().min(1) }))
+    .mutation(async ({ input }) => {
+      const source = await prisma.deck.findUnique({ where: { slug: input.slug } });
+      if (!source || source.archivedAt) throw new TRPCError({ code: "NOT_FOUND", message: "Deck not found" });
+
+      const config = { ...(source.config as unknown as DeckConfig) };
+      const slug = await findFreeSlug(input.newName);
+      config.id = slug;
+      config.companyName = input.newName;
+
+      const deck = await prisma.deck.create({
+        data: { slug, companyName: input.newName, industry: source.industry, config: config as object },
+      });
+      return { slug: deck.slug, dbId: deck.id };
+    }),
+
+  // Home's "Remove" — same permission Edit Deck already has (Sales Executive, BD Manager,
+  // Admin). Soft-delete only: the row (and its Meeting history) stays intact, just hidden
+  // from list/getBySlug above, until Archived Files restores or permanently deletes it.
+  archive: requirePermission("editDeck").input(z.object({ id: z.string() })).mutation(async ({ input }) => {
+    const deck = await prisma.deck.findUnique({ where: { id: input.id } });
+    if (!deck) throw new TRPCError({ code: "NOT_FOUND", message: "Deck not found" });
+    await prisma.deck.update({ where: { id: input.id }, data: { archivedAt: new Date() } });
+    return { ok: true };
+  }),
+
+  // Archived Files (Admin-only, same manageUsers gate as Team Management) — restore and
+  // permanent-delete are not scoped to any particular user's decks, unlike archive above:
+  // an Admin manages the whole org's archive, not just their own actions.
+  restore: requirePermission("manageUsers").input(z.object({ id: z.string() })).mutation(async ({ input }) => {
+    const deck = await prisma.deck.findUnique({ where: { id: input.id } });
+    if (!deck) throw new TRPCError({ code: "NOT_FOUND", message: "Deck not found" });
+    await prisma.deck.update({ where: { id: input.id }, data: { archivedAt: null } });
+    return { ok: true };
+  }),
+
+  // The only place a Deck row is ever actually destroyed — cascades to every Meeting
+  // referencing it (Meeting.deck has onDelete: Cascade), archived or not. That's the
+  // correct, expected behavior for a genuine permanent delete, not a bug to guard against.
+  deletePermanent: requirePermission("manageUsers").input(z.object({ id: z.string() })).mutation(async ({ input }) => {
+    const deck = await prisma.deck.findUnique({ where: { id: input.id } });
+    if (!deck) throw new TRPCError({ code: "NOT_FOUND", message: "Deck not found" });
+    await prisma.deck.delete({ where: { id: input.id } });
+    return { ok: true };
+  }),
 });

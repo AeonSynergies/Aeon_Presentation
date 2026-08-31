@@ -24,6 +24,11 @@ export function Header() {
             Team
           </Link>
         )}
+        {user && can(user.role, "manageUsers") && (
+          <Link to="/archived" className="nav-item" activeProps={{ className: "nav-item active" }}>
+            Archived Files
+          </Link>
+        )}
         {user && (
           <Link to="/profile" className="nav-item" activeProps={{ className: "nav-item active" }}>
             Profile

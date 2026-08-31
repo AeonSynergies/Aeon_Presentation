@@ -61,8 +61,16 @@ model Deck {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Set by "Remove" on Home (soft-delete) — excludes the deck from deck.list/getBySlug
+  // but keeps the row (and every Meeting referencing it) intact for Archived Files to
+  // restore. Null means active/visible; this is never set back to null except by an
+  // explicit restore. A real hard delete (Archived Files' "Delete Permanently", Admin-only)
+  // is the only path that actually removes the row.
+  archivedAt DateTime?
+
   meetings Meeting[]
 
+  @@index([archivedAt])
   @@map("decks")
 }
 
@@ -100,12 +108,19 @@ model Meeting {
   // eligible role explicitly completed should ever show up as a record.
   completedAt DateTime?
 
+  // Set by "Delete" on Meeting Records (soft-delete) — excludes the record from
+  // meeting.listRecords but keeps the row for Archived Files to restore. Same semantics
+  // as Deck.archivedAt above; only Archived Files' permanent-delete path actually removes
+  // the row.
+  archivedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([deckId])
   @@index([createdById])
   @@index([completedAt])
+  @@index([archivedAt])
   @@map("meetings")
 }
 
