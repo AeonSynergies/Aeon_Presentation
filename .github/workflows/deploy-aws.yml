@@ -260,6 +260,20 @@ jobs:
           BASE_URL: ${{ needs.deploy.outputs.web_url }}
           API_URL: ${{ needs.deploy.outputs.api_url }}
 
+      # Archive system: soft-delete (archivedAt) for decks and meeting records, Home's
+      # 3-dot menu, Meeting Records' Delete, and the Admin-only Archived Files screen.
+      # Creates and genuinely destroys its own uniquely-named throwaway deck + meeting
+      # record — unlike every other suite's fixture, this one is never reused across runs.
+      # Depends on role-enforcement-e2e.mjs above for the QA Sales Executive account, used
+      # to confirm every archive-management procedure is genuinely rejected at the API
+      # level for a non-Admin, not just kept off the /archived screen.
+      - name: Run live archive E2E against the deployment
+        working-directory: infra/e2e
+        run: node archive-e2e.mjs
+        env:
+          BASE_URL: ${{ needs.deploy.outputs.web_url }}
+          API_URL: ${{ needs.deploy.outputs.api_url }}
+
       # AI-assisted deck drafting (Phase 3a). Skips itself (not the job — a skip, not a
       # failure) when ANTHROPIC_API_KEY hasn't been added as a repo secret yet, since
       # ai.draftDeck is then correctly disabled rather than broken. Confirms the real

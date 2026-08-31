@@ -83,6 +83,20 @@ function MeetingRecordsList() {
     search: search || undefined,
   });
   const utils = trpc.useUtils();
+  const archiveMeeting = trpc.meeting.archive.useMutation();
+
+  async function onDelete(id: string) {
+    setRowError(null);
+    setPendingId(id);
+    try {
+      await archiveMeeting.mutateAsync({ id });
+      await utils.meeting.listRecords.invalidate();
+    } catch (err) {
+      setRowError({ id, message: err instanceof Error ? err.message : "Couldn't delete that record." });
+    } finally {
+      setPendingId(null);
+    }
+  }
 
   async function onExportText(id: string) {
     setRowError(null);
@@ -175,6 +189,9 @@ function MeetingRecordsList() {
                       </button>
                       <button type="button" className="mini-btn" onClick={() => onRegeneratePdf(r.id)} disabled={pendingId === r.id}>
                         ⬇ PDF
+                      </button>
+                      <button type="button" className="mini-btn mini-btn-danger" onClick={() => onDelete(r.id)} disabled={pendingId === r.id}>
+                        Delete
                       </button>
                     </td>
                   </tr>

@@ -380,7 +380,7 @@ export const meetingRouter = router({
       })
     )
     .query(async ({ input, ctx }) => {
-      const where: Record<string, unknown> = { createdById: ctx.user.id, completedAt: { not: null } };
+      const where: Record<string, unknown> = { createdById: ctx.user.id, completedAt: { not: null }, archivedAt: null };
       if (input.deckId) where.deckId = input.deckId;
       if (input.from || input.to) {
         const range: Record<string, Date> = {};
@@ -438,5 +438,34 @@ export const meetingRouter = router({
     const clientPart = meeting.clientName ? `-${meeting.clientName}` : "";
     const filename = safeFilenamePart(`${snapshot.companyName}${clientPart}-quote`) + ".pdf";
     return { filename, base64: buffer.toString("base64") };
+  }),
+
+  // Meeting Records' "Delete" — same permission and caller-scoping as listRecords above
+  // (a Sales Executive can only archive their own records). Soft-delete only: the row
+  // stays intact, just hidden from listRecords, until Archived Files restores or
+  // permanently deletes it.
+  archive: requirePermission("meetingRecords").input(z.object({ id: z.string() })).mutation(async ({ input, ctx }) => {
+    const meeting = await prisma.meeting.findFirst({ where: { id: input.id, createdById: ctx.user.id } });
+    if (!meeting) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting record not found" });
+    await prisma.meeting.update({ where: { id: meeting.id }, data: { archivedAt: new Date() } });
+    return { ok: true };
+  }),
+
+  // Archived Files (Admin-only, same manageUsers gate as Team Management) — not scoped to
+  // the caller's own records, unlike archive above: an Admin manages the whole org's
+  // archive, not just their own.
+  restore: requirePermission("manageUsers").input(z.object({ id: z.string() })).mutation(async ({ input }) => {
+    const meeting = await prisma.meeting.findUnique({ where: { id: input.id } });
+    if (!meeting) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting record not found" });
+    await prisma.meeting.update({ where: { id: input.id }, data: { archivedAt: null } });
+    return { ok: true };
+  }),
+
+  // The only place a Meeting row is ever actually destroyed.
+  deletePermanent: requirePermission("manageUsers").input(z.object({ id: z.string() })).mutation(async ({ input }) => {
+    const meeting = await prisma.meeting.findUnique({ where: { id: input.id } });
+    if (!meeting) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting record not found" });
+    await prisma.meeting.delete({ where: { id: input.id } });
+    return { ok: true };
   }),
 });
