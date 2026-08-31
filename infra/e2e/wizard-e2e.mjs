@@ -274,11 +274,24 @@ async function verifyDeckBehavior() {
 // replace that entirely; this checks both the removal and the replacement.
 const LIVE_DECK_NAMES = ["Amazon DSP", "Meridian Property Partners", "FedEx P&D", DECK_NAME];
 const TEMPLATE_LABELS = [
-  "Field Services Operations",
-  "Professional Services Retainer",
+  "IT Managed Services Provider",
+  "Multi-Location Hospitality Group",
+  "Staffing & Recruiting Agency Back Office",
   "Last-Mile Delivery Operations",
   "Property Management Back Office",
   "Contracted Delivery Operations",
+];
+
+// The three generic templates were rewritten to be structurally distinct from each other
+// (not just reskinned): different pricing-driver units, different service mixes, and each
+// with its own alternate-driver service priced by something other than the deck's default
+// driver. Verified per-template below: blank company name (a template supplies structure,
+// not a placeholder identity), its own driver label, its own service count, and that its
+// alternate-driver service actually offers a second "Priced by" option.
+const NEW_GENERIC_TEMPLATES = [
+  { label: "IT Managed Services Provider", driverLabel: "Devices managed", serviceCount: 4, altDriverService: "Onboarding & Offboarding Support", altDriverFieldId: "employeeHeadcount" },
+  { label: "Multi-Location Hospitality Group", driverLabel: "Active locations", serviceCount: 4, altDriverService: "Staff Recruiting & Onboarding", altDriverFieldId: "hiresPerQuarter" },
+  { label: "Staffing & Recruiting Agency Back Office", driverLabel: "Active placements", serviceCount: 4, altDriverService: "Client Account Management", altDriverFieldId: "activeClientAccounts" },
 ];
 
 async function verifyHomeAndTemplates() {
@@ -300,7 +313,7 @@ async function verifyHomeAndTemplates() {
     startNames.join(", "),
   );
   check(
-    "wizard: start screen lists all 5 purpose-built templates",
+    "wizard: start screen lists all 6 purpose-built templates",
     TEMPLATE_LABELS.every((l) => startNames.includes(l)),
     startNames.join(", "),
   );
@@ -320,6 +333,40 @@ async function verifyHomeAndTemplates() {
     templateCompanyName === "" && templateDriverLabel === "Units managed" && templateSvcCount === 4,
     `company="${templateCompanyName}" driver="${templateDriverLabel}" services=${templateSvcCount}`,
   );
+
+  // The three generic templates specifically: each must be structurally its own thing, not
+  // a reskin of the other two — different driver unit, different service count/mix, and a
+  // working alternate-driver service in each.
+  for (const tpl of NEW_GENERIC_TEMPLATES) {
+    await page.goto(`${BASE}/`);
+    await page.waitForSelector(".deck-grid");
+    await page.click(".new-deck-btn");
+    await page.waitForSelector(".builder-blank-card");
+    await page.locator(".deck-card", { hasText: tpl.label }).click();
+    await page.waitForSelector(".builder-form-pane");
+    const tplForm = page.locator(".builder-form-pane");
+
+    const tplCompanyName = await tplForm.locator(".q-block", { hasText: "Company / deck name" }).locator('input[type="text"]').inputValue();
+    await tplForm.locator(".builder-step-chip", { hasText: "Pricing Model" }).click();
+    const tplDriverLabel = await tplForm.locator(".q-block", { hasText: "Driver label" }).locator('input[type="text"]').first().inputValue();
+    await tplForm.locator(".builder-step-chip", { hasText: "Services" }).click();
+    const tplSvcCount = await tplForm.locator(".builder-svc-card").count();
+    check(
+      `wizard: "${tpl.label}" template prefills its own distinct structure`,
+      tplCompanyName === "" && tplDriverLabel === tpl.driverLabel && tplSvcCount === tpl.serviceCount,
+      `company="${tplCompanyName}" driver="${tplDriverLabel}" services=${tplSvcCount}`,
+    );
+
+    await tplForm.locator(".builder-svc-card", { hasText: tpl.altDriverService }).locator(".builder-svc-head").click();
+    const altSvcBody = tplForm.locator(".builder-svc-card.open .builder-svc-body");
+    const pricedBySelect = altSvcBody.locator(".q-block", { hasText: "Priced by" }).locator("select");
+    const pricedByValue = await pricedBySelect.inputValue();
+    check(
+      `wizard: "${tpl.label}" template's alternate-driver service ("${tpl.altDriverService}") is pre-wired to its own driver question, not the deck default`,
+      pricedByValue === tpl.altDriverFieldId,
+      pricedByValue,
+    );
+  }
 }
 
 // ---------- run ----------
