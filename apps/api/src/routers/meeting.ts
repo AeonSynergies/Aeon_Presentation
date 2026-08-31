@@ -3,13 +3,18 @@ import {
   computePricingSummary,
   finalPriceFor,
   fmtMoney,
+  groupQuestionsByService,
   initialSessionStateForDeck,
+  visibleGeneralQuestions,
+  visibleServiceQuestions,
   type DeckConfig,
   type DiscountConfig,
+  type DiscoveryQuestion,
   type MeetingOutcome,
   type SessionState,
 } from "@aeon/types";
 import { TRPCError } from "@trpc/server";
+import { Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
 import PDFDocument from "pdfkit";
 import { z } from "zod";
 import { protectedProcedure, requirePermission, router } from "../trpc.js";
@@ -184,23 +189,93 @@ function snapshotToCsv(snapshot: QuoteSnapshot, driverLabel: string): string {
   return rows.map((r) => r.map(csvCell).join(",")).join("\n");
 }
 
-function snapshotToText(snapshot: QuoteSnapshot): string {
-  const lines: string[] = [];
-  lines.push(`${snapshot.companyName} — ${snapshot.industry}`);
-  lines.push(`Client: ${snapshot.clientName ?? "(not recorded)"}`);
-  lines.push(`${snapshot.driverLabel}: ${snapshot.driverValue ?? "(not recorded)"}`);
-  lines.push(`Snapshot taken: ${new Date(snapshot.computedAt).toLocaleString("en-US")}`);
-  lines.push("");
-  for (const r of snapshot.rows) {
-    lines.push(`- ${r.service} (${r.team}): ${r.final}${r.surcharge ? " [surcharge applied]" : ""}`);
-  }
-  lines.push("");
-  lines.push(`Estimated Total / Month: ${snapshot.totalLabel}`);
-  return lines.join("\n");
-}
-
 function safeFilenamePart(v: string): string {
   return v.replace(/[^a-zA-Z0-9-]+/g, "_");
+}
+
+// "{Meeting ID}_{Org Name}" naming convention for Meeting Records' Word/PDF exports —
+// meeting.id (a cuid) is the only stable identifier a saved record has; there's no more
+// presentable one. "Org Name" is the client/org captured on the record (clientName), the
+// same field every other export already keys off, falling back to the deck's own company
+// name for a record no client name was ever entered on.
+function meetingExportFilename(meetingId: string, clientName: string | null, companyName: string, ext: string): string {
+  const org = clientName?.trim() || companyName;
+  return safeFilenamePart(`${meetingId}_${org}`) + "." + ext;
+}
+
+interface DiscoverySnapshotQA {
+  id: string;
+  label: string;
+  answerText: string;
+}
+
+interface DiscoverySnapshotGroup {
+  serviceId: string | null;
+  serviceName: string | null;
+  questions: DiscoverySnapshotQA[];
+}
+
+// The frozen Discovery Notes content behind a saved Meeting Record's Word export — same
+// principle as QuoteSnapshot above: computed once at meeting.complete() time from that
+// moment's visible questions/answers, so it can never drift from a live session's later
+// edits or a since-changed deck's discovery questions.
+interface DiscoverySnapshot {
+  companyName: string;
+  clientName: string | null;
+  general: DiscoverySnapshotQA[];
+  serviceGroups: DiscoverySnapshotGroup[];
+  computedAt: string;
+}
+
+function formatAnswerText(q: DiscoveryQuestion, state: SessionState): string {
+  if (q.type === "toggle") {
+    const value = !!state.toggles[q.id];
+    return q.options?.[value ? 1 : 0] ?? (value ? "Yes" : "No");
+  }
+  const raw = state.answers[q.id];
+  return raw === undefined || raw === null || raw === "" ? "(not answered)" : String(raw);
+}
+
+function buildDiscoverySnapshot(config: DeckConfig, state: SessionState, clientName: string | null): DiscoverySnapshot {
+  const questions = config.discoveryQuestions;
+  const general = visibleGeneralQuestions(questions, state).map((q) => ({ id: q.id, label: q.label, answerText: formatAnswerText(q, state) }));
+  const serviceGroups = groupQuestionsByService(visibleServiceQuestions(questions, state)).map((g) => ({
+    serviceId: g.serviceId,
+    serviceName: g.serviceId ? (config.services.find((s) => s.id === g.serviceId)?.name ?? g.serviceId) : null,
+    questions: g.questions.map((q) => ({ id: q.id, label: q.label, answerText: formatAnswerText(q, state) })),
+  }));
+  return {
+    companyName: config.companyName,
+    clientName,
+    general,
+    serviceGroups,
+    computedAt: new Date().toISOString(),
+  };
+}
+
+function buildDiscoveryDocxBuffer(snapshot: DiscoverySnapshot): Promise<Buffer> {
+  const children: Paragraph[] = [
+    new Paragraph({ text: snapshot.companyName, heading: HeadingLevel.TITLE }),
+    new Paragraph({ text: `Client: ${snapshot.clientName ?? "(not recorded)"}` }),
+    new Paragraph({ text: `Discovery notes captured ${new Date(snapshot.computedAt).toLocaleString("en-US")}`, spacing: { after: 200 } }),
+    new Paragraph({ text: "General Questions", heading: HeadingLevel.HEADING_1 }),
+  ];
+
+  const addQA = (qa: DiscoverySnapshotQA) => {
+    children.push(new Paragraph({ children: [new TextRun({ text: qa.label, bold: true })] }));
+    children.push(new Paragraph({ text: qa.answerText, spacing: { after: 160 } }));
+  };
+
+  if (snapshot.general.length === 0) children.push(new Paragraph({ text: "(none)" }));
+  snapshot.general.forEach(addQA);
+
+  for (const group of snapshot.serviceGroups) {
+    children.push(new Paragraph({ text: group.serviceName ?? "General", heading: HeadingLevel.HEADING_1 }));
+    group.questions.forEach(addQA);
+  }
+
+  const doc = new Document({ sections: [{ children }] });
+  return Packer.toBuffer(doc);
 }
 
 function buildQuotePdfBuffer(snapshot: QuoteSnapshot): Promise<Buffer> {
@@ -374,12 +449,14 @@ export const meetingRouter = router({
       const config = meeting.deck.config as unknown as DeckConfig;
       const state = meetingToSessionState(meeting);
       const snapshot = buildQuoteSnapshot(config, state, meeting.clientName);
+      const discoverySnapshot = buildDiscoverySnapshot(config, state, meeting.clientName);
 
       const updated = await prisma.meeting.update({
         where: { id: meeting.id },
         data: {
           meetingOutcome: input.outcome,
           pricingSnapshot: snapshot as unknown as object,
+          discoverySnapshot: discoverySnapshot as unknown as object,
           completedAt: new Date(),
         },
       });
@@ -431,20 +508,6 @@ export const meetingRouter = router({
       }));
     }),
 
-  // Plain-text summary of a saved record's frozen pricingSnapshot — never recomputed from
-  // the deck's current config, so an Edit Deck change made after this meeting was saved
-  // can never alter what this download says was quoted.
-  exportRecordText: requirePermission("meetingRecords").input(z.object({ id: z.string() })).query(async ({ input, ctx }) => {
-    const meeting = await prisma.meeting.findFirst({ where: { id: input.id, createdById: ctx.user.id } });
-    if (!meeting || !meeting.completedAt || !meeting.pricingSnapshot) {
-      throw new TRPCError({ code: "NOT_FOUND", message: "Meeting record not found" });
-    }
-    const snapshot = meeting.pricingSnapshot as unknown as QuoteSnapshot;
-    const clientPart = meeting.clientName ? `-${meeting.clientName}` : "";
-    const filename = safeFilenamePart(`${snapshot.companyName}${clientPart}-meeting-summary`) + ".txt";
-    return { filename, text: snapshotToText(snapshot) };
-  }),
-
   // Regenerates the actual quoted deck as a PDF from a saved record's frozen
   // pricingSnapshot (never the deck's current live config/state) — a base64 string since
   // this API has no superjson/binary transformer wired up; the client decodes it into a
@@ -456,8 +519,23 @@ export const meetingRouter = router({
     }
     const snapshot = meeting.pricingSnapshot as unknown as QuoteSnapshot;
     const buffer = await buildQuotePdfBuffer(snapshot);
-    const clientPart = meeting.clientName ? `-${meeting.clientName}` : "";
-    const filename = safeFilenamePart(`${snapshot.companyName}${clientPart}-quote`) + ".pdf";
+    const filename = meetingExportFilename(meeting.id, meeting.clientName, snapshot.companyName, "pdf");
+    return { filename, base64: buffer.toString("base64") };
+  }),
+
+  // The Word export of a saved record's frozen discoverySnapshot (never live/current
+  // answers or a since-edited deck's discovery questions) — the Discovery Notes Q&A only,
+  // in the same 3-tier general/service-mapped structure the live panel uses. Distinct
+  // content from generateQuotePdf above: that's the quoted pricing/services, this is the
+  // discovery call's actual questions and answers.
+  generateDiscoveryDocx: requirePermission("meetingRecords").input(z.object({ id: z.string() })).query(async ({ input, ctx }) => {
+    const meeting = await prisma.meeting.findFirst({ where: { id: input.id, createdById: ctx.user.id } });
+    if (!meeting || !meeting.completedAt || !meeting.discoverySnapshot) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Meeting record not found" });
+    }
+    const snapshot = meeting.discoverySnapshot as unknown as DiscoverySnapshot;
+    const buffer = await buildDiscoveryDocxBuffer(snapshot);
+    const filename = meetingExportFilename(meeting.id, meeting.clientName, snapshot.companyName, "docx");
     return { filename, base64: buffer.toString("base64") };
   }),
 

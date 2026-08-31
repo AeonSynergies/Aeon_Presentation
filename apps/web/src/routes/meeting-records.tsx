@@ -4,7 +4,7 @@ import * as React from "react";
 import { Header } from "~/components/layout/Header";
 import { RequireAuth } from "~/components/layout/RequireAuth";
 import { useAuth } from "~/hooks/useAuth";
-import { downloadBase64, downloadText } from "~/lib/download";
+import { downloadBase64 } from "~/lib/download";
 import { trpc } from "~/lib/trpc";
 
 // Meeting Records (Phase 5a) — genuinely missing from the web rebuild until now (it
@@ -72,12 +72,12 @@ function MeetingRecordsList() {
     }
   }
 
-  async function onExportText(id: string) {
+  async function onExportWord(id: string) {
     setRowError(null);
     setPendingId(id);
     try {
-      const res = await utils.meeting.exportRecordText.fetch({ id });
-      downloadText(res.filename, res.text);
+      const res = await utils.meeting.generateDiscoveryDocx.fetch({ id });
+      downloadBase64(res.filename, res.base64, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     } catch (err) {
       setRowError({ id, message: err instanceof Error ? err.message : "Couldn't export that record." });
     } finally {
@@ -142,7 +142,7 @@ function MeetingRecordsList() {
               <tr>
                 <th>Client</th>
                 <th>Deck</th>
-                <th>Saved</th>
+                <th>Meeting Date</th>
                 <th>Outcome</th>
                 <th>Total</th>
                 <th></th>
@@ -158,8 +158,8 @@ function MeetingRecordsList() {
                     <td>{r.meetingOutcome?.status ?? ""}</td>
                     <td>{r.totalLabel ?? ""}</td>
                     <td style={{ display: "flex", gap: 8 }}>
-                      <button type="button" className="mini-btn" onClick={() => onExportText(r.id)} disabled={pendingId === r.id}>
-                        ⬇ Text
+                      <button type="button" className="mini-btn" onClick={() => onExportWord(r.id)} disabled={pendingId === r.id}>
+                        ⬇ Word
                       </button>
                       <button type="button" className="mini-btn" onClick={() => onRegeneratePdf(r.id)} disabled={pendingId === r.id}>
                         ⬇ PDF

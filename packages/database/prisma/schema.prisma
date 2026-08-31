@@ -100,6 +100,13 @@ model Meeting {
   // a historical record's quoted numbers never silently drift with later deck edits.
   pricingSnapshot Json?
 
+  // Set at the same time and by the same meeting.complete call as pricingSnapshot, for the
+  // same reason: a frozen copy of that moment's visible Discovery Notes questions/answers
+  // (general + service-mapped, grouped exactly like the live panel), so the Word export
+  // built from it can never drift if the live session's answers keep changing after the
+  // record was saved, or if the deck's discovery questions are edited later.
+  discoverySnapshot Json?
+
   // Set at the same time as pricingSnapshot, by the same meeting.complete call — the
   // definitive "this session was saved as a Meeting Record" marker. A plain DateTime null
   // check (completedAt: { not: null }) is what Meeting Records' list query filters on,
