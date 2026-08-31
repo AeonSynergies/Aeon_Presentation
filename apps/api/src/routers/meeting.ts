@@ -337,6 +337,27 @@ export const meetingRouter = router({
       return { mailto, subject, body };
     }),
 
+  // Send to Client's PDF download — same permission and same content scope as sendToClient
+  // above (the client-facing deck as CURRENTLY configured), built from the live session state
+  // exactly like sendToClient/export already do, never from the frozen pricingSnapshot (that's
+  // generateQuotePdf's job, for a saved Meeting Record). Reuses the exact buildQuoteSnapshot/
+  // buildQuotePdfBuffer pair Meeting Records already built rather than a second PDF pipeline.
+  generateLiveQuotePdf: requirePermission("sendToClient").input(z.object({ id: z.string() })).query(async ({ input, ctx }) => {
+    const meeting = await prisma.meeting.findFirst({
+      where: { id: input.id, createdById: ctx.user.id },
+      include: { deck: true },
+    });
+    if (!meeting) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting not found" });
+
+    const config = meeting.deck.config as unknown as DeckConfig;
+    const state = meetingToSessionState(meeting);
+    const snapshot = buildQuoteSnapshot(config, state, meeting.clientName);
+    const buffer = await buildQuotePdfBuffer(snapshot);
+    const clientPart = meeting.clientName ? `-${meeting.clientName}` : "";
+    const filename = safeFilenamePart(`${config.companyName}${clientPart}-proposal`) + ".pdf";
+    return { filename, base64: buffer.toString("base64") };
+  }),
+
   // Meeting Records (Phase 5a) — saves the current live session as a permanent record:
   // freezes today's pricing into pricingSnapshot and stores the outcome. Gated on
   // "meetingRecords", a permission distinct from discoveryNotes: every role can run a live

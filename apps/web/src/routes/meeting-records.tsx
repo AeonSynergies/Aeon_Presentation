@@ -4,6 +4,7 @@ import * as React from "react";
 import { Header } from "~/components/layout/Header";
 import { RequireAuth } from "~/components/layout/RequireAuth";
 import { useAuth } from "~/hooks/useAuth";
+import { downloadBase64, downloadText } from "~/lib/download";
 import { trpc } from "~/lib/trpc";
 
 // Meeting Records (Phase 5a) — genuinely missing from the web rebuild until now (it
@@ -38,33 +39,6 @@ function MeetingRecordsGate() {
     );
   }
   return <MeetingRecordsList />;
-}
-
-function downloadText(filename: string, text: string) {
-  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-function downloadBase64(filename: string, base64: string, mime: string) {
-  const bytes = atob(base64);
-  const arr = new Uint8Array(bytes.length);
-  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-  const blob = new Blob([arr], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
 }
 
 function MeetingRecordsList() {

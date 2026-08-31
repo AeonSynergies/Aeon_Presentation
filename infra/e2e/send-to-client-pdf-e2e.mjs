@@ -1,0 +1,124 @@
+// Live end-to-end test of "Download PDF" inside the Send to Client dialog, run against a
+// real deployment (post-deploy job in .github/workflows/deploy-aws.yml) or a local dev
+// server.
+//
+// Context: Send to Client previously only offered a mailto: email draft. This adds a
+// second, independent action in the same dialog — meeting.generateLiveQuotePdf — which
+// reuses the exact buildQuoteSnapshot/buildQuotePdfBuffer pair Meeting Records (Phase 5a)
+// already built, fed with the meeting's LIVE session state rather than a frozen
+// pricingSnapshot. Same content scope as the email draft (the client-facing deck as
+// currently configured) — deliberately not the Export menu's internal rate-card CSV.
+//
+// What it does, through the actual UI — no API shortcuts for the assertions themselves:
+//   1. Signs in as the seeded demo user and opens the reference deck (Amazon DSP), which
+//      starts every service opted in by default.
+//   2. Sets a distinctive driver value and deselects one specific service in Discovery
+//      Notes, leaving another specific service selected — so the PDF's content can be
+//      checked against a known, asymmetric configuration.
+//   3. Opens Send to Client, clicks "Download PDF", captures the real browser download.
+//   4. Confirms the download has real PDF magic bytes and nonzero size (not an error page).
+//   5. Extracts the PDF's actual text (via pdf-parse — pdfkit's output is FlateDecode
+//      compressed, so this can't be a raw byte/substring check) and confirms: the selected
+//      service's name IS present, the deselected service's name is NOT present, and the
+//      driver value IS present — i.e. the PDF reflects the actual current session state,
+//      not some cached or default configuration.
+//
+// Idempotent by design: every deck open creates a fresh Meeting row (same as
+// notes-window-e2e.mjs and friends already rely on), so this suite's edits never touch the
+// shared Amazon DSP deck's own config — safe to reuse that seeded deck rather than needing
+// a dedicated fixture. Nothing here is scoped to a role beyond sendToClient, which the
+// seeded demo/admin account already has.
+//
+// Env: BASE_URL (required), DEMO_EMAIL/DEMO_PASSWORD (default: the seeded demo user),
+// CHROMIUM_PATH (optional executable override; CI uses Playwright's own install), OUT_DIR
+// (downloaded artifacts, default ./e2e-artifacts).
+
+import { mkdirSync, readFileSync } from "node:fs";
+import { chromium } from "playwright";
+import pdfParse from "pdf-parse";
+
+const BASE = process.env.BASE_URL;
+if (!BASE) {
+  console.error("BASE_URL is required");
+  process.exit(2);
+}
+const EMAIL = process.env.DEMO_EMAIL || "demo@aeonsynergies.com";
+const PASSWORD = process.env.DEMO_PASSWORD || "AeonDemo123!";
+const OUT = process.env.OUT_DIR || "./e2e-artifacts";
+mkdirSync(OUT, { recursive: true });
+
+const DECK_NAME = "Amazon DSP";
+const DECK_SLUG = "aeon-logistics";
+const KEEP_SERVICE = "Payroll Compliance Management";
+const DROP_SERVICE = "Invoice Dispute Management";
+const DRIVER_VALUE = "37";
+
+const results = [];
+function check(name, ok, detail = "") {
+  results.push({ name, ok });
+  console.log(`${ok ? "PASS" : "FAIL"}: ${name}${detail ? " — " + detail : ""}`);
+}
+
+const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
+const page = await browser.newPage();
+page.on("pageerror", (e) => console.log("PAGE ERROR:", e.message));
+
+async function login() {
+  await page.goto(`${BASE}/login`, { waitUntil: "networkidle" });
+  await page.fill('input[type="email"]', EMAIL);
+  await page.fill('input[type="password"]', PASSWORD);
+  await Promise.all([page.waitForResponse((r) => r.url().includes("deck.list")), page.click('button[type="submit"]')]);
+  await page.waitForSelector(".deck-grid");
+}
+
+console.log("\n=== Set up a live session with a known driver value + service selection ===");
+await login();
+await page.click(`.deck-card:has-text("${DECK_NAME}")`);
+await page.waitForSelector(".viewport", { timeout: 15000 });
+
+const notesToggle = page.locator(".icon-btn", { hasText: "Discovery Notes" });
+if ((await page.locator(".notes-wrap").count()) === 0) {
+  await notesToggle.click();
+}
+await page.waitForSelector(".chip-grid", { timeout: 15000 });
+
+await page.locator('.q-block:has-text("REQUIRED · DRIVES PRICING") input[type="number"]').first().fill(DRIVER_VALUE);
+
+const keepChip = page.locator(".chip-grid .chip", { hasText: KEEP_SERVICE });
+const dropChip = page.locator(".chip-grid .chip", { hasText: DROP_SERVICE });
+check("setup: reference deck has the expected known services", (await keepChip.count()) === 1 && (await dropChip.count()) === 1);
+check("setup: both services start opted-in by default", (await keepChip.getAttribute("class")).includes("selected") && (await dropChip.getAttribute("class")).includes("selected"));
+
+await dropChip.click();
+await page.waitForTimeout(1500); // clear useDeckSession's debounce so the server has the real current state before we ask it for a PDF
+check("setup: dropped service is now deselected", !(await dropChip.getAttribute("class")).includes("selected"));
+check("setup: kept service is still selected", (await keepChip.getAttribute("class")).includes("selected"));
+
+console.log("\n=== Trigger Download PDF from Send to Client ===");
+const sendBtn = page.locator(".icon-btn", { hasText: "Send to Client" });
+check("player: Send to Client button is visible", (await sendBtn.count()) === 1);
+await sendBtn.click();
+await page.waitForSelector(".modal-card:has-text('Send to Client')", { timeout: 5000 });
+
+const downloadBtn = page.locator(".modal-card button", { hasText: "Download PDF" });
+check("dialog: Download PDF button is present alongside the email draft action", (await downloadBtn.count()) === 1);
+
+const [pdfDownload] = await Promise.all([page.waitForEvent("download"), downloadBtn.click()]);
+const pdfPath = `${OUT}/send-to-client-live-quote-${Date.now()}.pdf`;
+await pdfDownload.saveAs(pdfPath);
+const pdfBytes = readFileSync(pdfPath);
+check("download: response has real PDF magic bytes (not an error page)", pdfBytes.slice(0, 5).toString("latin1") === "%PDF-");
+check("download: response has nonzero size", pdfBytes.length > 200, String(pdfBytes.length));
+
+console.log("\n=== Confirm the PDF reflects the actual current session state ===");
+const parsed = await pdfParse(pdfBytes);
+const text = parsed.text;
+check("content: PDF includes the currently-selected service", text.includes(KEEP_SERVICE));
+check("content: PDF excludes the currently-deselected service", !text.includes(DROP_SERVICE), text.slice(0, 400));
+check("content: PDF includes the current driver value", text.includes(DRIVER_VALUE));
+
+console.log("\n=== SUMMARY ===");
+const failed = results.filter((r) => !r.ok);
+console.log(failed.length ? `${failed.length} CHECK(S) FAILED:\n` + failed.map((f) => " - " + f.name).join("\n") : `ALL ${results.length} CHECKS PASSED`);
+await browser.close();
+process.exit(failed.length ? 1 : 0);

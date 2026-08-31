@@ -4,6 +4,7 @@
   "type": "module",
   "description": "Post-deploy live E2E for the Deck Builder wizard — run by deploy-aws.yml against the deployed web URL. Deliberately outside the pnpm workspace (infra/*, not apps/* or packages/*): it runs on the CI runner against production, not as part of the app build.",
   "dependencies": {
+    "pdf-parse": "^1.1.1",
     "playwright": "^1.56.1"
   }
 }

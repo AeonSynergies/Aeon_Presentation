@@ -222,6 +222,18 @@ jobs:
         env:
           BASE_URL: ${{ needs.deploy.outputs.web_url }}
 
+      # Send to Client: Download PDF. Reuses the seeded Amazon DSP deck (safe — Discovery
+      # Notes session state lives on a fresh per-visit Meeting row, never the shared deck
+      # config), sets a known driver value and service selection, downloads the live quote
+      # PDF from the Send to Client dialog, and confirms via real PDF text extraction that
+      # it reflects the actual current session state — not a cached or default one. Only
+      # needs the seeded demo/admin account, so it runs standalone.
+      - name: Run live send-to-client-pdf E2E against the deployment
+        working-directory: infra/e2e
+        run: node send-to-client-pdf-e2e.mjs
+        env:
+          BASE_URL: ${{ needs.deploy.outputs.web_url }}
+
       # Team & Role Management (Phase 2c): creates one QA test user per non-admin role
       # through the real Team Management screen (Admin), then confirms — via raw HTTP
       # calls to the API, bypassing the web UI entirely — that every permission each role
