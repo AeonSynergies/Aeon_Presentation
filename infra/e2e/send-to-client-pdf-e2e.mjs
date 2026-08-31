@@ -17,11 +17,17 @@
 //      checked against a known, asymmetric configuration.
 //   3. Opens Send to Client, clicks "Download PDF", captures the real browser download.
 //   4. Confirms the download has real PDF magic bytes and nonzero size (not an error page).
-//   5. Extracts the PDF's actual text (via pdf-parse — pdfkit's output is FlateDecode
-//      compressed, so this can't be a raw byte/substring check) and confirms: the selected
-//      service's name IS present, the deselected service's name is NOT present, and the
-//      driver value IS present — i.e. the PDF reflects the actual current session state,
-//      not some cached or default configuration.
+//   5. Extracts the PDF's actual text (via pdfjs-dist, the real Mozilla PDF.js — pdfkit's
+//      output is FlateDecode compressed, so this can't be a raw byte/substring check) and
+//      confirms: the selected service's name IS present, the deselected service's name is
+//      NOT present, and the driver value IS present — i.e. the PDF reflects the actual
+//      current session state, not some cached or default configuration.
+//
+//      Uses pdfjs-dist directly rather than the `pdf-parse` wrapper package: pdf-parse
+//      bundles a long-abandoned pdf.js build (v1.10.100, circa 2016) that throws "bad XRef
+//      entry" on some perfectly valid PDFs pdfkit produces (confirmed against the current
+//      pdfkit version — pdfjs-dist parses the exact same bytes without any issue), so it
+//      isn't reliable test tooling here.
 //
 // Idempotent by design: every deck open creates a fresh Meeting row (same as
 // notes-window-e2e.mjs and friends already rely on), so this suite's edits never touch the
@@ -34,8 +40,23 @@
 // (downloaded artifacts, default ./e2e-artifacts).
 
 import { mkdirSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
-import pdfParse from "pdf-parse";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+
+const require = createRequire(import.meta.url);
+const STANDARD_FONT_DATA_URL = pathToFileURL(require.resolve("pdfjs-dist/package.json").replace("package.json", "standard_fonts/")).href;
+
+async function extractPdfText(bytes) {
+  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(bytes), standardFontDataUrl: STANDARD_FONT_DATA_URL, verbosity: 0 }).promise;
+  let text = "";
+  for (let i = 1; i <= doc.numPages; i++) {
+    const content = await (await doc.getPage(i)).getTextContent();
+    text += content.items.map((it) => it.str).join(" ") + "\n";
+  }
+  return text;
+}
 
 const BASE = process.env.BASE_URL;
 if (!BASE) {
@@ -111,8 +132,7 @@ check("download: response has real PDF magic bytes (not an error page)", pdfByte
 check("download: response has nonzero size", pdfBytes.length > 200, String(pdfBytes.length));
 
 console.log("\n=== Confirm the PDF reflects the actual current session state ===");
-const parsed = await pdfParse(pdfBytes);
-const text = parsed.text;
+const text = await extractPdfText(pdfBytes);
 check("content: PDF includes the currently-selected service", text.includes(KEEP_SERVICE));
 check("content: PDF excludes the currently-deselected service", !text.includes(DROP_SERVICE), text.slice(0, 400));
 check("content: PDF includes the current driver value", text.includes(DRIVER_VALUE));
