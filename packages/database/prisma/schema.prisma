@@ -18,6 +18,14 @@ enum Role {
   ADMIN
 }
 
+// A password reset link and a new-account invitation are the same primitive with
+// different triggers — one single-use, expiring token type, distinguished only by
+// `purpose` (which changes the email copy, not the redemption mechanics).
+enum PasswordSetTokenPurpose {
+  RESET
+  INVITE
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -29,9 +37,10 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  refreshTokens   RefreshToken[]
-  meetings        Meeting[]
-  aiDraftRequests AiDraftRequest[]
+  refreshTokens     RefreshToken[]
+  passwordSetTokens PasswordSetToken[]
+  meetings          Meeting[]
+  aiDraftRequests   AiDraftRequest[]
 
   @@map("users")
 }
@@ -47,6 +56,25 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+// Single-use, expiring token backing both "Forgot password" and "New user invitation" —
+// same model, same redemption mechanics (see auth.setPasswordWithToken); only `purpose`
+// differs, and only to pick the right email copy when the token is issued. Like
+// RefreshToken, only the SHA-256 hash is ever persisted — the raw token exists solely in
+// the emailed link, so a DB leak can't be used to set anyone's password.
+model PasswordSetToken {
+  id        String                  @id @default(cuid())
+  tokenHash String                  @unique
+  userId    String
+  user      User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose   PasswordSetTokenPurpose
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime                @default(now())
+
+  @@index([userId])
+  @@map("password_set_tokens")
 }
 
 model Deck {

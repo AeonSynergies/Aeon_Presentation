@@ -52,6 +52,12 @@ function TeamManager() {
   const removeUser = trpc.user.remove.useMutation();
 
   const [showAdd, setShowAdd] = React.useState(false);
+  // "Send invitation email" is the default path — reuses the exact single-use token + "set
+  // your password" screen Forgot Password uses (see auth.setPasswordWithToken). "Set
+  // initial password directly" is the original path kept as a secondary choice: every
+  // QA/E2E fixture-user setup has no real inbox to receive an invitation at, so it has to
+  // keep working exactly as it did before this was added.
+  const [mode, setMode] = React.useState<"invite" | "direct">("invite");
   const [form, setForm] = React.useState({ name: "", email: "", password: "", role: "SALES_EXECUTIVE" as Role });
   const [formError, setFormError] = React.useState<string | null>(null);
   const [rowError, setRowError] = React.useState<{ id: string; message: string } | null>(null);
@@ -60,9 +66,14 @@ function TeamManager() {
     e.preventDefault();
     setFormError(null);
     try {
-      await createUser.mutateAsync(form);
+      await createUser.mutateAsync(
+        mode === "invite"
+          ? { name: form.name, email: form.email, role: form.role, sendInvitation: true }
+          : { name: form.name, email: form.email, role: form.role, password: form.password }
+      );
       await utils.user.list.invalidate();
       setForm({ name: "", email: "", password: "", role: "SALES_EXECUTIVE" });
+      setMode("invite");
       setShowAdd(false);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Couldn't create the user.");
@@ -115,19 +126,37 @@ function TeamManager() {
             <input type="email" required value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
           </div>
           <div className="q-block">
-            <div className="q-label">Initial password</div>
-            <input
-              type="text"
-              required
-              minLength={8}
-              placeholder="At least 8 characters"
-              value={form.password}
-              onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-            />
-            <div className="q-hint">
-              Set directly — there's no email-invite flow yet. Share this with the person and have them change it once signed in.
+            <div className="q-label">How should they get access?</div>
+            <div className="builder-pricing-mode-row">
+              <label className="builder-pricing-mode-option">
+                <input type="radio" name="user-create-mode" checked={mode === "invite"} onChange={() => setMode("invite")} />
+                Send invitation email
+              </label>
+              <label className="builder-pricing-mode-option">
+                <input type="radio" name="user-create-mode" checked={mode === "direct"} onChange={() => setMode("direct")} />
+                Set initial password directly
+              </label>
             </div>
           </div>
+          {mode === "invite" ? (
+            <div className="q-hint" style={{ marginBottom: 14 }}>
+              They'll get a real email with a link to set their own password — it also mentions that they can use "Sign in with Microsoft"
+              instead, with no password needed, if this email is already tied to a Microsoft account.
+            </div>
+          ) : (
+            <div className="q-block">
+              <div className="q-label">Initial password</div>
+              <input
+                type="text"
+                required
+                minLength={8}
+                placeholder="At least 8 characters"
+                value={form.password}
+                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+              />
+              <div className="q-hint">Set directly — share this with the person and have them change it once signed in.</div>
+            </div>
+          )}
           <div className="q-block">
             <div className="q-label">Role</div>
             <select value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as Role }))}>

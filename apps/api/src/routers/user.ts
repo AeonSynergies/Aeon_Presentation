@@ -1,15 +1,18 @@
+import crypto from "node:crypto";
 import { prisma } from "@aeon/database";
 import { ROLES } from "@aeon/types";
 import { TRPCError } from "@trpc/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { createAndSendPasswordSetToken } from "../lib/password-tokens.js";
 import { protectedProcedure, requirePermission, router } from "../trpc.js";
 
 // Team Management — Admin-only (manageUsers permission), enforced at requirePermission,
 // not by anything the frontend hides. This is the ONLY way accounts get created now that
-// auth.register is gone: an Admin sets an initial email + password directly. No
-// email-invite flow yet — a reasonable future enhancement, not required for role
-// enforcement to be real.
+// auth.register is gone: an Admin either sends a real invitation email (the default —
+// reuses the exact same single-use token + "set your password" screen as Forgot Password,
+// see lib/password-tokens.ts) or sets an initial password directly (the original,
+// still-supported path every QA/E2E fixture-user setup relies on).
 
 const roleSchema = z.enum(ROLES);
 
@@ -24,14 +27,31 @@ export const userRouter = router({
   }),
 
   create: requirePermission("manageUsers")
-    .input(z.object({ email: z.email(), password: z.string().min(8), name: z.string().min(1), role: roleSchema }))
+    .input(
+      z
+        .object({
+          email: z.email(),
+          name: z.string().min(1),
+          role: roleSchema,
+          password: z.string().min(8).optional(),
+          sendInvitation: z.boolean().optional(),
+        })
+        .refine((v) => v.sendInvitation || !!v.password, {
+          message: "Set an initial password, or send an invitation email instead.",
+          path: ["password"],
+        })
+    )
     .mutation(async ({ input }) => {
       const existing = await prisma.user.findUnique({ where: { email: input.email.toLowerCase() } });
       if (existing) throw new TRPCError({ code: "CONFLICT", message: "An account with that email already exists" });
-      const passwordHash = await bcrypt.hash(input.password, 10);
+      // An invited user's real password is whatever they set via the invitation link —
+      // this placeholder is a random value nobody ever sees or types, purely so
+      // passwordHash (NOT NULL) has something to hold until then.
+      const passwordHash = await bcrypt.hash(input.sendInvitation ? crypto.randomBytes(32).toString("hex") : input.password!, 10);
       const user = await prisma.user.create({
         data: { email: input.email.toLowerCase(), passwordHash, name: input.name, role: input.role },
       });
+      if (input.sendInvitation) await createAndSendPasswordSetToken(user, "INVITE");
       return toUserDTO(user);
     }),
 

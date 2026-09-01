@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 import { useAuth } from "~/hooks/useAuth";
 import { apiUrl, trpc } from "~/lib/trpc";
@@ -98,6 +98,11 @@ function LoginPage() {
             {submitting ? "Signing in…" : "Sign in"}
           </button>
         </form>
+        <div style={{ textAlign: "center", marginTop: 14 }}>
+          <Link to="/forgot-password" style={{ fontSize: 12.5, color: "var(--fog)" }}>
+            Forgot password?
+          </Link>
+        </div>
         {authConfig?.microsoftEnabled && (
           <>
             <div className="auth-divider" style={{ margin: "18px 0", textAlign: "center", color: "var(--fog)", fontSize: 11.5 }}>
