@@ -22,8 +22,11 @@
 //      figures at all — and that its filename follows "{Meeting ID}_{Org Name}".
 //   5. Downloads the regenerated PDF and confirms it's a real PDF (starts with the %PDF
 //      magic bytes, nonzero size) whose actual extracted text contains only the kept
-//      service (with its price) and excludes the removed service, and that its filename
-//      also follows "{Meeting ID}_{Org Name}".
+//      service (with its price) and excludes the removed service, that its filename also
+//      follows "{Meeting ID}_{Org Name}", that its header shows the actual client name
+//      recorded on the meeting rather than the fixture deck's own companyName, and that
+//      its letterhead footer carries Aeon's own real contact info rather than the fixture
+//      deck's own (deliberately empty) staticContent.qa.
 //   6. THE CORE GUARANTEE: edits the fixture deck's pricing via a raw deck.update call
 //      (same service, new band price) AFTER the record was saved, then re-checks the
 //      record's listed total and its regenerated PDF both still show the OLD price — never
@@ -340,6 +343,12 @@ check("export: regenerated PDF has nonzero size", pdfBytes.length > 200, String(
 const pdfText = await extractPdfText(pdfBytes);
 check("export: PDF includes the kept service and its frozen price ($100)", pdfText.includes(KEPT_SERVICE_NAME) && pdfText.includes("$100"), pdfText.slice(0, 400));
 check("export: PDF excludes the removed (deselected) service entirely", !pdfText.includes(REMOVED_SERVICE_NAME), pdfText.slice(0, 400));
+check("export: PDF header shows the actual client name recorded on this meeting", pdfText.includes(CLIENT_NAME));
+check("export: PDF header does not show the deck's own companyName", !pdfText.includes(DECK_NAME));
+check(
+  "export: PDF footer carries Aeon's own real contact info, never the deck's own (empty) staticContent.qa",
+  pdfText.includes("info@aeonsynergies.com") && pdfText.includes("aeonsynergies.com"),
+);
 
 const pdfFilename = pdfDownload.suggestedFilename();
 check(

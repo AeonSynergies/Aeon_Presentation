@@ -10,18 +10,25 @@
 // currently configured) — deliberately not the Export menu's internal rate-card CSV.
 //
 // The PDF itself was redesigned from a bare itemized price list into an actual proposal
-// document: an opening framed around the client, each selected service explained with the
-// deck's own "what we handle" bullets (not invented copy), a pricing table with promo
-// notes called out where the deck carries one, a generic closing line, and an
-// Aeon-letterhead-style footer. This suite checks that real structure, not just that a PDF
-// comes back.
+// document: a real Aeon logo and brand colors, an opening headed by the actual client's
+// name (not the deck's own companyName), each selected service explained with the deck's
+// own "what we handle" bullets (not invented copy), a pricing table with promo notes
+// called out where the deck carries one, a generic closing line, a subtle brand watermark,
+// and an Aeon-letterhead-style footer with Aeon's own real, hardcoded contact info (never
+// the deck's staticContent.qa — that's the in-deck Q&A slide content about the SERVICE
+// being pitched, not "who sent this document"). This suite checks that real structure and
+// the real branding, not just that a PDF comes back — a text-only assertion pass had
+// previously missed a visual regression a human catches immediately on sight (garbled
+// line-wrapping from a leaked pdfkit cursor position, and the deck's own qa contact
+// leaking into what should be Aeon's own letterhead).
 //
 // What it does, through the actual UI — no API shortcuts for the assertions themselves:
 //   1. Signs in as the seeded demo user and opens the reference deck (Amazon DSP), which
 //      starts every service opted in by default.
-//   2. Sets a distinctive driver value and deselects one specific service in Discovery
-//      Notes, leaving another specific service selected — so the PDF's content can be
-//      checked against a known, asymmetric configuration.
+//   2. Sets a distinctive driver value, a real client name in Discovery Notes' "Client
+//      name" field, and deselects one specific service, leaving another specific service
+//      selected — so the PDF's content can be checked against a known, asymmetric
+//      configuration.
 //   3. Opens Send to Client, clicks "Download PDF", captures the real browser download.
 //   4. Confirms the download has real PDF magic bytes and nonzero size (not an error page).
 //   5. Extracts the PDF's actual text (via pdfjs-dist, the real Mozilla PDF.js — pdfkit's
@@ -34,6 +41,9 @@
 //      service explanation, not a bare price line), and the promo note on a service that
 //      has one (and stays selected) appears in the pricing table, while the promo note
 //      belonging to the deselected service does not.
+//   7. Confirms the header/footer branding fix: the actual client name appears in the
+//      header (not the deck's own companyName), and the footer carries Aeon's own real
+//      email/website rather than the deck's own staticContent.qa contact.
 //
 //      Uses pdfjs-dist directly rather than the `pdf-parse` wrapper package: pdf-parse
 //      bundles a long-abandoned pdf.js build (v1.10.100, circa 2016) that throws "bad XRef
@@ -94,6 +104,13 @@ const KEEP_SERVICE_BULLET = "missing-punch";
 const KEPT_PROMO_NOTE = "Free Trial: 30 Days";
 // promoNote on the DROPPED service — must NOT appear once it's deselected.
 const DROPPED_PROMO_NOTE = "Free Trial: 3 Months";
+const CLIENT_NAME = "Coleman Logistics LLC";
+// Word-boundary regex, not a plain substring: the footer's own real tagline legitimately
+// contains "Amazon DSPs" (plural), which would falsely match a bare .includes("Amazon DSP").
+const DECK_COMPANY_NAME_STANDALONE = /\bAmazon DSP\b/;
+// The deck's own staticContent.qa contact (its in-deck Q&A slide, about the service being
+// pitched) — must never leak into the letterhead footer, which is Aeon's own identity.
+const DECK_QA_EMAIL = "info@amazondsp.com";
 
 const results = [];
 function check(name, ok, detail = "") {
@@ -125,6 +142,7 @@ if ((await page.locator(".notes-wrap").count()) === 0) {
 await page.waitForSelector(".chip-grid", { timeout: 15000 });
 
 await page.locator('.q-block:has-text("REQUIRED · DRIVES PRICING") input[type="number"]').first().fill(DRIVER_VALUE);
+await page.locator('input[placeholder="e.g. Coleman Logistics LLC"]').first().fill(CLIENT_NAME);
 
 const keepChip = page.locator(".chip-grid .chip", { hasText: KEEP_SERVICE });
 const dropChip = page.locator(".chip-grid .chip", { hasText: DROP_SERVICE });
@@ -162,6 +180,13 @@ console.log("\n=== Confirm the redesigned proposal content structure ===");
 check("content: PDF explains the kept service with its real 'what we handle' bullets, not just a price line", text.includes(KEEP_SERVICE_BULLET));
 check("content: pricing table surfaces the promo note for a service that has one", text.includes(KEPT_PROMO_NOTE));
 check("content: pricing table excludes the promo note for the deselected service", !text.includes(DROPPED_PROMO_NOTE));
+
+console.log("\n=== Confirm the header/footer branding: real client, real Aeon identity ===");
+check("content: header shows the actual client name captured in Discovery Notes", text.includes(CLIENT_NAME));
+check("content: header does not show the deck's own companyName", !DECK_COMPANY_NAME_STANDALONE.test(text), text.slice(0, 200));
+check("content: footer carries Aeon's own real email", text.includes("info@aeonsynergies.com"));
+check("content: footer carries Aeon's own real website", text.includes("aeonsynergies.com"));
+check("content: footer does not leak the deck's own staticContent.qa contact info", !text.includes(DECK_QA_EMAIL));
 
 console.log("\n=== SUMMARY ===");
 const failed = results.filter((r) => !r.ok);
