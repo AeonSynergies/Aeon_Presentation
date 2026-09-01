@@ -4,10 +4,9 @@ import { finalPriceFor, fmtMoney } from "@aeon/types";
 export function ServiceSlide({ deck, svc, state }: { deck: DeckConfig; svc: DeckService; state: SessionState }) {
   const { final } = finalPriceFor(svc, state);
   const priceDisplay = final === undefined ? undefined : fmtMoney(final);
-  const usesAltDriver = !!svc.pricingDriverField;
-  const altQuestion = usesAltDriver ? deck.discoveryQuestions.find((q) => q.id === svc.pricingDriverField) : null;
-  const driverLabel = usesAltDriver ? svc.pricingDriverLabel || altQuestion?.label || "value" : deck.pricingDriver.label;
-  const driverValueShown = usesAltDriver ? state.answers[svc.pricingDriverField!] : state.driverValue;
+  const model = deck.pricingModels.find((m) => m.id === svc.pricingModelId);
+  const driverLabel = model?.label || "value";
+  const driverValueShown = state.answers[svc.pricingModelId];
   const surchargeActive = !!(svc.surcharge && state.toggles[svc.surcharge.questionId]);
 
   return (

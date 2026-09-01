@@ -12,13 +12,14 @@ export const amazonDspDeck: DeckConfig = {
   secondaryLogo: { type: "imagePair", srcLight: "/brand/aeon-miles-light-bg.svg", srcDark: "/brand/aeon-miles-dark-bg.svg" },
   watermark: { type: "image", src: "/brand/aeon-icon.png" },
   colors: { amber: "#16A6CE", teal: "#0C7B82", ink: "#F1F5F5", panel: "#FFFFFF", panel2: "#E4EDEF", fog: "#5C6E73", paper: "#15282D" },
-  pricingDriver: { label: "Routes per day", unit: "routes", questionText: "How many routes do you run per day?" },
+  pricingModels: [{ id: "primary", label: "Routes per day", unit: "routes", questionText: "How many routes do you run per day?", isPrimary: true }],
   services: [
     {
       id: "payroll",
       name: "Payroll Compliance Management",
       team: "Payroll & Compliance Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Route-based · 5 bands",
       handle: [
         "Daily timecard review with missing-punch, duplicate-punch, and break validation",
@@ -83,6 +84,7 @@ export const amazonDspDeck: DeckConfig = {
       name: "Invoice Dispute Management",
       team: "Accounting & Finance Team",
       category: "strategic",
+      pricingModelId: "primary",
       bandLabel: "Flat · 2 bands",
       handle: [
         "Weekly route invoice validation against block payments and bonuses",
@@ -160,6 +162,7 @@ export const amazonDspDeck: DeckConfig = {
       name: "Driver Compliance Management",
       team: "Payroll & Compliance Team",
       category: "strategic",
+      pricingModelId: "primary",
       bandLabel: "Route-based · 3 bands",
       handle: [
         "FMLA leave tracking, eligibility coordination, and certification management",
@@ -208,6 +211,7 @@ export const amazonDspDeck: DeckConfig = {
       name: "Expert Bookkeeping",
       team: "Accounting & Finance Team",
       category: "strategic",
+      pricingModelId: "primary",
       bandLabel: "Flat · 2 bands",
       handle: [
         "Daily transaction categorization across bank and credit card accounts",
@@ -272,6 +276,7 @@ export const amazonDspDeck: DeckConfig = {
       name: "Driver Recruitment Management",
       team: "Talent Acquisition Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Route-based · 3 bands",
       handle: [
         "Job posting, resume screening, and candidate shortlisting",
@@ -326,6 +331,7 @@ export const amazonDspDeck: DeckConfig = {
       name: "Virtual Dispatch Operator",
       team: "Virtual Assistance Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Route-based · 4 bands",
       handle: [
         "Pre-wave readiness — attendance verification, route assignment, vehicle allocation",
@@ -375,6 +381,7 @@ export const amazonDspDeck: DeckConfig = {
       name: "Route Performance Management",
       team: "Virtual Assistance Team",
       category: "strategic",
+      pricingModelId: "primary",
       bandLabel: "Route-based · 3 bands",
       handle: [
         "Weekly scorecard review and metric validation (CDF, DSB, DCR, PCB)",

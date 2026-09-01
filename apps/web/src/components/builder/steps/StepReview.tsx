@@ -35,7 +35,8 @@ export function StepReview({
             <strong>{deck.companyName || "(no name)"}</strong> · {deck.industry || "(no industry)"}
           </li>
           <li>
-            Priced by <strong>{deck.pricingDriver.label || "(driver not set)"}</strong>
+            {deck.pricingModels.length} pricing model{deck.pricingModels.length === 1 ? "" : "s"} · primary:{" "}
+            <strong>{deck.pricingModels.find((m) => m.isPrimary)?.label || "(none set)"}</strong>
           </li>
           <li>
             {deck.services.length} service{deck.services.length === 1 ? "" : "s"}

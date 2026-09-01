@@ -30,13 +30,24 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
       selected: prev.selected.includes(id) ? prev.selected.filter((s) => s !== id) : [...prev.selected, id],
     }));
   };
-  const setDriverValue = (v: string) => {
-    setState((prev) => ({ ...prev, driverValue: v === "" ? null : v }));
+  const setModelValue = (modelId: string, v: string) => {
+    setState((prev) => ({ ...prev, answers: { ...prev.answers, [modelId]: v === "" ? undefined : v } }));
   };
 
   const generalQs = visibleGeneralQuestions(questions, state);
   const serviceQs = visibleServiceQuestions(questions, state);
   const serviceGroups = groupQuestionsByService(serviceQs);
+
+  // Tier 1 is one question per "active" pricing model: the primary model always (it
+  // drives the deck's own cover/lede copy), plus any other model actually assigned to a
+  // currently-selected service — a model nobody's using yet shouldn't clutter this panel.
+  const activeModels = React.useMemo(() => {
+    const primary = deck.pricingModels.find((m) => m.isPrimary);
+    const otherActive = deck.pricingModels.filter(
+      (m) => !m.isPrimary && deck.services.some((s) => state.selected.includes(s.id) && s.pricingModelId === m.id)
+    );
+    return primary ? [primary, ...otherActive] : otherActive;
+  }, [deck.pricingModels, deck.services, state.selected]);
 
   return (
     <div className="notes-body">
@@ -52,19 +63,24 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
         </div>
 
         <div className="tier-heading">
-          1 · DISCOVERY QUESTION <span className="q-hint" style={{ display: "inline" }}>— required, drives the whole deck</span>
+          1 · DISCOVERY QUESTIONS <span className="q-hint" style={{ display: "inline" }}>— required, drive pricing and the deck's own copy</span>
         </div>
-        <div className="q-block">
-          <span className="q-num">REQUIRED · DRIVES PRICING</span>
-          <div className="q-label">{deck.pricingDriver.questionText}</div>
-          <input
-            type="number"
-            placeholder="e.g. 20"
-            min={0}
-            value={state.driverValue === null ? "" : String(state.driverValue)}
-            onChange={(e) => setDriverValue(e.target.value)}
-          />
-        </div>
+        {activeModels.map((model) => {
+          const raw = state.answers[model.id];
+          return (
+            <div className="q-block" key={model.id}>
+              <span className="q-num">REQUIRED · DRIVES PRICING{model.isPrimary ? " · PRIMARY" : ""}</span>
+              <div className="q-label">{model.questionText}</div>
+              <input
+                type="number"
+                placeholder="e.g. 20"
+                min={0}
+                value={raw === undefined || raw === null ? "" : String(raw)}
+                onChange={(e) => setModelValue(model.id, e.target.value)}
+              />
+            </div>
+          );
+        })}
 
         <div className="q-block">
           <span className="q-num">REQUIRED · DRIVES SLIDES &amp; PRICING</span>

@@ -4,7 +4,7 @@ import { z } from "zod";
 // server-side gate for the first deck-creation path that isn't the seed script, so it
 // can't trust the client: beyond field shapes it enforces the cross-field invariants the
 // pricing engine and Discovery Notes tiers rely on (surcharge question pairing,
-// pricingDriverField references, unique ids) — invariants the seeded decks satisfy by
+// pricingModelId references, unique ids) — invariants the seeded decks satisfy by
 // construction but a hand-built config could violate in ways that would only surface as
 // wrong prices or invisible questions at presentation time.
 //
@@ -74,6 +74,14 @@ const reportCardSchema = z.discriminatedUnion("type", [
 
 const idPattern = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 
+const pricingModelSchema = z.object({
+  id: z.string().regex(idPattern, "Pricing model ids must start with a letter and use only letters, digits, - or _"),
+  label: z.string().min(1, "Pricing model label is required"),
+  unit: z.string().min(1, "Pricing model unit is required"),
+  questionText: z.string().min(1, "Pricing model question text is required"),
+  isPrimary: z.boolean(),
+});
+
 const serviceSchema = z.object({
   id: z.string().regex(idPattern, "Service ids must start with a letter and use only letters, digits, - or _"),
   name: z.string().min(1),
@@ -84,8 +92,7 @@ const serviceSchema = z.object({
   stats: z.array(z.object({ v: z.string().min(1), l: z.string().min(1) })),
   dashboards: z.array(z.string().min(1)),
   priceBands: z.array(priceBandSchema).min(1, "Each service needs at least one price band"),
-  pricingDriverField: z.string().optional(),
-  pricingDriverLabel: z.string().optional(),
+  pricingModelId: z.string().min(1, "Every service must be assigned a pricing model"),
   surcharge: z.object({ questionId: z.string().min(1), amount: z.number().positive() }).optional(),
   promoNote: z.string().optional(),
   reportSlide: z
@@ -151,17 +158,30 @@ export const deckConfigSchema = z
     secondaryLogo: logoSchema.nullish(),
     watermark: watermarkSchema.nullish(),
     colors: colorsSchema,
-    pricingDriver: z.object({
-      label: z.string().min(1, "Pricing driver label is required"),
-      unit: z.string().min(1, "Pricing driver unit is required"),
-      questionText: z.string().min(1, "Pricing driver question text is required"),
-    }),
+    pricingModels: z.array(pricingModelSchema).min(1, "A deck needs at least one pricing model"),
     services: z.array(serviceSchema).min(1, "A deck needs at least one service"),
     team: z.array(teamMemberSchema).min(1, "A deck needs at least one team member"),
     staticContent: staticContentSchema,
     discoveryQuestions: z.array(discoveryQuestionSchema),
   })
   .superRefine((deck, ctx) => {
+    const modelIds = new Set<string>();
+    let primaryCount = 0;
+    for (const [mi, m] of deck.pricingModels.entries()) {
+      if (modelIds.has(m.id)) {
+        ctx.addIssue({ code: "custom", message: `Duplicate pricing model id "${m.id}"`, path: ["pricingModels", mi] });
+      }
+      modelIds.add(m.id);
+      if (m.isPrimary) primaryCount++;
+    }
+    if (primaryCount !== 1) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Exactly one pricing model must be marked primary (found ${primaryCount})`,
+        path: ["pricingModels"],
+      });
+    }
+
     const svcIds = new Set<string>();
     for (const s of deck.services) {
       if (svcIds.has(s.id)) {
@@ -174,6 +194,12 @@ export const deckConfigSchema = z
     for (const q of deck.discoveryQuestions) {
       if (qById.has(q.id)) {
         ctx.addIssue({ code: "custom", message: `Duplicate question id "${q.id}"`, path: ["discoveryQuestions"] });
+      }
+      // Pricing-driver values (keyed by pricing model id) and discovery answers (keyed by
+      // question id) share the same flat SessionState.answers map, so a model id and a
+      // question id can never collide — they'd silently overwrite each other's value.
+      if (modelIds.has(q.id)) {
+        ctx.addIssue({ code: "custom", message: `Question id "${q.id}" collides with a pricing model id — answers and driver values share the same map`, path: ["discoveryQuestions"] });
       }
       qById.set(q.id, q);
     }
@@ -230,21 +256,12 @@ export const deckConfigSchema = z
         }
       }
 
-      if (s.pricingDriverField) {
-        const q = qById.get(s.pricingDriverField);
-        if (!q) {
-          ctx.addIssue({
-            code: "custom",
-            message: `Service "${s.name}": pricingDriverField references question "${s.pricingDriverField}" which doesn't exist`,
-            path: ["services", i, "pricingDriverField"],
-          });
-        } else if (q.type !== "number") {
-          ctx.addIssue({
-            code: "custom",
-            message: `Service "${s.name}": pricing-driver question "${q.id}" must be a number question`,
-            path: ["services", i, "pricingDriverField"],
-          });
-        }
+      if (!modelIds.has(s.pricingModelId)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `Service "${s.name}": pricingModelId references pricing model "${s.pricingModelId}" which doesn't exist`,
+          path: ["services", i, "pricingModelId"],
+        });
       }
     }
 

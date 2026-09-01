@@ -53,8 +53,7 @@ mkdirSync(OUT, { recursive: true });
 const DECK_NAME = "QA Pricing Edit Test Deck";
 const DECK_SLUG = "qa-pricing-edit-test-deck";
 const SEED_SERVICE_NAME = "Seed Tiered Service";
-const SEED_DRIVER_QUESTION_ID = "qaFieldTechCount";
-const SEED_DRIVER_QUESTION_LABEL = "How many field technicians work this account?";
+const ALT_MODEL_QUESTION_LABEL = "How many field technicians work this account?";
 const NEW_DRIVER_LABEL = "QA Routes";
 const NEW_DRIVER_QUESTION = "How many QA routes does this account run per day?";
 const FLAT_SERVICE_NAME = "QA Edit Flat Service";
@@ -161,13 +160,14 @@ if (existingFixture.ok) {
     tagline: "Dedicated fixture for the live pricing-edit E2E suite — not used by any other suite.",
     logo: { type: "text", wordmark: "QA" },
     colors: { amber: "#888888", teal: "#666666" },
-    pricingDriver: { label: "Routes", unit: "routes", questionText: "How many routes per day?" },
+    pricingModels: [{ id: "primary", label: "Routes", unit: "routes", questionText: "How many routes per day?", isPrimary: true }],
     services: [
       {
         id: "seedTiered",
         name: SEED_SERVICE_NAME,
         team: "QA Team",
         category: "major",
+        pricingModelId: "primary",
         bandLabel: "Route-based · 2 bands",
         handle: ["Seed bullet for the pricing-edit E2E suite"],
         stats: [],
@@ -187,7 +187,7 @@ if (existingFixture.ok) {
       benefits: { items: [] },
       qa: { title: "Questions?", sub: "", email: "", phone: "", web: "", address: "" },
     },
-    discoveryQuestions: [{ id: SEED_DRIVER_QUESTION_ID, section: "general", label: SEED_DRIVER_QUESTION_LABEL, type: "number" }],
+    discoveryQuestions: [],
   };
   const created = await callTrpc("mutation", "deck.create", adminLogin.token, { config: seedConfig });
   check("setup: fixture deck.create succeeds", created.ok && created.data?.slug === DECK_SLUG, created.message);
@@ -201,7 +201,7 @@ check("setup: fixture deck exists and Edit Deck loads", gateVisible === 0);
 // ========== 2. Edit the deck's pricing driver + an existing tiered service's bands ==========
 console.log("\n=== Edit driver + existing service pricing ===");
 await chip("Pricing Model").click();
-await fieldInput("Driver label").fill(NEW_DRIVER_LABEL);
+await fieldInput("Model label").fill(NEW_DRIVER_LABEL);
 await fieldInput("Discovery question text").fill(NEW_DRIVER_QUESTION);
 
 await chip("Services").click();
@@ -251,15 +251,26 @@ await bandsBlock().locator(".builder-band-row").nth(0).locator("input").nth(0).f
 await bandsBlock().locator(".builder-band-row").nth(0).locator("input").nth(1).fill("200");
 await bandsBlock().locator(".builder-band-row").nth(1).locator("input").nth(1).fill("300");
 
-// Wire the new tiered service to the per-service alternate pricing driver — the same
-// mechanism FedEx's Driver Payroll already uses, here set up on a service that never had
-// one before, per the requirement that this not be limited to the one deck already using it.
+// Wire the new tiered service to its own pricing model (via the "Priced by" dropdown's
+// "+ Create new model" round trip) — the same alternate-driver mechanism FedEx's Driver
+// Payroll already uses, here set up on a service that never had one before, per the
+// requirement that this not be limited to the one deck already using it. Idempotent: on a
+// re-run the service is already wired to its own model from a previous pass (or from the
+// generic legacy-pricing-driver migration, if this fixture predates the model library), so
+// the create-new-model round trip only runs once.
 const pricedBy = svcBody().locator(".q-block", { hasText: "Priced by" }).locator("select");
-const altOptions = await pricedBy.locator("option").allTextContents();
-const altDriverIdx = altOptions.findIndex((t) => t.includes("field technicians"));
-check("edit: number question available as alternate pricing driver for a new service", altDriverIdx > 0, altOptions.join(" | "));
-await pricedBy.selectOption({ index: altDriverIdx });
-await svcBody().locator(".q-block", { hasText: "Driver label shown next" }).locator("input").fill("Number of field technicians (QA tiered)");
+const alreadyWired = (await pricedBy.evaluate((el) => el.options[el.selectedIndex]?.text || "")).toLowerCase().includes("field technician");
+if (!alreadyWired) {
+  await pricedBy.selectOption({ label: "+ Create new model" });
+  check("edit: '+ Create new model' jumps to Step 2", (await chip("Pricing Model").getAttribute("class")).includes("active"));
+  const newModelCard = form().locator(".builder-subcard").last();
+  await newModelCard.locator(".q-block", { hasText: "Model label" }).locator("input").fill("Number of field technicians (QA tiered)");
+  await newModelCard.locator(".q-block", { hasText: "Unit" }).locator("input").fill("field technicians");
+  await newModelCard.locator(".q-block", { hasText: "Discovery question text" }).locator("input").fill(ALT_MODEL_QUESTION_LABEL);
+  await form().locator(".mini-btn", { hasText: "Back to Services" }).click();
+}
+const pricedBySelectedText = await pricedBy.evaluate((el) => el.options[el.selectedIndex]?.text || "");
+check("edit: new tiered service is priced by its own alternate model", pricedBySelectedText.toLowerCase().includes("field technician"), pricedBySelectedText);
 
 // ========== 4. Add a throwaway service, save, confirm it renders, then remove it ==========
 console.log("\n=== Add + remove a service (persisted round trip) ===");

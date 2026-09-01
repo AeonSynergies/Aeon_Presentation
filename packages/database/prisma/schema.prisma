@@ -84,8 +84,9 @@ model Meeting {
   clientName String?
 
   // Live discovery-call session state (packages/types SessionState), kept in sync with
-  // the Discovery Notes panel in real time.
-  driverValue String?
+  // the Discovery Notes panel in real time. Every pricing-driver value (one per model in
+  // the deck's pricing-model library) lives in `answers`, keyed by model id — there is no
+  // separate deck-level default column.
   selected    Json    @default("[]")
   toggles     Json    @default("{}")
   answers     Json    @default("{}")

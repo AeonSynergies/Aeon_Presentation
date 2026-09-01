@@ -291,6 +291,7 @@ function formatBandPattern(bands: DeckConfig["services"][number]["priceBands"]):
 // wizard/human territory exactly as they already are for a template-free draft.
 export function buildTemplateGroundingBlock(template: DeckTemplate): string {
   const c = template.config;
+  const primaryModel = c.pricingModels.find((m) => m.isPrimary) ?? c.pricingModels[0]!;
   const serviceLines = c.services
     .map(
       (s) =>
@@ -302,7 +303,7 @@ export function buildTemplateGroundingBlock(template: DeckTemplate): string {
 
   return [
     `Structural reference — a template called "${template.label}" (${c.industry}). Adapt its SHAPE (how many services, the mix of major/strategic categories, how price bands scale, the tone of the general discovery questions) to the industry described below. Do NOT reuse its exact service names, wording, or price figures verbatim, and do NOT mention this reference template or its industry by name in the draft — treat it only as a structural pattern to follow for a genuinely different client.`,
-    `Reference pricing driver: "${c.pricingDriver.label}" (${c.pricingDriver.unit}).`,
+    `Reference pricing driver: "${primaryModel.label}" (${primaryModel.unit}).`,
     `Reference services (${c.services.length}):`,
     serviceLines,
     `Reference general discovery questions:`,
@@ -319,6 +320,8 @@ export function normalizeDraft(input: AiDraftInput): { config: DeckConfig; aiSug
   const usedIds = new Set<string>();
   const aiSuggestedFields: string[] = [];
 
+  const primaryModelId = "primaryDriver";
+
   const services = input.services.map((s, si) => {
     const id = deriveId(s.name, usedIds, `service${si + 1}`);
     s.priceBands.forEach((_, bi) => aiSuggestedFields.push(`${id}:${bi}`));
@@ -332,6 +335,7 @@ export function normalizeDraft(input: AiDraftInput): { config: DeckConfig; aiSug
       stats: s.stats,
       dashboards: s.dashboards,
       priceBands: s.priceBands,
+      pricingModelId: primaryModelId,
       ...(s.promoNote ? { promoNote: s.promoNote } : {}),
     };
   });
@@ -353,7 +357,7 @@ export function normalizeDraft(input: AiDraftInput): { config: DeckConfig; aiSug
     tagline: input.tagline,
     logo: { type: "text", wordmark: input.companyName, sub: input.industry },
     colors: input.colors,
-    pricingDriver: input.pricingDriver,
+    pricingModels: [{ id: primaryModelId, ...input.pricingDriver, isPrimary: true }],
     services,
     team: input.team.map((m) => ({ initials: initialsFrom(m.name), name: m.name, title: m.title, email: m.email, phone: m.phone })),
     staticContent: input.staticContent,

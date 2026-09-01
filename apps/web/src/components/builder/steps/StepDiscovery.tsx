@@ -139,10 +139,16 @@ export function StepDiscovery({ deck, update }: { deck: DeckConfig; update: Upda
       </p>
 
       <div className="tier-heading">1 · STRUCTURAL — every deck has these</div>
-      <div className="builder-subcard builder-locked">
-        <div className="q-label">{deck.pricingDriver.questionText || "(pricing driver question — set in the Pricing Model step)"}</div>
-        <div className="q-hint">Required number question that drives pricing. Edit its wording in the Pricing Model step.</div>
-      </div>
+      {deck.pricingModels.map((model) => (
+        <div className="builder-subcard builder-locked" key={model.id}>
+          <div className="q-label">{model.questionText || "(pricing model question — set in the Pricing Model step)"}</div>
+          <div className="q-hint">
+            {model.isPrimary
+              ? "Required — the primary model, always asked. Edit its wording in the Pricing Model step."
+              : "Required only once a service using this model is opted in. Edit its wording in the Pricing Model step."}
+          </div>
+        </div>
+      ))}
       <div className="builder-subcard builder-locked">
         <div className="q-label">Which services is the client opting into?</div>
         <div className="q-hint">The services selector — generated from the Services step; drives slides, pricing, and tier-3 gating.</div>

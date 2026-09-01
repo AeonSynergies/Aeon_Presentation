@@ -11,7 +11,6 @@ const REMOTE_POLL_MS = 1500;
 const LOCAL_EDIT_GUARD_MS = 2500;
 
 const EMPTY_STATE: SessionState = {
-  driverValue: null,
   selected: [],
   toggles: {},
   answers: {},
@@ -41,7 +40,7 @@ export function useNotesWindowSession(meetingId: string) {
     if (stamp === lastAppliedUpdatedAt.current) return;
     if (hydrated && Date.now() - lastLocalEditAt.current < LOCAL_EDIT_GUARD_MS) return;
     lastAppliedUpdatedAt.current = stamp;
-    setStateRaw({ driverValue: m.driverValue, selected: m.selected, toggles: m.toggles, answers: m.answers as SessionState["answers"], discount: m.discount });
+    setStateRaw({ selected: m.selected, toggles: m.toggles, answers: m.answers as SessionState["answers"], discount: m.discount });
     setClientNameRaw(m.clientName ?? "");
     setHydrated(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -67,7 +66,6 @@ export function useNotesWindowSession(meetingId: string) {
         .mutateAsync({
           id: meetingId,
           patch: {
-            driverValue: state.driverValue,
             selected: state.selected,
             toggles: state.toggles,
             answers: state.answers as Record<string, string | number | boolean | null>,

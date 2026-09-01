@@ -32,7 +32,6 @@ interface MeetingDTO {
   id: string;
   deckId: string;
   clientName: string | null;
-  driverValue: string | null;
   selected: string[];
   toggles: Record<string, boolean>;
   answers: Record<string, string | number | boolean | null>;
@@ -61,7 +60,6 @@ function toMeetingDTO(m: {
   id: string;
   deckId: string;
   clientName: string | null;
-  driverValue: string | null;
   selected: unknown;
   toggles: unknown;
   answers: unknown;
@@ -75,7 +73,6 @@ function toMeetingDTO(m: {
     id: m.id,
     deckId: m.deckId,
     clientName: m.clientName,
-    driverValue: m.driverValue,
     selected: m.selected as string[],
     toggles: m.toggles as Record<string, boolean>,
     answers: m.answers as Record<string, string | number | boolean | null>,
@@ -100,14 +97,12 @@ const discountSchema = z.object({
 // the identical @aeon/types pricing math the live Present-mode pricing slide uses, rather
 // than recomputing anything independently.
 function meetingToSessionState(m: {
-  driverValue: string | null;
   selected: unknown;
   toggles: unknown;
   answers: unknown;
   discount: unknown;
 }): SessionState {
   return {
-    driverValue: m.driverValue,
     selected: m.selected as string[],
     toggles: m.toggles as Record<string, boolean>,
     answers: m.answers as SessionState["answers"],
@@ -120,7 +115,6 @@ function csvCell(v: string): string {
 }
 
 const stateInput = z.object({
-  driverValue: z.union([z.string(), z.number(), z.null()]).optional(),
   selected: z.array(z.string()).optional(),
   toggles: z.record(z.string(), z.boolean()).optional(),
   answers: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()]).nullable()).optional(),
@@ -131,6 +125,7 @@ const stateInput = z.object({
 interface QuoteSnapshotRow {
   service: string;
   team: string;
+  driverLabel: string;
   driverVal: string;
   base: string;
   surcharge: boolean;
@@ -155,8 +150,6 @@ interface QuoteSnapshot {
   companyName: string;
   industry: string;
   clientName: string | null;
-  driverLabel: string;
-  driverValue: string | null;
   rows: QuoteSnapshotRow[];
   totalLabel: string;
   computedAt: string;
@@ -167,12 +160,14 @@ interface QuoteSnapshot {
 function buildQuoteSnapshot(config: DeckConfig, state: SessionState, clientName: string | null): QuoteSnapshot {
   const chosen = config.services.filter((s) => state.selected.includes(s.id));
   const rows: QuoteSnapshotRow[] = chosen.map((svc) => {
-    const driverVal = svc.pricingDriverField ? state.answers[svc.pricingDriverField] : state.driverValue;
+    const model = config.pricingModels.find((m) => m.id === svc.pricingModelId);
+    const driverVal = state.answers[svc.pricingModelId];
     const { base, final, discounted } = finalPriceFor(svc, state);
     const surchargeActive = !!(svc.surcharge && state.toggles[svc.surcharge.questionId]);
     return {
       service: svc.name,
       team: svc.team,
+      driverLabel: model?.label ?? "",
       driverVal: driverVal === null || driverVal === undefined ? "" : String(driverVal),
       base: fmtMoney(base),
       surcharge: surchargeActive,
@@ -188,8 +183,6 @@ function buildQuoteSnapshot(config: DeckConfig, state: SessionState, clientName:
     companyName: config.companyName,
     industry: config.industry,
     clientName,
-    driverLabel: config.pricingDriver.label,
-    driverValue: state.driverValue === null ? null : String(state.driverValue),
     rows,
     totalLabel,
     computedAt: new Date().toISOString(),
@@ -198,10 +191,10 @@ function buildQuoteSnapshot(config: DeckConfig, state: SessionState, clientName:
   };
 }
 
-function snapshotToCsv(snapshot: QuoteSnapshot, driverLabel: string): string {
-  const rows: string[][] = [["Service", "Team", `${driverLabel} / driver`, "Base Price", "Surcharge Applied", "Final Price"]];
+function snapshotToCsv(snapshot: QuoteSnapshot): string {
+  const rows: string[][] = [["Service", "Team", "Pricing Driver", "Driver Value", "Base Price", "Surcharge Applied", "Final Price"]];
   for (const r of snapshot.rows) {
-    rows.push([r.service, r.team, r.driverVal, r.base, r.surcharge ? "Yes" : "No", r.final]);
+    rows.push([r.service, r.team, r.driverLabel, r.driverVal, r.base, r.surcharge ? "Yes" : "No", r.final]);
   }
   rows.push([]);
   rows.push(["", "", "", "", "Estimated Total / Month", snapshot.totalLabel]);
@@ -580,7 +573,6 @@ export const meetingRouter = router({
       if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting not found" });
 
       const data: Record<string, unknown> = {};
-      if (input.patch.driverValue !== undefined) data.driverValue = String(input.patch.driverValue ?? "");
       if (input.patch.selected !== undefined) data.selected = input.patch.selected;
       if (input.patch.toggles !== undefined) data.toggles = input.patch.toggles;
       if (input.patch.answers !== undefined) data.answers = input.patch.answers;
@@ -606,7 +598,7 @@ export const meetingRouter = router({
     const config = meeting.deck.config as unknown as DeckConfig;
     const state = meetingToSessionState(meeting);
     const snapshot = buildQuoteSnapshot(config, state, meeting.clientName);
-    const csv = snapshotToCsv(snapshot, config.pricingDriver.label);
+    const csv = snapshotToCsv(snapshot);
     const clientPart = meeting.clientName ? `-${meeting.clientName}` : "";
     const filename = safeFilenamePart(`${config.companyName}${clientPart}-rate-card`) + ".csv";
     return { filename, csv };

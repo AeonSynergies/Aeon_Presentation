@@ -220,7 +220,7 @@ const opsApiLogin = await apiLogin(QA_USERS.OPERATIONS_MANAGER.email, QA_USERS.O
 check("OM: API login succeeds", opsApiLogin.ok && opsApiLogin.user?.role === "OPERATIONS_MANAGER");
 const opsMeeting = await createOwnMeeting(opsApiLogin.token);
 check("OM: meeting.create (Present) succeeds", opsMeeting.ok);
-const opsUpdateState = await callTrpc("mutation", "meeting.updateState", opsApiLogin.token, { id: opsMeeting.data?.id, patch: { driverValue: "20" } });
+const opsUpdateState = await callTrpc("mutation", "meeting.updateState", opsApiLogin.token, { id: opsMeeting.data?.id, patch: { answers: { primary: "20" } } });
 check("OM: meeting.updateState (Discovery Notes) succeeds", opsUpdateState.ok);
 
 const opsCreateDeck = await callTrpc("mutation", "deck.create", opsApiLogin.token, { config: { companyName: "OM should never create this" } });
@@ -240,7 +240,7 @@ const salesApiLogin = await apiLogin(QA_USERS.SALES_EXECUTIVE.email, QA_USERS.SA
 check("SE: API login succeeds", salesApiLogin.ok && salesApiLogin.user?.role === "SALES_EXECUTIVE");
 const salesMeeting = await createOwnMeeting(salesApiLogin.token);
 check("SE: meeting.create (Present) succeeds", salesMeeting.ok);
-const salesUpdateState = await callTrpc("mutation", "meeting.updateState", salesApiLogin.token, { id: salesMeeting.data?.id, patch: { driverValue: "15" } });
+const salesUpdateState = await callTrpc("mutation", "meeting.updateState", salesApiLogin.token, { id: salesMeeting.data?.id, patch: { answers: { primary: "15" } } });
 check("SE: meeting.updateState (Discovery Notes) succeeds", salesUpdateState.ok);
 const salesExport = await callTrpc("query", "meeting.export", salesApiLogin.token, { id: salesMeeting.data?.id });
 check("SE: meeting.export REJECTED at API — the one thing SE lacks", !salesExport.ok && salesExport.trpcCode === "FORBIDDEN", salesExport.message);
@@ -263,8 +263,8 @@ if (existingQaDeck.ok) {
     tagline: "Created by the live role-enforcement E2E to prove Sales Executive can create decks.",
     logo: { type: "text", wordmark: "QA" },
     colors: { amber: "#888888", teal: "#666666" },
-    pricingDriver: { label: "Units", unit: "units", questionText: "How many units?" },
-    services: [{ id: "svc", name: "QA Service", team: "QA Team", category: "major", bandLabel: "1 band", handle: ["QA bullet"], stats: [], dashboards: [], priceBands: [{ upTo: null, price: 100 }] }],
+    pricingModels: [{ id: "primary", label: "Units", unit: "units", questionText: "How many units?", isPrimary: true }],
+    services: [{ id: "svc", name: "QA Service", team: "QA Team", category: "major", pricingModelId: "primary", bandLabel: "1 band", handle: ["QA bullet"], stats: [], dashboards: [], priceBands: [{ upTo: null, price: 100 }] }],
     team: [{ initials: "QA", name: "QA Bot", title: "Automation", email: "qa@aeonqa.internal", phone: "" }],
     staticContent: {
       cover: { title1: "QA", title2: "Role Enforcement", sub: "" },
@@ -295,7 +295,7 @@ console.log("\n=== BD Manager ===");
 const bdApiLogin = await apiLogin(QA_USERS.BD_MANAGER.email, QA_USERS.BD_MANAGER.password);
 check("BD: API login succeeds", bdApiLogin.ok && bdApiLogin.user?.role === "BD_MANAGER");
 const bdMeeting = await createOwnMeeting(bdApiLogin.token);
-await callTrpc("mutation", "meeting.updateState", bdApiLogin.token, { id: bdMeeting.data?.id, patch: { driverValue: "20", selected: ["payroll"] } });
+await callTrpc("mutation", "meeting.updateState", bdApiLogin.token, { id: bdMeeting.data?.id, patch: { answers: { primary: "20" }, selected: ["payroll"] } });
 const bdExport = await callTrpc("query", "meeting.export", bdApiLogin.token, { id: bdMeeting.data?.id });
 check("BD: meeting.export succeeds", bdExport.ok, bdExport.message);
 check("BD: export CSV contains real pricing data", typeof bdExport.data?.csv === "string" && bdExport.data.csv.includes("Payroll"), bdExport.data?.csv?.slice(0, 100));

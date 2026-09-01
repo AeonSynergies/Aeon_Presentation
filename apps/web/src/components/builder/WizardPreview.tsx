@@ -15,11 +15,12 @@ const DESIGN_W = 1120;
 const DESIGN_H = 700;
 
 function initialPreviewState(deck: DeckConfig): SessionState {
+  const answers: SessionState["answers"] = {};
+  for (const m of deck.pricingModels) answers[m.id] = 20;
   return {
-    driverValue: "20",
     selected: deck.services.map((s) => s.id),
     toggles: {},
-    answers: {},
+    answers,
     discount: { enabled: false, scope: "all", services: deck.services.map((s) => s.id), type: "percent", value: 0 },
   };
 }
@@ -39,7 +40,9 @@ export function WizardPreview({
 
   // Keep the preview session coherent as the draft changes shape: newly added services
   // start opted-in (matching initStateForDeck), removed services drop out of selection,
-  // and alt-pricing-driver answers get a sample value so those prices render.
+  // and every pricing model (deck default plus any per-service assignment) gets a sample
+  // value so those prices render, including one just created via the wizard's "+ Create
+  // new model" round trip.
   const knownSvcIds = React.useRef<Set<string>>(new Set(deck.services.map((s) => s.id)));
   React.useEffect(() => {
     const current = new Set(deck.services.map((s) => s.id));
@@ -47,10 +50,8 @@ export function WizardPreview({
     setState((prev) => {
       const selected = [...prev.selected.filter((id) => current.has(id)), ...added];
       const answers = { ...prev.answers };
-      for (const s of deck.services) {
-        if (s.pricingDriverField && (answers[s.pricingDriverField] === undefined || answers[s.pricingDriverField] === null)) {
-          answers[s.pricingDriverField] = 20;
-        }
+      for (const m of deck.pricingModels) {
+        if (answers[m.id] === undefined || answers[m.id] === null) answers[m.id] = 20;
       }
       return { ...prev, selected, answers };
     });
@@ -59,6 +60,8 @@ export function WizardPreview({
 
   const slides = React.useMemo(() => getSlides(deck, state), [deck, state]);
   const clamped = Math.min(idx, slides.length - 1);
+  const primaryModel = deck.pricingModels.find((m) => m.isPrimary) ?? deck.pricingModels[0];
+  const primaryValue = primaryModel ? state.answers[primaryModel.id] : undefined;
 
   React.useEffect(() => {
     if (!targetSlideId) return;
@@ -112,12 +115,17 @@ export function WizardPreview({
           ›
         </button>
         <span className="builder-preview-driver">
-          {deck.pricingDriver.unit || "units"}:
+          {primaryModel?.unit || "units"}:
           <input
             type="number"
             min={0}
-            value={state.driverValue === null ? "" : String(state.driverValue)}
-            onChange={(e) => setState((p) => ({ ...p, driverValue: e.target.value === "" ? null : e.target.value }))}
+            value={primaryValue === undefined || primaryValue === null ? "" : String(primaryValue)}
+            onChange={(e) =>
+              setState((p) => ({
+                ...p,
+                answers: { ...p.answers, ...(primaryModel ? { [primaryModel.id]: e.target.value === "" ? undefined : e.target.value } : {}) },
+              }))
+            }
           />
         </span>
       </div>

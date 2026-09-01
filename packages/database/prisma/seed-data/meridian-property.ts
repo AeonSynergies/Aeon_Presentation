@@ -16,13 +16,14 @@ export const meridianPropertyDeck: DeckConfig = {
   tagline: "Back-office support for residential and commercial property owners and operators.",
   logo: { type: "text", wordmark: "Meridian", sub: "Property Partners" },
   colors: { amber: "#D9A441", teal: "#4FA8A0" },
-  pricingDriver: { label: "Units managed", unit: "units", questionText: "How many units do you currently manage?" },
+  pricingModels: [{ id: "primary", label: "Units managed", unit: "units", questionText: "How many units do you currently manage?", isPrimary: true }],
   services: [
     {
       id: "leasing",
       name: "Tenant Screening & Leasing Coordination",
       team: "Leasing Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Unit-based · 4 bands",
       handle: [
         "Rental application intake, review, and applicant communication",
@@ -49,6 +50,7 @@ export const meridianPropertyDeck: DeckConfig = {
       name: "Maintenance Coordination",
       team: "Maintenance Operations Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Unit-based · 4 bands",
       handle: [
         "Work order intake from tenants and owners across all channels",
@@ -76,6 +78,7 @@ export const meridianPropertyDeck: DeckConfig = {
       name: "Rent Collection & Financial Reporting",
       team: "Finance Team",
       category: "strategic",
+      pricingModelId: "primary",
       bandLabel: "Flat · 2 bands",
       handle: [
         "Rent collection tracking and automated late fee processing",
@@ -100,6 +103,7 @@ export const meridianPropertyDeck: DeckConfig = {
       name: "Owner & Tenant Relations",
       team: "Client Services Team",
       category: "strategic",
+      pricingModelId: "primary",
       bandLabel: "Flat · 2 bands",
       handle: [
         "First-line tenant communication and issue triage",

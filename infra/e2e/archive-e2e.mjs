@@ -82,13 +82,14 @@ function fixtureConfig() {
     tagline: "Throwaway fixture for the live archive E2E suite — destroyed by the end of this run.",
     logo: { type: "text", wordmark: "QA" },
     colors: { amber: "#888888", teal: "#666666" },
-    pricingDriver: { label: "Routes", unit: "routes", questionText: "How many routes per day?" },
+    pricingModels: [{ id: "primary", label: "Routes", unit: "routes", questionText: "How many routes per day?", isPrimary: true }],
     services: [
       {
         id: "qaArchiveService",
         name: "QA Archive Service",
         team: "QA Team",
         category: "major",
+        pricingModelId: "primary",
         bandLabel: "Route-based · 1 band",
         handle: ["Seed bullet for the archive E2E suite"],
         stats: [],

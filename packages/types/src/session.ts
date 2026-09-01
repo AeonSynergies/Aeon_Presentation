@@ -29,7 +29,6 @@ export interface DiscoveryToggles {
 }
 
 export interface SessionState {
-  driverValue: number | string | null;
   selected: string[]; // opted-in service ids
   toggles: DiscoveryToggles;
   answers: DiscoveryAnswers;
@@ -39,7 +38,6 @@ export interface SessionState {
 
 export function freshSessionState(): SessionState {
   return {
-    driverValue: null,
     selected: [],
     toggles: {},
     answers: {},
@@ -60,7 +58,6 @@ export function initialSessionStateForDeck(deck: { services: { id: string }[]; d
     if (q.type === "toggle") toggles[q.id] = false;
   }
   return {
-    driverValue: null,
     selected: allServiceIds,
     toggles,
     answers: {},

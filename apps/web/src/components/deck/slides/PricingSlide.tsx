@@ -12,8 +12,7 @@ export function PricingSlide({ deck, state }: { deck: DeckConfig; state: Session
     const { base, final, discounted } = finalPriceFor(s, state);
     if (final === undefined) {
       hasPending = true;
-      const altQ = s.pricingDriverField ? deck.discoveryQuestions.find((q) => q.id === s.pricingDriverField) : null;
-      const label = s.pricingDriverField ? s.pricingDriverLabel || altQ?.label || "value" : deck.pricingDriver.label;
+      const label = deck.pricingModels.find((m) => m.id === s.pricingModelId)?.label || "value";
       return (
         <div className="price-card" key={s.id}>
           <div className="pteam">{s.team.toUpperCase()}</div>
@@ -52,7 +51,11 @@ export function PricingSlide({ deck, state }: { deck: DeckConfig; state: Session
   });
 
   const ledeParts: string[] = [];
-  if (state.driverValue !== null && state.driverValue !== "") ledeParts.push(`${state.driverValue} ${deck.pricingDriver.unit}`);
+  const primaryModel = deck.pricingModels.find((m) => m.isPrimary);
+  const primaryValue = primaryModel ? state.answers[primaryModel.id] : undefined;
+  if (primaryModel && primaryValue !== undefined && primaryValue !== null && primaryValue !== "") {
+    ledeParts.push(`${primaryValue} ${primaryModel.unit}`);
+  }
   ledeParts.push(`${chosen.length} service${chosen.length === 1 ? "" : "s"} selected`);
 
   return (

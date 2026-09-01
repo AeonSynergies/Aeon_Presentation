@@ -1,4 +1,4 @@
-import type { DeckConfig, DeckService, DiscoveryQuestion } from "@aeon/types";
+import type { DeckConfig, DeckService, DiscoveryQuestion, PricingModel } from "@aeon/types";
 
 // Blank-slate template for the Deck Builder. Field defaults mirror the prototype's
 // newBuilderDraft() (colors #E3A147/#3FBFB0, "The Expert Team Behind" cover, the
@@ -13,8 +13,8 @@ export function blankDeck(): DeckConfig {
     tagline: "",
     logo: { type: "text", wordmark: "New Deck", sub: "" },
     colors: { amber: "#E3A147", teal: "#3FBFB0" },
-    pricingDriver: { label: "", unit: "", questionText: "" },
-    services: [blankService("Service 1", "service1")],
+    pricingModels: [blankPricingModel("primary", true)],
+    services: [blankService("Service 1", "service1", "primary")],
     team: [{ initials: "", name: "", title: "", email: "", phone: "" }],
     staticContent: {
       cover: { title1: "The Expert Team Behind", title2: "Your Business", sub: "" },
@@ -34,13 +34,14 @@ export function blankDeck(): DeckConfig {
   };
 }
 
-export function blankService(name: string, id: string): DeckService {
+export function blankService(name: string, id: string, pricingModelId: string): DeckService {
   return {
     id,
     name,
     team: "",
     category: "major",
     bandLabel: "",
+    pricingModelId,
     handle: [""],
     stats: [
       { v: "", l: "" },
@@ -49,6 +50,10 @@ export function blankService(name: string, id: string): DeckService {
     dashboards: [],
     priceBands: [{ upTo: null, price: null }],
   };
+}
+
+export function blankPricingModel(id: string, isPrimary: boolean): PricingModel {
+  return { id, label: "", unit: "", questionText: "", isPrimary };
 }
 
 const ID_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
@@ -71,7 +76,10 @@ export function idFromName(name: string, taken: Iterable<string>, fallback: stri
 }
 
 export function allIdsInUse(deck: DeckConfig): string[] {
-  return [...deck.services.map((s) => s.id), ...deck.discoveryQuestions.map((q) => q.id)];
+  // Pricing model ids share the same flat SessionState.answers map as discovery question
+  // ids (a model's driver value and a question's answer are both keyed there), so a new
+  // id must never collide with either.
+  return [...deck.services.map((s) => s.id), ...deck.discoveryQuestions.map((q) => q.id), ...deck.pricingModels.map((m) => m.id)];
 }
 
 export function blankQuestion(id: string): DiscoveryQuestion {
@@ -85,10 +93,17 @@ export function validateDraft(deck: DeckConfig): string[] {
   if (!deck.companyName.trim()) issues.push("Basics: company name is required.");
   if (!deck.industry.trim()) issues.push("Basics: industry is required.");
   if (deck.logo.type === "text" && !deck.logo.wordmark.trim()) issues.push("Basics: the text logo needs a wordmark.");
-  if (!deck.pricingDriver.label.trim() || !deck.pricingDriver.unit.trim() || !deck.pricingDriver.questionText.trim())
-    issues.push("Pricing Model: driver label, unit, and question text are all required.");
+  if (deck.pricingModels.length === 0) issues.push("Pricing Model: a deck needs at least one pricing model.");
+  for (const m of deck.pricingModels) {
+    if (!m.label.trim() || !m.unit.trim() || !m.questionText.trim())
+      issues.push(`Pricing Model: "${m.label || m.id}" — label, unit, and question text are all required.`);
+  }
+  if (deck.pricingModels.filter((m) => m.isPrimary).length !== 1)
+    issues.push("Pricing Model: exactly one model must be marked primary.");
   if (deck.services.length === 0) issues.push("Services: a deck needs at least one service.");
   for (const s of deck.services) {
+    if (!deck.pricingModels.some((m) => m.id === s.pricingModelId))
+      issues.push(`Services: "${s.name || s.id}" is priced by a model that no longer exists.`);
     const label = s.name.trim() || s.id;
     if (!s.name.trim()) issues.push(`Services: a service is missing its name.`);
     if (s.handle.filter((h) => h.trim()).length === 0) issues.push(`Services: "${label}" needs at least one "what we handle" bullet.`);

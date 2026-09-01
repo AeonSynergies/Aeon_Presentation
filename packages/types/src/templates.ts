@@ -49,7 +49,10 @@ const itManagedServicesTemplate: DeckConfig = {
   industry: "Managed IT Services",
   tagline: "Back-office and service-desk operations for growing IT managed service providers.",
   colors: { amber: "#4A6DE5", teal: "#2FA88E" },
-  pricingDriver: { label: "Devices managed", unit: "devices", questionText: "How many devices/endpoints do you need us to manage?" },
+  pricingModels: [
+    { id: "primary", label: "Devices managed", unit: "devices", questionText: "How many devices/endpoints do you need us to manage?", isPrimary: true },
+    { id: "employeeHeadcount", label: "Employee headcount", unit: "employees", questionText: "What's the total employee headcount across the client environments you support?", isPrimary: false },
+  ],
   ...blankIdentity(),
   services: [
     {
@@ -57,6 +60,7 @@ const itManagedServicesTemplate: DeckConfig = {
       name: "Helpdesk & Support",
       team: "Service Desk Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Device-based · 4 bands",
       handle: [
         "Tier-1/2 ticket intake, triage, and resolution across your device fleet",
@@ -82,6 +86,7 @@ const itManagedServicesTemplate: DeckConfig = {
       name: "Patch & Security Management",
       team: "Security Operations Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Device-based · 3 bands",
       handle: [
         "Scheduled OS and third-party patch deployment across all managed devices",
@@ -104,6 +109,7 @@ const itManagedServicesTemplate: DeckConfig = {
       name: "Cloud Backup Administration",
       team: "Infrastructure Team",
       category: "strategic",
+      pricingModelId: "primary",
       bandLabel: "Flat · 1 band",
       handle: [
         "Backup job monitoring and failure remediation across every client environment",
@@ -119,9 +125,8 @@ const itManagedServicesTemplate: DeckConfig = {
       name: "Onboarding & Offboarding Support",
       team: "IT Operations Team",
       category: "strategic",
+      pricingModelId: "employeeHeadcount",
       bandLabel: "Employee-based · 3 bands",
-      pricingDriverField: "employeeHeadcount",
-      pricingDriverLabel: "Employee headcount",
       handle: [
         "New-hire account provisioning, device imaging, and access setup",
         "Departure checklist execution — access revocation, device recovery, data handoff",
@@ -191,15 +196,6 @@ const itManagedServicesTemplate: DeckConfig = {
     },
     { id: "edrCoverage", section: "general", relatedService: "patchsecurity", label: "What percentage of devices currently have an EDR/antivirus agent installed?", type: "text", placeholder: "e.g. 90%" },
     { id: "backupSolution", section: "general", relatedService: "cloudbackup", label: "What backup solution, if any, do you currently use?", type: "text", placeholder: "e.g. Datto, Veeam, none yet" },
-    {
-      id: "employeeHeadcount",
-      section: "general",
-      relatedService: "onboarding",
-      label: "What's the total employee headcount across the client environments you support?",
-      type: "number",
-      placeholder: "e.g. 350",
-      hint: "Drives pricing for Onboarding & Offboarding Support.",
-    },
   ],
 };
 
@@ -208,7 +204,10 @@ const multiLocationHospitalityTemplate: DeckConfig = {
   industry: "Multi-Location Hospitality Management",
   tagline: "Back-office support for restaurant, hotel, and hospitality groups operating across multiple locations.",
   colors: { amber: "#D6672F", teal: "#2E6B5E" },
-  pricingDriver: { label: "Active locations", unit: "locations", questionText: "How many active locations do you currently operate?" },
+  pricingModels: [
+    { id: "primary", label: "Active locations", unit: "locations", questionText: "How many active locations do you currently operate?", isPrimary: true },
+    { id: "hiresPerQuarter", label: "Headcount hired per quarter", unit: "hires", questionText: "About how many staff do you hire per quarter across all locations?", isPrimary: false },
+  ],
   ...blankIdentity(),
   services: [
     {
@@ -216,6 +215,7 @@ const multiLocationHospitalityTemplate: DeckConfig = {
       name: "Payroll & Scheduling Across Locations",
       team: "Payroll Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Location-based · 4 bands",
       handle: [
         "Multi-location payroll processing on a consistent group-wide schedule",
@@ -240,6 +240,7 @@ const multiLocationHospitalityTemplate: DeckConfig = {
       name: "Vendor & Inventory Reconciliation",
       team: "Operations Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Location-based · 3 bands",
       handle: [
         "Vendor invoice validation against received inventory at every location",
@@ -260,6 +261,7 @@ const multiLocationHospitalityTemplate: DeckConfig = {
       name: "Multi-Location Financial Reporting",
       team: "Finance Team",
       category: "strategic",
+      pricingModelId: "primary",
       bandLabel: "Flat · 1 band",
       handle: [
         "Consolidated group-wide P&L alongside per-location breakdowns",
@@ -275,9 +277,8 @@ const multiLocationHospitalityTemplate: DeckConfig = {
       name: "Staff Recruiting & Onboarding",
       team: "Talent Acquisition Team",
       category: "strategic",
+      pricingModelId: "hiresPerQuarter",
       bandLabel: "Hire-based · 3 bands",
-      pricingDriverField: "hiresPerQuarter",
-      pricingDriverLabel: "Headcount hired per quarter",
       handle: [
         "Job posting, applicant screening, and interview scheduling across all locations",
         "New-hire paperwork, background checks, and first-shift onboarding coordination",
@@ -346,15 +347,6 @@ const multiLocationHospitalityTemplate: DeckConfig = {
       hint: "Adds a surcharge to Vendor & Inventory Reconciliation only, shown as one combined rate.",
     },
     { id: "reportingCadence", section: "general", relatedService: "financialreporting", label: "How often do location managers need consolidated P&L reporting?", type: "select", options: ["Weekly", "Monthly", "Quarterly"] },
-    {
-      id: "hiresPerQuarter",
-      section: "general",
-      relatedService: "staffrecruiting",
-      label: "About how many staff do you hire per quarter across all locations?",
-      type: "number",
-      placeholder: "e.g. 20",
-      hint: "Drives pricing for Staff Recruiting & Onboarding.",
-    },
   ],
 };
 
@@ -363,7 +355,10 @@ const staffingAgencyTemplate: DeckConfig = {
   industry: "Staffing & Recruiting Agency Operations",
   tagline: "Back-office support for staffing and recruiting agencies managing contractors and client placements.",
   colors: { amber: "#8A5CF5", teal: "#3E8E7E" },
-  pricingDriver: { label: "Active placements", unit: "placements", questionText: "How many active placements/contractors do you currently have under management?" },
+  pricingModels: [
+    { id: "primary", label: "Active placements", unit: "placements", questionText: "How many active placements/contractors do you currently have under management?", isPrimary: true },
+    { id: "activeClientAccounts", label: "Active client accounts", unit: "accounts", questionText: "How many active client accounts do you currently manage?", isPrimary: false },
+  ],
   ...blankIdentity(),
   services: [
     {
@@ -371,6 +366,7 @@ const staffingAgencyTemplate: DeckConfig = {
       name: "Timesheet & Payroll Processing",
       team: "Payroll Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Placement-based · 4 bands",
       handle: [
         "Timesheet collection, approval-chasing, and exception resolution each cycle",
@@ -395,6 +391,7 @@ const staffingAgencyTemplate: DeckConfig = {
       name: "Client Billing & Invoicing",
       team: "Finance Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Placement-based · 3 bands",
       handle: [
         "Client invoicing against contracted bill rates and approved hours",
@@ -415,6 +412,7 @@ const staffingAgencyTemplate: DeckConfig = {
       name: "Compliance & Credentialing Tracking",
       team: "Compliance Team",
       category: "strategic",
+      pricingModelId: "primary",
       bandLabel: "Flat · 1 band",
       handle: [
         "License, certification, and credential expiration monitoring per placement",
@@ -430,9 +428,8 @@ const staffingAgencyTemplate: DeckConfig = {
       name: "Client Account Management",
       team: "Account Management Team",
       category: "strategic",
+      pricingModelId: "activeClientAccounts",
       bandLabel: "Account-based · 3 bands",
-      pricingDriverField: "activeClientAccounts",
-      pricingDriverLabel: "Active client accounts",
       handle: [
         "Ongoing client check-ins and open-role status updates",
         "Contract and rate-card renewal tracking per account",
@@ -501,15 +498,6 @@ const staffingAgencyTemplate: DeckConfig = {
       hint: "Adds a surcharge to Client Billing & Invoicing only, shown as one combined rate.",
     },
     { id: "credentialTypeCount", section: "general", relatedService: "compliancecred", label: "How many credential/license types do you need to track per placement?", type: "number", placeholder: "e.g. 4" },
-    {
-      id: "activeClientAccounts",
-      section: "general",
-      relatedService: "clientaccounts",
-      label: "How many active client accounts do you currently manage?",
-      type: "number",
-      placeholder: "e.g. 25",
-      hint: "Drives pricing for Client Account Management.",
-    },
   ],
 };
 
@@ -524,7 +512,7 @@ const lastMileDeliveryTemplate: DeckConfig = {
   industry: "Last-Mile Delivery Operations",
   tagline: "Back-office and virtual operations for contracted last-mile delivery fleets.",
   colors: { amber: "#16A6CE", teal: "#0C7B82" },
-  pricingDriver: { label: "Routes per day", unit: "routes", questionText: "How many routes do you run per day?" },
+  pricingModels: [{ id: "primary", label: "Routes per day", unit: "routes", questionText: "How many routes do you run per day?", isPrimary: true }],
   ...blankIdentity(),
   services: [
     {
@@ -532,6 +520,7 @@ const lastMileDeliveryTemplate: DeckConfig = {
       name: "Payroll Compliance Management",
       team: "Payroll & Compliance Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Route-based · 5 bands",
       handle: [
         "Daily timecard review with missing-punch, duplicate-punch, and break validation",
@@ -558,6 +547,7 @@ const lastMileDeliveryTemplate: DeckConfig = {
       name: "Invoice Dispute Management",
       team: "Accounting & Finance Team",
       category: "strategic",
+      pricingModelId: "primary",
       bandLabel: "Flat · 2 bands",
       handle: [
         "Route, vehicle, and equipment invoice validation against contract terms",
@@ -576,6 +566,7 @@ const lastMileDeliveryTemplate: DeckConfig = {
       name: "Driver Compliance Management",
       team: "Payroll & Compliance Team",
       category: "strategic",
+      pricingModelId: "primary",
       bandLabel: "Route-based · 3 bands",
       handle: [
         "Workers' comp claim tracking from report through resolution",
@@ -595,6 +586,7 @@ const lastMileDeliveryTemplate: DeckConfig = {
       name: "Expert Bookkeeping",
       team: "Accounting & Finance Team",
       category: "strategic",
+      pricingModelId: "primary",
       bandLabel: "Flat · 2 bands",
       handle: [
         "Monthly expense and revenue bifurcation by category",
@@ -613,6 +605,7 @@ const lastMileDeliveryTemplate: DeckConfig = {
       name: "Driver Recruitment Management",
       team: "Talent Acquisition Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Route-based · 3 bands",
       handle: [
         "Job posting, applicant screening, and interview scheduling",
@@ -632,6 +625,7 @@ const lastMileDeliveryTemplate: DeckConfig = {
       name: "Virtual Dispatch Operator",
       team: "Virtual Assistance Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Route-based · 4 bands",
       handle: [
         "Real-time route monitoring from first stop to end-of-day",
@@ -653,6 +647,7 @@ const lastMileDeliveryTemplate: DeckConfig = {
       name: "Route Performance Management",
       team: "Virtual Assistance Team",
       category: "strategic",
+      pricingModelId: "primary",
       bandLabel: "Route-based · 3 bands",
       handle: [
         "Weekly driver scorecard tracking and trend analysis",
@@ -734,7 +729,7 @@ const propertyManagementTemplate: DeckConfig = {
   industry: "Property Management",
   tagline: "Back-office support for residential and commercial property owners and operators.",
   colors: { amber: "#D9A441", teal: "#4FA8A0" },
-  pricingDriver: { label: "Units managed", unit: "units", questionText: "How many units do you currently manage?" },
+  pricingModels: [{ id: "primary", label: "Units managed", unit: "units", questionText: "How many units do you currently manage?", isPrimary: true }],
   ...blankIdentity(),
   services: [
     {
@@ -742,6 +737,7 @@ const propertyManagementTemplate: DeckConfig = {
       name: "Tenant Screening & Leasing Coordination",
       team: "Leasing Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Unit-based · 4 bands",
       handle: [
         "Rental application intake, review, and applicant communication",
@@ -767,6 +763,7 @@ const propertyManagementTemplate: DeckConfig = {
       name: "Maintenance Coordination",
       team: "Maintenance Operations Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Unit-based · 4 bands",
       handle: [
         "Work order intake from tenants and owners across all channels",
@@ -792,6 +789,7 @@ const propertyManagementTemplate: DeckConfig = {
       name: "Rent Collection & Financial Reporting",
       team: "Finance Team",
       category: "strategic",
+      pricingModelId: "primary",
       bandLabel: "Flat · 2 bands",
       handle: [
         "Rent collection tracking and automated late fee processing",
@@ -814,6 +812,7 @@ const propertyManagementTemplate: DeckConfig = {
       name: "Owner & Tenant Relations",
       team: "Client Services Team",
       category: "strategic",
+      pricingModelId: "primary",
       bandLabel: "Flat · 2 bands",
       handle: [
         "First-line tenant communication and issue triage",
@@ -892,7 +891,10 @@ const contractedDeliveryTemplate: DeckConfig = {
   industry: "Contracted Delivery Operations",
   tagline: "Settlement reconciliation, driver payroll, and expense management for contracted pickup & delivery operators.",
   colors: { amber: "#16A6CE", teal: "#0C7B82" },
-  pricingDriver: { label: "Routes per day", unit: "routes", questionText: "How many routes do you run per day?" },
+  pricingModels: [
+    { id: "primary", label: "Routes per day", unit: "routes", questionText: "How many routes do you run per day?", isPrimary: true },
+    { id: "numDrivers", label: "Number of drivers", unit: "drivers", questionText: "How many drivers do you currently have?", isPrimary: false },
+  ],
   ...blankIdentity(),
   services: [
     {
@@ -900,6 +902,7 @@ const contractedDeliveryTemplate: DeckConfig = {
       name: "Settlement Reconciliation",
       team: "Accounting & Finance Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Stop-based · 3 bands",
       handle: [
         "Weekly settlement statement validation line by line",
@@ -920,9 +923,8 @@ const contractedDeliveryTemplate: DeckConfig = {
       name: "Driver Payroll Management",
       team: "Payroll & Compliance Team",
       category: "major",
+      pricingModelId: "numDrivers",
       bandLabel: "Driver-based · 5 bands",
-      pricingDriverField: "numDrivers",
-      pricingDriverLabel: "Number of drivers",
       handle: [
         "Weekly driver payroll validation against hours and stops",
         "Deductions and reimbursements tracking",
@@ -943,6 +945,7 @@ const contractedDeliveryTemplate: DeckConfig = {
       name: "Expense Reconciliation",
       team: "Accounting & Finance Team",
       category: "strategic",
+      pricingModelId: "primary",
       bandLabel: "Flat · 1 band",
       handle: [
         "Vendor invoice validation against approved scope and pricing",
@@ -958,6 +961,7 @@ const contractedDeliveryTemplate: DeckConfig = {
       name: "Recruitment Assistance",
       team: "Talent Acquisition Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Route-based · 3 bands",
       handle: [
         "Job posting, applicant screening, and interview scheduling",
@@ -1025,7 +1029,6 @@ const contractedDeliveryTemplate: DeckConfig = {
       surchargeFor: "settlement",
       hint: "Adds a surcharge to Settlement Reconciliation only, shown as one combined rate.",
     },
-    { id: "numDrivers", section: "general", relatedService: "driverpay", label: "How many drivers do you currently have?", type: "number", placeholder: "e.g. 20", hint: "Drives pricing for Driver Payroll Management." },
     { id: "payFrequency", section: "general", relatedService: "driverpay", label: "What is your payroll frequency?", type: "toggle", options: ["Weekly", "Bi-Weekly"] },
     { id: "vendorCount", section: "general", relatedService: "expenserecon", label: "How many vendors do you currently reconcile invoices against?", type: "number", placeholder: "e.g. 8" },
   ],
