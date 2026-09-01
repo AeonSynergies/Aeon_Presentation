@@ -3,7 +3,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 import { trpc } from "~/lib/trpc";
 import { WizardPreview } from "./WizardPreview";
-import { blankDeck, templateAsDraft } from "./draft";
+import { allIdsInUse, blankDeck, blankPricingModel, idFromName, templateAsDraft } from "./draft";
 import { StepBasics, type UpdateDraft } from "./steps/StepBasics";
 import { StepContent } from "./steps/StepContent";
 import { StepDiscovery } from "./steps/StepDiscovery";
@@ -32,6 +32,9 @@ const STEPS = [
 ] as const;
 
 type StepKey = (typeof STEPS)[number]["key"];
+
+const PRICING_STEP_IDX = STEPS.findIndex((s) => s.key === "pricing");
+const SERVICES_STEP_IDX = STEPS.findIndex((s) => s.key === "services");
 
 // Which slide the preview should follow for each step (services/content refine this
 // per-selection via onFocusSlide). Discovery switches the preview to the real
@@ -201,6 +204,16 @@ export function DeckWizard({ editingSlug, initialDraft }: { editingSlug?: string
   const [stepIdx, setStepIdx] = React.useState(0);
   const [focusSlide, setFocusSlide] = React.useState<string | null>(null);
   const [serverError, setServerError] = React.useState<string | null>(null);
+  // Lifted out of StepServices (rather than that step's own local state) so it survives
+  // navigating away to Step 2 and back — the "+ Create new model" round trip below needs
+  // to return to exactly the service that was open. `undefined` = not yet touched this
+  // session (defaults to the first service); `null` = the user explicitly collapsed every
+  // card.
+  const [openServiceId, setOpenServiceId] = React.useState<string | null | undefined>(undefined);
+  // Set while Step 2 is open because a specific service's "+ Create new model" was
+  // clicked — names the service to jump back to (and auto-assign the new model onto) once
+  // the user is done filling in the new model.
+  const [returningToService, setReturningToService] = React.useState<string | null>(null);
   // Price-band fields an AI draft populated, as "<serviceId>:<bandIndex>" keys — shown as
   // a subtle "AI-suggested" badge in the Services step until a human edits that band, at
   // which point its key is removed. Purely a display hint; it never affects what's saved.
@@ -254,6 +267,28 @@ export function DeckWizard({ editingSlug, initialDraft }: { editingSlug?: string
     setFocusSlide(null);
   };
 
+  // "+ Create new model" (Step 3's Priced by dropdown) — creates a blank model, assigns
+  // it to the service that asked for it immediately (so it's already the right choice
+  // when the user comes back), and jumps to Step 2 to fill it in.
+  const createModelFor = (serviceId: string) => {
+    const newId = idFromName("New pricing model", allIdsInUse(draft), `model${draft.pricingModels.length + 1}`);
+    update((d) => {
+      d.pricingModels.push(blankPricingModel(newId, false));
+      const svc = d.services.find((s) => s.id === serviceId);
+      if (svc) svc.pricingModelId = newId;
+    });
+    setReturningToService(serviceId);
+    goTo(PRICING_STEP_IDX);
+  };
+
+  const doneCreatingModel = () => {
+    setReturningToService(null);
+    goTo(SERVICES_STEP_IDX);
+  };
+
+  const effectiveOpenServiceId = openServiceId === undefined ? draft.services[0]?.id ?? null : openServiceId;
+  const returningToServiceName = returningToService ? draft.services.find((s) => s.id === returningToService)?.name || returningToService : null;
+
   const onSave = async () => {
     setServerError(null);
     try {
@@ -299,9 +334,20 @@ export function DeckWizard({ editingSlug, initialDraft }: { editingSlug?: string
 
         <div className="builder-form-body">
           {step.key === "basics" && <StepBasics deck={draft} update={update} />}
-          {step.key === "pricing" && <StepPricingModel deck={draft} update={update} />}
+          {step.key === "pricing" && (
+            <StepPricingModel deck={draft} update={update} returningToServiceName={returningToServiceName} onDoneCreating={doneCreatingModel} />
+          )}
           {step.key === "services" && (
-            <StepServices deck={draft} update={update} onFocusSlide={setFocusSlide} aiFields={aiFields} onAiFieldReviewed={markAiFieldReviewed} />
+            <StepServices
+              deck={draft}
+              update={update}
+              onFocusSlide={setFocusSlide}
+              aiFields={aiFields}
+              onAiFieldReviewed={markAiFieldReviewed}
+              openId={effectiveOpenServiceId}
+              onOpenChange={setOpenServiceId}
+              onCreateModelFor={createModelFor}
+            />
           )}
           {step.key === "team" && <StepTeam deck={draft} update={update} />}
           {step.key === "content" && <StepContent deck={draft} update={update} onFocusSlide={setFocusSlide} />}

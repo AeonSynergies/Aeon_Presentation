@@ -1,5 +1,4 @@
 import type { DeckConfig, DeckService } from "@aeon/types";
-import * as React from "react";
 import { allIdsInUse, blankService, idFromName } from "../draft";
 import { Field, MiniBtn, Row, StringListEditor, TextField } from "../fields";
 import type { UpdateDraft } from "./StepBasics";
@@ -11,6 +10,8 @@ import type { UpdateDraft } from "./StepBasics";
 // - The alternate pricing driver hooks a service's price bands to a number-type
 //   discovery question instead of the deck driver (FedEx Driver Payroll's by-driver
 //   pricing) — offered only when such a question exists.
+
+const NEW_MODEL_OPTION = "__new_pricing_model__";
 
 function findSurchargeQuestion(deck: DeckConfig, svc: DeckService) {
   if (!svc.surcharge) return undefined;
@@ -248,6 +249,7 @@ function ServiceEditor({
   svcIdx,
   update,
   onRemove,
+  onCreateModel,
   aiFields,
   onAiFieldReviewed,
 }: {
@@ -255,11 +257,11 @@ function ServiceEditor({
   svcIdx: number;
   update: UpdateDraft;
   onRemove: () => void;
+  onCreateModel: () => void;
   aiFields: Set<string>;
   onAiFieldReviewed: (key: string) => void;
 }) {
   const svc = deck.services[svcIdx];
-  const numberQuestions = deck.discoveryQuestions.filter((q) => q.type === "number");
 
   return (
     <div>
@@ -330,42 +332,26 @@ function ServiceEditor({
 
       <BandsEditor deck={deck} svcIdx={svcIdx} update={update} aiFields={aiFields} onAiFieldReviewed={onAiFieldReviewed} />
 
-      <Field
-        label="Priced by"
-        hint="Default: the deck's pricing driver. A number-type discovery question can drive this service instead (like FedEx's Driver Payroll priced by driver count). Add number questions in the Discovery step."
-      >
+      <Field label="Priced by" hint="Every service is explicitly assigned to one pricing model from the library (Pricing Model step) — none default to another.">
         <select
-          value={svc.pricingDriverField || ""}
-          onChange={(e) =>
-            update((d) => {
-              const s = d.services[svcIdx];
-              if (e.target.value === "") {
-                delete s.pricingDriverField;
-                delete s.pricingDriverLabel;
-              } else {
-                s.pricingDriverField = e.target.value;
-                const q = d.discoveryQuestions.find((qq) => qq.id === e.target.value);
-                if (!s.pricingDriverLabel) s.pricingDriverLabel = q?.label || "";
-              }
-            })
-          }
+          value={svc.pricingModelId}
+          onChange={(e) => {
+            if (e.target.value === NEW_MODEL_OPTION) {
+              onCreateModel();
+              return;
+            }
+            update((d) => void (d.services[svcIdx].pricingModelId = e.target.value));
+          }}
         >
-          <option value="">Deck default ({deck.pricingDriver.label || "pricing driver"})</option>
-          {numberQuestions.map((q) => (
-            <option value={q.id} key={q.id}>
-              Question: {q.label || q.id}
+          {deck.pricingModels.map((m) => (
+            <option value={m.id} key={m.id}>
+              {m.label || m.id}
+              {m.isPrimary ? " (primary)" : ""}
             </option>
           ))}
+          <option value={NEW_MODEL_OPTION}>+ Create new model</option>
         </select>
       </Field>
-      {svc.pricingDriverField && (
-        <TextField
-          label="Driver label shown next to this service's price"
-          value={svc.pricingDriverLabel || ""}
-          placeholder="e.g. Number of drivers"
-          onChange={(v) => update((d) => void (d.services[svcIdx].pricingDriverLabel = v))}
-        />
-      )}
 
       <TextField
         label="Promo note (optional)"
@@ -402,27 +388,32 @@ export function StepServices({
   onFocusSlide,
   aiFields,
   onAiFieldReviewed,
+  openId,
+  onOpenChange,
+  onCreateModelFor,
 }: {
   deck: DeckConfig;
   update: UpdateDraft;
   onFocusSlide: (slideId: string) => void;
   aiFields: Set<string>;
   onAiFieldReviewed: (key: string) => void;
+  openId: string | null;
+  onOpenChange: (id: string | null) => void;
+  onCreateModelFor: (serviceId: string) => void;
 }) {
-  const [openId, setOpenId] = React.useState<string | null>(deck.services[0]?.id ?? null);
-
   const open = (id: string | null) => {
-    setOpenId(id);
+    onOpenChange(id);
     if (id) onFocusSlide(`svc-${id}`);
   };
 
   // Ids are derived from the CURRENT deck prop before calling update — the update
-  // mutator runs inside React's state updater, which must stay pure (no setOpenId there).
+  // mutator runs inside React's state updater, which must stay pure (no onOpenChange there).
   const addService = () => {
     const name = `New Service ${deck.services.length + 1}`;
     const id = idFromName(name, allIdsInUse(deck), `service${deck.services.length + 1}`);
+    const primaryModelId = deck.pricingModels.find((m) => m.isPrimary)?.id ?? deck.pricingModels[0].id;
     update((d) => {
-      d.services.push(blankService(name, id));
+      d.services.push(blankService(name, id, primaryModelId));
     });
     open(id);
   };
@@ -435,7 +426,7 @@ export function StepServices({
       // behind would orphan relatedService references and fail server validation.
       d.discoveryQuestions = d.discoveryQuestions.filter((q) => q.relatedService !== id && q.surchargeFor !== id);
     });
-    if (openId === id) setOpenId(remaining[0]?.id ?? null);
+    if (openId === id) onOpenChange(remaining[0]?.id ?? null);
   };
 
   const move = (idx: number, dir: -1 | 1) =>
@@ -482,6 +473,7 @@ export function StepServices({
                   svcIdx={i}
                   update={update}
                   onRemove={() => removeService(svc.id)}
+                  onCreateModel={() => onCreateModelFor(svc.id)}
                   aiFields={aiFields}
                   onAiFieldReviewed={onAiFieldReviewed}
                 />

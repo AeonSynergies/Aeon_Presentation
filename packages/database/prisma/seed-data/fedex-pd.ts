@@ -28,13 +28,20 @@ export const fedexPdDeck: DeckConfig = {
   secondaryLogo: { type: "imagePair", srcLight: "/brand/aeon-miles-light-bg.svg", srcDark: "/brand/aeon-miles-dark-bg.svg" },
   watermark: { type: "image", src: "/brand/aeon-icon.png" },
   colors: { amber: "#16A6CE", teal: "#0C7B82", ink: "#F1F5F5", panel: "#FFFFFF", panel2: "#E4EDEF", fog: "#5C6E73", paper: "#15282D" },
-  pricingDriver: { label: "Routes per day", unit: "routes", questionText: "How many routes do you run per day?" },
+  pricingModels: [
+    { id: "primary", label: "Routes per day", unit: "routes", questionText: "How many routes do you run per day?", isPrimary: true },
+    // Migrated from the old per-service pricingDriverField override on Driver Payroll
+    // Management — same discovery question ("How many drivers do you currently have?"),
+    // now a named model in the library instead of an ad hoc alternate driver.
+    { id: "numDrivers", label: "Number of drivers", unit: "drivers", questionText: "How many drivers do you currently have?", isPrimary: false },
+  ],
   services: [
     {
       id: "settlement",
       name: "Settlement Reconciliation",
       team: "Accounting & Finance Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Stop-based · 3 bands",
       handle: [
         "Weekly FedEx settlement statement review against contract terms",
@@ -89,9 +96,8 @@ export const fedexPdDeck: DeckConfig = {
       name: "Driver Payroll Management",
       team: "Payroll & Compliance Team",
       category: "major",
+      pricingModelId: "numDrivers",
       bandLabel: "Driver-based · 5 bands",
-      pricingDriverField: "numDrivers",
-      pricingDriverLabel: "Number of drivers",
       handle: [
         "Driver pay processing across fixed daily, hourly, or stop-based pay structures",
         "Hours, stops, deductions, and reimbursement validation every pay cycle",
@@ -145,6 +151,7 @@ export const fedexPdDeck: DeckConfig = {
       name: "Expense Reconciliation",
       team: "Accounting & Finance Team",
       category: "strategic",
+      pricingModelId: "primary",
       bandLabel: "Flat · 1 band",
       handle: [
         "Vendor invoice matching against approved charges and supporting records",
@@ -192,6 +199,7 @@ export const fedexPdDeck: DeckConfig = {
       name: "Recruitment Assistance",
       team: "Talent Acquisition Team",
       category: "major",
+      pricingModelId: "primary",
       bandLabel: "Route-based · 3 bands",
       handle: [
         "Job posting and listing management across Indeed and other platforms",
@@ -322,7 +330,10 @@ export const fedexPdDeck: DeckConfig = {
     },
 
     // ---- Service Questions: Driver Payroll Management ----
-    { id: "numDrivers", section: "general", relatedService: "driverpay", label: "How many drivers do you currently have?", type: "number", placeholder: "e.g. 20", hint: "Drives pricing for Driver Payroll Management." },
+    // "How many drivers do you currently have?" is no longer a stored DiscoveryQuestion —
+    // it's the numDrivers pricing model's own questionText (packages/types/src/deck.ts),
+    // synthesized as a Tier-1-style question dynamically whenever a selected service uses
+    // that model (see DiscoveryNotesPanel.tsx), same visibility this question always had.
     { id: "payStructure", section: "general", relatedService: "driverpay", label: "How are drivers currently paid?", type: "select", options: ["Fixed Daily", "Hourly", "Stop-Based", "Mixed"] },
     { id: "payFrequency", section: "general", relatedService: "driverpay", label: "What is your payroll frequency?", type: "toggle", options: ["Weekly", "Bi-Weekly"] },
 

@@ -60,7 +60,6 @@ export function useDeckSession(deck: DeckConfig, dbId: string, isPresenting: boo
         .mutateAsync({
           id: meetingId,
           patch: {
-            driverValue: state.driverValue,
             selected: state.selected,
             toggles: state.toggles,
             answers: state.answers as Record<string, string | number | boolean | null>,
@@ -88,7 +87,7 @@ export function useDeckSession(deck: DeckConfig, dbId: string, isPresenting: boo
     if (stamp === lastAppliedUpdatedAt.current) return;
     if (Date.now() - lastLocalEditAt.current < LOCAL_EDIT_GUARD_MS) return;
     lastAppliedUpdatedAt.current = stamp;
-    setStateRaw({ driverValue: m.driverValue, selected: m.selected, toggles: m.toggles, answers: m.answers as SessionState["answers"], discount: m.discount });
+    setStateRaw({ selected: m.selected, toggles: m.toggles, answers: m.answers as SessionState["answers"], discount: m.discount });
     setClientNameRaw(m.clientName ?? "");
   }, [remoteQuery.data]);
 

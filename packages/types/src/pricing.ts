@@ -22,7 +22,7 @@ export function priceForBands(
 }
 
 export function basePriceFor(svc: DeckService, st: SessionState): number | null | undefined {
-  const driverVal = svc.pricingDriverField ? st.answers[svc.pricingDriverField] : st.driverValue;
+  const driverVal = st.answers[svc.pricingModelId];
   const p = priceForBands(svc.priceBands, driverVal as number | string | null | undefined);
   if (p === undefined || p === null) return p;
   if (svc.surcharge && st.toggles[svc.surcharge.questionId]) return p + svc.surcharge.amount;

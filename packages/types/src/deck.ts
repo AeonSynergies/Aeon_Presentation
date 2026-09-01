@@ -42,10 +42,16 @@ export const PLATFORM_DEFAULT_COLORS = {
   paper: "#15282D",
 } as const;
 
-export interface PricingDriver {
+/** A named pricing driver in a deck's model library. Every service is priced against
+ * exactly one of these (DeckService.pricingModelId). Exactly one model per deck is
+ * "primary" — that's purely which one drives the deck's own narrative copy (cover slide,
+ * lede text); it has no effect on pricing itself. */
+export interface PricingModel {
+  id: string;
   label: string; // e.g. "Routes per day"
   unit: string; // e.g. "routes"
   questionText: string; // e.g. "How many routes do you run per day?"
+  isPrimary: boolean;
 }
 
 export interface PriceBand {
@@ -130,11 +136,9 @@ export interface DeckService {
   stats: ServiceStat[];
   dashboards: string[];
   priceBands: PriceBand[];
-  /** When set, this service is priced against a different driver than the deck's default
-   * pricingDriver — the value comes from discoveryQuestions[pricingDriverField] instead of
-   * state.driverValue (e.g. FedEx Driver Payroll Management priced by driver count). */
-  pricingDriverField?: string;
-  pricingDriverLabel?: string;
+  /** Which pricing model in the deck's library this service is priced against — every
+   * service is explicitly assigned, none implicitly falls back to a deck default. */
+  pricingModelId: string;
   surcharge?: ServiceSurcharge;
   promoNote?: string;
   reportSlide?: ReportSlide;
@@ -235,7 +239,7 @@ export interface DeckConfig {
   secondaryLogo?: LogoConfig;
   watermark?: WatermarkConfig;
   colors: DeckColors;
-  pricingDriver: PricingDriver;
+  pricingModels: PricingModel[];
   services: DeckService[];
   team: TeamMember[];
   staticContent: StaticContent;

@@ -137,13 +137,14 @@ function fixtureConfig(bandPrice) {
     tagline: "Dedicated fixture for the live meeting-records E2E suite — not used by any other suite.",
     logo: { type: "text", wordmark: "QA" },
     colors: { amber: "#888888", teal: "#666666" },
-    pricingDriver: { label: "Routes", unit: "routes", questionText: "How many routes per day?" },
+    pricingModels: [{ id: "primary", label: "Routes", unit: "routes", questionText: "How many routes per day?", isPrimary: true }],
     services: [
       {
         id: "qaRecordsServiceKept",
         name: KEPT_SERVICE_NAME,
         team: "QA Team",
         category: "major",
+        pricingModelId: "primary",
         bandLabel: "Route-based · 2 bands",
         handle: ["Seed bullet for the meeting-records E2E suite"],
         stats: [],
@@ -158,6 +159,7 @@ function fixtureConfig(bandPrice) {
         name: REMOVED_SERVICE_NAME,
         team: "QA Team",
         category: "major",
+        pricingModelId: "primary",
         bandLabel: "Flat",
         handle: ["Deselected during the test — must never appear in either export"],
         stats: [],

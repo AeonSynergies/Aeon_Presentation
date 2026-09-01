@@ -102,9 +102,9 @@ async function createViaWizard() {
   const previewVars = await page.$eval(".builder-preview-pane", (el) => el.getAttribute("style"));
   check("wizard: preview picks up accent colors live", previewVars.includes("#7C5CBF") && previewVars.includes("#2E8B74"));
 
-  // Pricing Model
+  // Pricing Model — a blank deck starts with exactly one (primary) model in the library.
   await chip("Pricing Model").click();
-  await fieldInput("Driver label").fill("Operatories");
+  await fieldInput("Model label").fill("Operatories");
   await fieldInput("Unit (short, plural)").fill("operatories");
   await fieldInput("Discovery question text").fill("How many operatories does the practice run?");
 
@@ -177,13 +177,45 @@ async function createViaWizard() {
   await notesPreview.locator(".chip", { hasText: "Patient Scheduling Support" }).click();
   check("wizard: surcharge toggle shown locked in tier 3", (await form.locator(".builder-locked", { hasText: "aged-claims cleanup" }).count()) === 1);
 
-  // Back to Services: alternate pricing driver
+  // Back to Services: a second pricing model, created from the "Priced by" dropdown's
+  // "+ Create new model" round trip rather than a pre-existing question. Which service
+  // card is open is now lifted state that survives navigating away and back (that's what
+  // makes the round trip below land back in the right place), so it's still open here from
+  // when it was added — only click its head if it isn't.
   await chip("Services").click();
-  await form.locator(".builder-svc-card", { hasText: "Patient Scheduling Support" }).locator(".builder-svc-head").click();
+  const patientSchedulingCard = form.locator(".builder-svc-card", { hasText: "Patient Scheduling Support" });
+  if (!(await patientSchedulingCard.locator(".builder-svc-body").count())) {
+    await patientSchedulingCard.locator(".builder-svc-head").click();
+  }
   const pricedBy = svcBody().locator(".q-block", { hasText: "Priced by" }).locator("select");
-  check("wizard: number question offered as alternate pricing driver", (await pricedBy.locator("option").count()) === 2);
-  await pricedBy.selectOption({ index: 1 });
-  await svcBody().locator(".q-block", { hasText: "Driver label shown next" }).locator("input").fill("Number of hygienists");
+  check("wizard: Priced by dropdown offers the primary model plus '+ Create new model'", (await pricedBy.locator("option").count()) === 2);
+  await pricedBy.selectOption({ label: "+ Create new model" });
+
+  // Should land on Step 2 with a new blank model ready and a banner naming the return path.
+  check("wizard: '+ Create new model' jumps to Step 2", (await chip("Pricing Model").getAttribute("class")).includes("active"));
+  check(
+    "wizard: Step 2 banner names the service the new model is for",
+    (await form.locator(".builder-locked", { hasText: "Patient Scheduling Support" }).count()) === 1,
+  );
+  const newModelCard = form.locator(".builder-subcard").last();
+  await newModelCard.locator(".q-block", { hasText: "Model label" }).locator("input").fill("Number of hygienists");
+  await newModelCard.locator(".q-block", { hasText: "Unit" }).locator("input").fill("hygienists");
+  await newModelCard.locator(".q-block", { hasText: "Discovery question text" }).locator("input").fill("How many hygienists does the practice employ?");
+  await form.locator(".mini-btn", { hasText: "Back to Services" }).click();
+
+  // Round trip lands back on exactly the service that asked for it, already assigned to
+  // the model just created (no manual re-selection needed).
+  check("wizard: round trip returns to the Services step", (await chip("Services").getAttribute("class")).includes("active"));
+  check(
+    "wizard: Patient Scheduling Support is still open after the round trip",
+    (await form.locator(".builder-svc-card.open", { hasText: "Patient Scheduling Support" }).count()) === 1,
+  );
+  const pricedBySelectedLabel = await pricedBy.evaluate((el) => el.options[el.selectedIndex]?.text || "");
+  check(
+    "wizard: the new model is already assigned to the service that created it",
+    pricedBySelectedLabel.includes("Number of hygienists"),
+    pricedBySelectedLabel,
+  );
 
   // Team
   await chip("Team").click();
@@ -324,7 +356,7 @@ async function verifyHomeAndTemplates() {
   const templateCompanyName = await form.locator(".q-block", { hasText: "Company / deck name" }).locator('input[type="text"]').inputValue();
   const templateDriverLabel = await (async () => {
     await form.locator(".builder-step-chip", { hasText: "Pricing Model" }).click();
-    return form.locator(".q-block", { hasText: "Driver label" }).locator('input[type="text"]').first().inputValue();
+    return form.locator(".q-block", { hasText: "Model label" }).locator('input[type="text"]').first().inputValue();
   })();
   await form.locator(".builder-step-chip", { hasText: "Services" }).click();
   const templateSvcCount = await form.locator(".builder-svc-card").count();
@@ -348,7 +380,7 @@ async function verifyHomeAndTemplates() {
 
     const tplCompanyName = await tplForm.locator(".q-block", { hasText: "Company / deck name" }).locator('input[type="text"]').inputValue();
     await tplForm.locator(".builder-step-chip", { hasText: "Pricing Model" }).click();
-    const tplDriverLabel = await tplForm.locator(".q-block", { hasText: "Driver label" }).locator('input[type="text"]').first().inputValue();
+    const tplDriverLabel = await tplForm.locator(".q-block", { hasText: "Model label" }).locator('input[type="text"]').first().inputValue();
     await tplForm.locator(".builder-step-chip", { hasText: "Services" }).click();
     const tplSvcCount = await tplForm.locator(".builder-svc-card").count();
     check(
