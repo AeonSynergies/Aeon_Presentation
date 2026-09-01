@@ -12,7 +12,7 @@ import {
   verifyAccessToken,
 } from "../lib/auth.js";
 import { isMicrosoftAuthConfigured } from "../lib/microsoft-auth.js";
-import { createAndSendPasswordSetToken, hashPasswordSetToken } from "../lib/password-tokens.js";
+import { createAndSendPasswordSetToken, hashPasswordSetToken, requestPasswordSetToken } from "../lib/password-tokens.js";
 import { protectedProcedure, publicProcedure, router } from "../trpc.js";
 
 // Production serves web and api from different origins, so the refresh cookie must be
@@ -103,7 +103,7 @@ export const authRouter = router({
     .input(z.object({ email: z.email() }))
     .mutation(async ({ input }) => {
       const user = await prisma.user.findUnique({ where: { email: input.email.toLowerCase() } });
-      if (user) await createAndSendPasswordSetToken(user, "RESET");
+      if (user) await requestPasswordSetToken(user, "RESET");
       return { message: "If that email exists, we've sent a password reset link." };
     }),
 

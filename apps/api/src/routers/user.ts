@@ -4,7 +4,7 @@ import { ROLES } from "@aeon/types";
 import { TRPCError } from "@trpc/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import { createAndSendPasswordSetToken } from "../lib/password-tokens.js";
+import { requestPasswordSetToken } from "../lib/password-tokens.js";
 import { protectedProcedure, requirePermission, router } from "../trpc.js";
 
 // Team Management — Admin-only (manageUsers permission), enforced at requirePermission,
@@ -51,7 +51,7 @@ export const userRouter = router({
       const user = await prisma.user.create({
         data: { email: input.email.toLowerCase(), passwordHash, name: input.name, role: input.role },
       });
-      if (input.sendInvitation) await createAndSendPasswordSetToken(user, "INVITE");
+      if (input.sendInvitation) await requestPasswordSetToken(user, "INVITE");
       return toUserDTO(user);
     }),
 

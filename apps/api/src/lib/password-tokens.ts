@@ -61,33 +61,66 @@ function emailCopyFor(purpose: "RESET" | "INVITE", name: string, link: string): 
   };
 }
 
+/** The fast half: generates a token and persists only its hash — a single local DB write,
+ * safe to await from a user-facing mutation without coupling its response time to SES. */
+async function createPasswordSetToken(
+  user: { id: string },
+  purpose: "RESET" | "INVITE",
+  ttlMs: number
+): Promise<string> {
+  const token = crypto.randomBytes(32).toString("hex");
+  const tokenHash = hashPasswordSetToken(token);
+  const expiresAt = new Date(Date.now() + ttlMs);
+  await prisma.passwordSetToken.create({ data: { tokenHash, userId: user.id, purpose, expiresAt } });
+  return token;
+}
+
+/** The slow half: emails the real link for a token already created by
+ * createPasswordSetToken. Never throws on failure — the token is already valid and
+ * stored, so a transient SES issue shouldn't be treated as this call failing; it's
+ * reported back in the result instead. */
+async function sendPasswordSetEmail(
+  user: { email: string; name: string },
+  purpose: "RESET" | "INVITE",
+  token: string
+): Promise<{ messageId: string | null; emailError: string | null }> {
+  const link = `${WEB_ORIGIN}/reset-password?token=${token}`;
+  const { subject, text, html } = emailCopyFor(purpose, user.name, link);
+  try {
+    const result = await sendEmail({ to: user.email, subject, text, html });
+    return { messageId: result.messageId, emailError: null };
+  } catch (err) {
+    const emailError = err instanceof Error ? err.message : String(err);
+    console.error(`Failed to send ${purpose.toLowerCase()} email to ${user.email}:`, err);
+    return { messageId: null, emailError };
+  }
+}
+
 /** Generates a token, persists only its hash, emails the real link, and reports what
  * happened — the caller decides how much of that to surface (the public reset/invite
  * paths discard it entirely to avoid leaking anything; the E2E test-support endpoint
- * returns it directly). Never throws on an email-send failure — the token is already
- * valid and stored by that point, so a transient SES issue shouldn't block the mutation
- * that triggered it; it's reported back instead. */
+ * returns it directly). Awaits the send, so only call this where the caller actually
+ * needs messageId/emailError — otherwise use requestPasswordSetToken below, which doesn't
+ * make a user-facing response wait on a network call to SES it doesn't need the result of. */
 export async function createAndSendPasswordSetToken(
   user: { id: string; email: string; name: string },
   purpose: "RESET" | "INVITE",
   ttlMs: number = DEFAULT_TTL_MS
 ): Promise<{ token: string; messageId: string | null; emailError: string | null }> {
-  const token = crypto.randomBytes(32).toString("hex");
-  const tokenHash = hashPasswordSetToken(token);
-  const expiresAt = new Date(Date.now() + ttlMs);
-  await prisma.passwordSetToken.create({ data: { tokenHash, userId: user.id, purpose, expiresAt } });
-
-  const link = `${WEB_ORIGIN}/reset-password?token=${token}`;
-  const { subject, text, html } = emailCopyFor(purpose, user.name, link);
-
-  let messageId: string | null = null;
-  let emailError: string | null = null;
-  try {
-    const result = await sendEmail({ to: user.email, subject, text, html });
-    messageId = result.messageId;
-  } catch (err) {
-    emailError = err instanceof Error ? err.message : String(err);
-    console.error(`Failed to send ${purpose.toLowerCase()} email to ${user.email}:`, err);
-  }
+  const token = await createPasswordSetToken(user, purpose, ttlMs);
+  const { messageId, emailError } = await sendPasswordSetEmail(user, purpose, token);
   return { token, messageId, emailError };
+}
+
+/** Same token + email as createAndSendPasswordSetToken, but for callers (the public
+ * reset/invite paths) that discard the result anyway: persists the token and returns as
+ * soon as that DB write completes, firing the SES send in the background instead of
+ * making the mutation's response wait on it. */
+export async function requestPasswordSetToken(
+  user: { id: string; email: string; name: string },
+  purpose: "RESET" | "INVITE",
+  ttlMs: number = DEFAULT_TTL_MS
+): Promise<void> {
+  const token = await createPasswordSetToken(user, purpose, ttlMs);
+  void sendPasswordSetEmail(user, purpose, token);
 }
