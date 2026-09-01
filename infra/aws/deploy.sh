@@ -202,22 +202,54 @@ else
   log "NAT subnet already exists ($NAT_SUBNET_ID)"
 fi
 
+# From the second run onward, the describe-subnets call above (which populated SUBNET_IDS
+# before this NAT subnet existed) instead picks up this dedicated NAT subnet too, since by
+# then it's just another subnet in the VPC. Left in SUBNET_IDS, the private-route-table
+# association loop below would then re-point the NAT subnet's own route table at the NAT
+# Gateway itself — overwriting its dedicated IGW route from below and creating a routing
+# loop where the NAT Gateway can't reach the internet at all (this was the actual root
+# cause of the "Connection error." on ai.draftDeck and Microsoft sign-in, not the NAT
+# Gateway itself — recreating the NAT Gateway alone didn't fix it because this loop
+# re-breaks the new one's subnet on every deploy). Filtering it out here keeps it out of
+# every downstream use of SUBNET_IDS (RDS, ElastiCache, the App Runner connector) too.
+FILTERED_SUBNET_IDS=()
+for s in "${SUBNET_IDS[@]}"; do
+  [ "$s" = "$NAT_SUBNET_ID" ] && continue
+  FILTERED_SUBNET_IDS+=("$s")
+done
+SUBNET_IDS=("${FILTERED_SUBNET_IDS[@]}")
+
 IGW_ID="$(aws_ ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=${VPC_ID}" --query 'InternetGateways[0].InternetGatewayId' --output text)"
 if [ -z "$IGW_ID" ] || [ "$IGW_ID" = "None" ]; then
   echo "No Internet Gateway attached to $VPC_ID — this script assumes the default VPC's own IGW exists." >&2
   exit 1
 fi
 
-# The new NAT subnet needs an explicit route to the IGW — it isn't associated with any
-# route table yet, so make that explicit rather than relying on an implicit main-table fallback.
-NAT_SUBNET_RT_ID="$(aws_ ec2 describe-route-tables --filters "Name=association.subnet-id,Values=${NAT_SUBNET_ID}" --query 'RouteTables[0].RouteTableId' --output text)"
+# The NAT subnet needs an explicit route to the IGW. Looked up BY TAG rather than "whatever
+# route table this subnet is currently associated with" — the private-route-table
+# association bug above (now fixed) could have left the NAT subnet wrongly associated with
+# aeon-private-rt instead, in which case "it already has some association" must not be
+# mistaken for "it already has the RIGHT association."
+NAT_SUBNET_RT_ID="$(aws_ ec2 describe-route-tables --filters "Name=tag:Name,Values=${PROJECT}-nat-subnet-rt" "Name=vpc-id,Values=${VPC_ID}" --query 'RouteTables[0].RouteTableId' --output text)"
 if [ -z "$NAT_SUBNET_RT_ID" ] || [ "$NAT_SUBNET_RT_ID" = "None" ]; then
   log "Routing the NAT subnet to the Internet Gateway"
   NAT_SUBNET_RT_ID="$(aws_ ec2 create-route-table --vpc-id "$VPC_ID" \
     --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${PROJECT}-nat-subnet-rt}]" --query 'RouteTable.RouteTableId' --output text)"
   aws_ ec2 create-route --route-table-id "$NAT_SUBNET_RT_ID" --destination-cidr-block 0.0.0.0/0 --gateway-id "$IGW_ID" >/dev/null
-  aws_ ec2 associate-route-table --route-table-id "$NAT_SUBNET_RT_ID" --subnet-id "$NAT_SUBNET_ID" >/dev/null
 fi
+
+NAT_SUBNET_CURRENT_RT="$(aws_ ec2 describe-route-tables --filters "Name=association.subnet-id,Values=${NAT_SUBNET_ID}" --query 'RouteTables[0].RouteTableId' --output text)"
+if [ "$NAT_SUBNET_CURRENT_RT" != "$NAT_SUBNET_RT_ID" ]; then
+  if [ -n "$NAT_SUBNET_CURRENT_RT" ] && [ "$NAT_SUBNET_CURRENT_RT" != "None" ]; then
+    log "NAT subnet was wrongly associated with $NAT_SUBNET_CURRENT_RT — repointing at its own route table $NAT_SUBNET_RT_ID"
+    NAT_SUBNET_ASSOC_ID="$(aws_ ec2 describe-route-tables --route-table-ids "$NAT_SUBNET_CURRENT_RT" \
+      --query "RouteTables[0].Associations[?SubnetId=='${NAT_SUBNET_ID}'].RouteTableAssociationId | [0]" --output text)"
+    aws_ ec2 replace-route-table-association --association-id "$NAT_SUBNET_ASSOC_ID" --route-table-id "$NAT_SUBNET_RT_ID" >/dev/null
+  else
+    aws_ ec2 associate-route-table --route-table-id "$NAT_SUBNET_RT_ID" --subnet-id "$NAT_SUBNET_ID" >/dev/null
+  fi
+fi
+log "NAT subnet confirmed routed to the Internet Gateway (route table $NAT_SUBNET_RT_ID)"
 
 EIP_ALLOC_ID="$(aws_ ec2 describe-addresses --filters "Name=tag:Name,Values=${PROJECT}-nat-eip" --query 'Addresses[0].AllocationId' --output text)"
 if [ -z "$EIP_ALLOC_ID" ] || [ "$EIP_ALLOC_ID" = "None" ]; then
