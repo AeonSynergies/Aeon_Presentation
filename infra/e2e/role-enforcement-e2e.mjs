@@ -170,6 +170,10 @@ for (const [role, u] of Object.entries(QA_USERS)) {
   }
   await page.click(".new-deck-btn"); // "+ New User" reuses this class
   await page.waitForSelector("form.builder-subcard");
+  // "Send invitation email" is the default selection now — these QA fixtures have no real
+  // inbox to receive one at, so explicitly switch to the original "Set initial password
+  // directly" path before the password field is even in the DOM to fill.
+  await page.click('form.builder-subcard label:has-text("Set initial password directly")');
   await page.fill('form.builder-subcard input[type="text"]', u.name);
   await page.fill('form.builder-subcard input[type="email"]', u.email);
   await page.fill('form.builder-subcard input[placeholder="At least 8 characters"]', u.password);

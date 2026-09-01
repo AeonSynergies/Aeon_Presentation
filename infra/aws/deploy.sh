@@ -437,6 +437,27 @@ DB_PARAM_ARN="arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter${DB_PARAM_NAME}"
 JWT_PARAM_ARN="arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter${JWT_PARAM_NAME}"
 
 # ============================================================
+# E2E test-support shared secret — same self-generating, never-rotated pattern as
+# JWT_ACCESS_SECRET above, not a repo secret someone has to add by hand. Gates
+# auth.e2eRequestToken (apps/api/src/routers/auth.ts), the live E2E suite's only way to
+# obtain a real password-reset/invite token for a reserved @aeonqa.internal fixture account
+# without a real inbox to read production email from. Its value is fetched here (not just
+# "does it exist", unlike the other SSM-only secrets above) so it can be masked from the
+# log immediately and then handed to the live-e2e CI job as a step output below — masking a
+# value only hides it from the rendered GitHub Actions log, not from this script's own
+# /tmp/deploy.log the workflow step greps, so the later extraction still works.
+# ============================================================
+E2E_SECRET_PARAM_NAME="/${PROJECT}/E2E_TEST_SECRET"
+if ! aws_ ssm get-parameter --name "$E2E_SECRET_PARAM_NAME" >/dev/null 2>&1; then
+  log "Generating and storing E2E_TEST_SECRET"
+  aws_ ssm put-parameter --name "$E2E_SECRET_PARAM_NAME" --type SecureString \
+    --value "$(openssl rand -hex 32)" >/dev/null
+fi
+E2E_SECRET_PARAM_ARN="arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter${E2E_SECRET_PARAM_NAME}"
+E2E_TEST_SECRET_VALUE="$(aws_ ssm get-parameter --name "$E2E_SECRET_PARAM_NAME" --with-decryption --query 'Parameter.Value' --output text)"
+echo "::add-mask::${E2E_TEST_SECRET_VALUE}"
+
+# ============================================================
 # Anthropic API key (Phase 3a, AI-assisted deck drafting) — unlike JWT_ACCESS_SECRET this
 # can't be generated, it has to come from a real Anthropic account. Sourced from the
 # ANTHROPIC_API_KEY repo secret (same as AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, added by
@@ -658,7 +679,7 @@ docker push "${ECR_API_URI}:${GIT_SHA}"
 # ============================================================
 # api App Runner service (create once, redeploy on subsequent runs)
 # ============================================================
-API_SECRETS_JSON="\"DATABASE_URL\": \"${DB_PARAM_ARN}\", \"JWT_ACCESS_SECRET\": \"${JWT_PARAM_ARN}\""
+API_SECRETS_JSON="\"DATABASE_URL\": \"${DB_PARAM_ARN}\", \"JWT_ACCESS_SECRET\": \"${JWT_PARAM_ARN}\", \"E2E_TEST_SECRET\": \"${E2E_SECRET_PARAM_ARN}\""
 if [ "$ANTHROPIC_CONFIGURED" = true ]; then
   API_SECRETS_JSON="${API_SECRETS_JSON}, \"ANTHROPIC_API_KEY\": \"${ANTHROPIC_PARAM_ARN}\""
 fi
@@ -685,7 +706,7 @@ if [ -z "$API_SERVICE_ARN" ]; then
     "ImageRepositoryType": "ECR",
     "ImageConfiguration": {
       "Port": "4000",
-      "RuntimeEnvironmentVariables": {"NODE_ENV": "production"},
+      "RuntimeEnvironmentVariables": {"NODE_ENV": "production", "SES_FROM_ADDRESS": "no-reply@aeonsynergies.com"},
       "RuntimeEnvironmentSecrets": {${API_SECRETS_JSON}}
     }
   },
@@ -763,6 +784,8 @@ CURRENT_ANTHROPIC_SECRET="$(aws_ apprunner describe-service --service-arn "$API_
   --query 'Service.SourceConfiguration.ImageRepository.ImageConfiguration.RuntimeEnvironmentSecrets.ANTHROPIC_API_KEY' --output text)"
 CURRENT_AZURE_SECRET="$(aws_ apprunner describe-service --service-arn "$API_SERVICE_ARN" \
   --query 'Service.SourceConfiguration.ImageRepository.ImageConfiguration.RuntimeEnvironmentSecrets.AZURE_CLIENT_SECRET' --output text)"
+CURRENT_E2E_SECRET="$(aws_ apprunner describe-service --service-arn "$API_SERVICE_ARN" \
+  --query 'Service.SourceConfiguration.ImageRepository.ImageConfiguration.RuntimeEnvironmentSecrets.E2E_TEST_SECRET' --output text)"
 NEEDS_ANTHROPIC_UPDATE=false
 if [ "$ANTHROPIC_CONFIGURED" = true ] && { [ "$CURRENT_ANTHROPIC_SECRET" = "None" ] || [ -z "$CURRENT_ANTHROPIC_SECRET" ]; }; then
   NEEDS_ANTHROPIC_UPDATE=true
@@ -771,15 +794,22 @@ NEEDS_AZURE_UPDATE=false
 if [ "$AZURE_CONFIGURED" = true ] && { [ "$CURRENT_AZURE_SECRET" = "None" ] || [ -z "$CURRENT_AZURE_SECRET" ]; }; then
   NEEDS_AZURE_UPDATE=true
 fi
-if [ "$CURRENT_WEB_ORIGIN" != "$WEB_URL" ] || [ "$CURRENT_API_ORIGIN" != "$API_URL" ] || [ "$NEEDS_ANTHROPIC_UPDATE" = true ] || [ "$NEEDS_AZURE_UPDATE" = true ]; then
-  log "Updating api service (WEB_ORIGIN/API_ORIGIN and/or newly-added ANTHROPIC_API_KEY/AZURE_* secrets) and redeploying"
+# E2E_TEST_SECRET is unconditional (always self-generated, not gated on a repo secret being
+# set), so this only ever fires once — the first deploy after this feature was added, when
+# an already-existing api service's RuntimeEnvironmentSecrets predates it.
+NEEDS_E2E_SECRET_UPDATE=false
+if [ "$CURRENT_E2E_SECRET" = "None" ] || [ -z "$CURRENT_E2E_SECRET" ]; then
+  NEEDS_E2E_SECRET_UPDATE=true
+fi
+if [ "$CURRENT_WEB_ORIGIN" != "$WEB_URL" ] || [ "$CURRENT_API_ORIGIN" != "$API_URL" ] || [ "$NEEDS_ANTHROPIC_UPDATE" = true ] || [ "$NEEDS_AZURE_UPDATE" = true ] || [ "$NEEDS_E2E_SECRET_UPDATE" = true ]; then
+  log "Updating api service (WEB_ORIGIN/API_ORIGIN and/or newly-added ANTHROPIC_API_KEY/AZURE_*/E2E_TEST_SECRET secrets) and redeploying"
   aws_ apprunner update-service --service-arn "$API_SERVICE_ARN" --source-configuration "{
     \"ImageRepository\": {
       \"ImageIdentifier\": \"${ECR_API_URI}:latest\",
       \"ImageRepositoryType\": \"ECR\",
       \"ImageConfiguration\": {
         \"Port\": \"4000\",
-        \"RuntimeEnvironmentVariables\": {\"NODE_ENV\": \"production\", \"WEB_ORIGIN\": \"${WEB_URL}\", \"API_ORIGIN\": \"${API_URL}\"},
+        \"RuntimeEnvironmentVariables\": {\"NODE_ENV\": \"production\", \"WEB_ORIGIN\": \"${WEB_URL}\", \"API_ORIGIN\": \"${API_URL}\", \"SES_FROM_ADDRESS\": \"no-reply@aeonsynergies.com\"},
         \"RuntimeEnvironmentSecrets\": {${API_SECRETS_JSON}}
       }
     },
@@ -795,4 +825,5 @@ echo " api: $API_URL"
 echo " web: $WEB_URL"
 echo " ai_configured: $ANTHROPIC_CONFIGURED"
 echo " azure_configured: $AZURE_CONFIGURED"
+echo " e2e_test_secret: $E2E_TEST_SECRET_VALUE"
 echo "============================================================"
