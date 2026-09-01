@@ -9,6 +9,13 @@
 // pricingSnapshot. Same content scope as the email draft (the client-facing deck as
 // currently configured) — deliberately not the Export menu's internal rate-card CSV.
 //
+// The PDF itself was redesigned from a bare itemized price list into an actual proposal
+// document: an opening framed around the client, each selected service explained with the
+// deck's own "what we handle" bullets (not invented copy), a pricing table with promo
+// notes called out where the deck carries one, a generic closing line, and an
+// Aeon-letterhead-style footer. This suite checks that real structure, not just that a PDF
+// comes back.
+//
 // What it does, through the actual UI — no API shortcuts for the assertions themselves:
 //   1. Signs in as the seeded demo user and opens the reference deck (Amazon DSP), which
 //      starts every service opted in by default.
@@ -22,6 +29,11 @@
 //      confirms: the selected service's name IS present, the deselected service's name is
 //      NOT present, and the driver value IS present — i.e. the PDF reflects the actual
 //      current session state, not some cached or default configuration.
+//   6. Confirms the redesigned content structure itself: a real explanatory bullet from
+//      the kept service's own "what we handle" list is present (proof this is an actual
+//      service explanation, not a bare price line), and the promo note on a service that
+//      has one (and stays selected) appears in the pricing table, while the promo note
+//      belonging to the deselected service does not.
 //
 //      Uses pdfjs-dist directly rather than the `pdf-parse` wrapper package: pdf-parse
 //      bundles a long-abandoned pdf.js build (v1.10.100, circa 2016) that throws "bad XRef
@@ -73,6 +85,15 @@ const DECK_SLUG = "aeon-logistics";
 const KEEP_SERVICE = "Payroll Compliance Management";
 const DROP_SERVICE = "Invoice Dispute Management";
 const DRIVER_VALUE = "37";
+// A real "what we handle" bullet on the kept service (packages/database/prisma/seed-data/
+// amazon-dsp.ts) — its presence is what proves the PDF now explains the service rather than
+// just naming it next to a price.
+const KEEP_SERVICE_BULLET = "missing-punch";
+// promoNote on Driver Compliance Management, which stays selected (only DROP_SERVICE gets
+// deselected below) — proves the pricing table surfaces a service's promo note.
+const KEPT_PROMO_NOTE = "Free Trial: 30 Days";
+// promoNote on the DROPPED service — must NOT appear once it's deselected.
+const DROPPED_PROMO_NOTE = "Free Trial: 3 Months";
 
 const results = [];
 function check(name, ok, detail = "") {
@@ -136,6 +157,11 @@ const text = await extractPdfText(pdfBytes);
 check("content: PDF includes the currently-selected service", text.includes(KEEP_SERVICE));
 check("content: PDF excludes the currently-deselected service", !text.includes(DROP_SERVICE), text.slice(0, 400));
 check("content: PDF includes the current driver value", text.includes(DRIVER_VALUE));
+
+console.log("\n=== Confirm the redesigned proposal content structure ===");
+check("content: PDF explains the kept service with its real 'what we handle' bullets, not just a price line", text.includes(KEEP_SERVICE_BULLET));
+check("content: pricing table surfaces the promo note for a service that has one", text.includes(KEPT_PROMO_NOTE));
+check("content: pricing table excludes the promo note for the deselected service", !text.includes(DROPPED_PROMO_NOTE));
 
 console.log("\n=== SUMMARY ===");
 const failed = results.filter((r) => !r.ok);

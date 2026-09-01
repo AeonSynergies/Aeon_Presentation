@@ -131,6 +131,15 @@ interface QuoteSnapshotRow {
   surcharge: boolean;
   final: string;
   discounted: boolean;
+  handle: string[];
+  promoNote: string | null;
+}
+
+interface QuoteSnapshotContact {
+  email: string;
+  phone: string;
+  web: string;
+  address: string;
 }
 
 // The quoted-deck data behind every downstream artifact: the live CSV export, a saved
@@ -147,6 +156,7 @@ interface QuoteSnapshot {
   rows: QuoteSnapshotRow[];
   totalLabel: string;
   computedAt: string;
+  contact: QuoteSnapshotContact;
 }
 
 function buildQuoteSnapshot(config: DeckConfig, state: SessionState, clientName: string | null): QuoteSnapshot {
@@ -163,6 +173,8 @@ function buildQuoteSnapshot(config: DeckConfig, state: SessionState, clientName:
       surcharge: surchargeActive,
       final: discounted ? `${fmtMoney(final)} (discounted from ${fmtMoney(base)})` : fmtMoney(final),
       discounted,
+      handle: svc.handle,
+      promoNote: svc.promoNote ?? null,
     };
   });
   const summary = computePricingSummary(config.services, state);
@@ -176,6 +188,12 @@ function buildQuoteSnapshot(config: DeckConfig, state: SessionState, clientName:
     rows,
     totalLabel,
     computedAt: new Date().toISOString(),
+    contact: {
+      email: config.staticContent.qa.email,
+      phone: config.staticContent.qa.phone,
+      web: config.staticContent.qa.web,
+      address: config.staticContent.qa.address,
+    },
   };
 }
 
@@ -278,6 +296,41 @@ function buildDiscoveryDocxBuffer(snapshot: DiscoverySnapshot): Promise<Buffer> 
   return Packer.toBuffer(doc);
 }
 
+// Draws one row of the pricing table at fixed column x-positions rather than relying on
+// pdfkit's normal single-column text flow — the only way to lay out service/price/note
+// side by side. Computes the row's height from the tallest cell first (a wrapped note can
+// need more than one line) so cells never overlap the next row, and forces a page break
+// before drawing if the row wouldn't fit, since explicit x/y positioning bypasses pdfkit's
+// own automatic pagination.
+function drawPricingTableRow(
+  doc: PDFKit.PDFDocument,
+  cols: { serviceX: number; serviceW: number; priceX: number; priceW: number; noteX: number; noteW: number },
+  cells: { service: string; price: string; note: string },
+  opts: { bold?: boolean } = {}
+): void {
+  doc.font(opts.bold ? "Helvetica-Bold" : "Helvetica").fontSize(10);
+  const rowHeight =
+    Math.max(
+      doc.heightOfString(cells.service, { width: cols.serviceW }),
+      doc.heightOfString(cells.price, { width: cols.priceW }),
+      doc.heightOfString(cells.note, { width: cols.noteW })
+    ) + 8;
+  if (doc.y + rowHeight > doc.page.height - doc.page.margins.bottom) doc.addPage();
+  const y = doc.y;
+  doc.text(cells.service, cols.serviceX, y, { width: cols.serviceW });
+  doc.text(cells.price, cols.priceX, y, { width: cols.priceW });
+  doc.text(cells.note, cols.noteX, y, { width: cols.noteW });
+  doc.y = y + rowHeight;
+}
+
+// A real proposal document, not an itemized price list: a client-facing opening, each
+// selected service explained in the deck's own words (its "what we handle" bullets — no
+// copy invented here), a pricing breakdown table with promo notes called out where the
+// deck carries one, a generic closing line, and an Aeon-letterhead-style footer built from
+// whatever contact info the deck's own Q&A slide content already carries. Shared by Send to
+// Client (fed a live-session snapshot) and Meeting Records' PDF re-download (fed the
+// frozen snapshot from when the record was completed) — this function only shapes what the
+// PDF says, never which snapshot it's handed.
 function buildQuotePdfBuffer(snapshot: QuoteSnapshot): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 50, size: "LETTER" });
@@ -286,25 +339,87 @@ function buildQuotePdfBuffer(snapshot: QuoteSnapshot): Promise<Buffer> {
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    doc.fontSize(20).text(snapshot.companyName, { continued: false });
-    doc.fontSize(11).fillColor("#555").text(snapshot.industry);
+    const contentWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+
+    // Opening
+    doc.font("Helvetica-Bold").fontSize(20).fillColor("#000").text(snapshot.companyName);
+    doc.font("Helvetica").fontSize(11).fillColor("#555").text(snapshot.industry);
     doc.moveDown(1);
-    doc.fillColor("#000").fontSize(12).text(`Client: ${snapshot.clientName ?? "(not recorded)"}`);
-    doc.text(`${snapshot.driverLabel}: ${snapshot.driverValue ?? "(not recorded)"}`);
-    doc.fontSize(9).fillColor("#555").text(`Quote snapshot taken ${new Date(snapshot.computedAt).toLocaleString("en-US")}`);
+    doc.fillColor("#000").fontSize(14).text(`Proposal for ${snapshot.clientName ?? "Your Organization"}`);
+    doc.fontSize(9).fillColor("#555").text(`Prepared ${new Date(snapshot.computedAt).toLocaleDateString("en-US")}`);
+    doc.moveDown(0.5);
+    doc
+      .fontSize(11)
+      .fillColor("#333")
+      .text("Thank you for the opportunity to share this proposal. Below is an overview of the services we recommend for your operation, followed by a full pricing breakdown.");
     doc.moveDown(1);
 
-    doc.fillColor("#000").fontSize(13).text("Services", { underline: true });
+    // Per-service sections — heading + the deck's own "what we handle" bullets, reused
+    // verbatim rather than summarized, so this never drifts from what the live deck shows.
+    doc.font("Helvetica-Bold").fontSize(14).fillColor("#000").text("Services", { underline: true });
     doc.moveDown(0.5);
     for (const r of snapshot.rows) {
-      doc.fontSize(11).text(`${r.service} — ${r.team}`, { continued: false });
-      doc.fontSize(10).fillColor("#333").text(`${r.final}${r.surcharge ? "  (surcharge applied)" : ""}`);
-      doc.fillColor("#000");
-      doc.moveDown(0.4);
+      doc.font("Helvetica-Bold").fontSize(12).fillColor("#000").text(r.service);
+      doc.font("Helvetica").fontSize(9).fillColor("#777").text(r.team);
+      doc.moveDown(0.3);
+      doc.fontSize(10).fillColor("#333");
+      for (const bullet of r.handle) {
+        doc.text(`•  ${bullet}`, { indent: 10 });
+      }
+      doc.moveDown(0.7);
     }
 
+    // Pricing breakdown table
+    if (doc.y > doc.page.height - doc.page.margins.bottom - 150) doc.addPage();
+    doc.font("Helvetica-Bold").fontSize(14).fillColor("#000").text("Pricing", { underline: true });
     doc.moveDown(0.5);
-    doc.fontSize(14).text(`Estimated Total / Month: ${snapshot.totalLabel}`, { align: "right" });
+
+    const gutter = 12;
+    const serviceW = Math.round(contentWidth * 0.42);
+    const priceW = Math.round(contentWidth * 0.2);
+    const noteW = contentWidth - serviceW - priceW - gutter * 2;
+    const cols = {
+      serviceX: doc.page.margins.left,
+      serviceW,
+      priceX: doc.page.margins.left + serviceW + gutter,
+      priceW,
+      noteX: doc.page.margins.left + serviceW + priceW + gutter * 2,
+      noteW,
+    };
+
+    doc.fillColor("#000");
+    drawPricingTableRow(doc, cols, { service: "Service", price: "Price / Month", note: "Note" }, { bold: true });
+    doc.moveDown(0.3);
+    for (const r of snapshot.rows) {
+      drawPricingTableRow(doc, cols, {
+        service: r.service,
+        price: r.final + (r.surcharge ? " (surcharge applied)" : ""),
+        note: r.promoNote ?? "",
+      });
+    }
+
+    doc.font("Helvetica");
+    doc.moveDown(0.8);
+    doc.fontSize(13).fillColor("#000").text(`Estimated Total / Month: ${snapshot.totalLabel}`, { align: "right" });
+    doc.moveDown(1.2);
+
+    // Closing — deliberately generic, not personalized per client.
+    doc.fontSize(11).fillColor("#333").text("Let us know if you have any questions.");
+    doc.moveDown(1.5);
+
+    // Aeon-letterhead-style footer: the deck's own company name plus whatever contact info
+    // its Q&A slide content already carries — no new contact data invented here.
+    doc
+      .moveTo(doc.page.margins.left, doc.y)
+      .lineTo(doc.page.width - doc.page.margins.right, doc.y)
+      .strokeColor("#ccc")
+      .stroke();
+    doc.moveDown(0.5);
+    doc.font("Helvetica-Bold").fontSize(10).fillColor("#000").text(snapshot.companyName, { align: "center" });
+    const contactLine = [snapshot.contact.email, snapshot.contact.phone, snapshot.contact.web].filter(Boolean).join("  ·  ");
+    doc.font("Helvetica").fontSize(9).fillColor("#555");
+    if (contactLine) doc.text(contactLine, { align: "center" });
+    if (snapshot.contact.address) doc.text(snapshot.contact.address, { align: "center" });
 
     doc.end();
   });
