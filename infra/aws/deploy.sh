@@ -548,7 +548,7 @@ INSTANCE_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT}-apprunner-instance
 # container. Scoped via ViaService instead of a hardcoded key ARN so it works with
 # whatever key SSM used (the account default alias/aws/ssm unless overridden) without an
 # extra lookup call.
-SSM_SECRET_RESOURCES="\"${DB_PARAM_ARN}\", \"${JWT_PARAM_ARN}\""
+SSM_SECRET_RESOURCES="\"${DB_PARAM_ARN}\", \"${JWT_PARAM_ARN}\", \"${E2E_SECRET_PARAM_ARN}\""
 if [ "$ANTHROPIC_CONFIGURED" = true ]; then
   SSM_SECRET_RESOURCES="${SSM_SECRET_RESOURCES}, \"${ANTHROPIC_PARAM_ARN}\""
 fi
