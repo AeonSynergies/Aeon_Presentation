@@ -27,7 +27,6 @@ jobs:
       api_url: ${{ steps.deploy.outputs.api_url }}
       ai_configured: ${{ steps.deploy.outputs.ai_configured }}
       azure_configured: ${{ steps.deploy.outputs.azure_configured }}
-      e2e_test_secret: ${{ steps.deploy.outputs.e2e_test_secret }}
     steps:
       - uses: actions/checkout@v4
 
@@ -52,16 +51,10 @@ jobs:
           WEB_URL=$(grep -oP '(?<= web: )\S+' /tmp/deploy.log | tail -1)
           AI_CONFIGURED=$(grep -oP '(?<= ai_configured: )\S+' /tmp/deploy.log | tail -1)
           AZURE_CONFIGURED=$(grep -oP '(?<= azure_configured: )\S+' /tmp/deploy.log | tail -1)
-          E2E_TEST_SECRET=$(grep -oP '(?<= e2e_test_secret: )\S+' /tmp/deploy.log | tail -1)
           if [ -z "$API_URL" ] || [ -z "$WEB_URL" ]; then
             echo "::error::deploy.sh reported success but didn't print both service URLs — treating as a failure."
             exit 1
           fi
-          # Mask again here too — deploy.sh already registered this mask when it generated
-          # the value, but each job starts from a clean log-rendering state, so this job's
-          # own log (this very step included) needs its own registration before the value
-          # is written to $GITHUB_OUTPUT below.
-          echo "::add-mask::$E2E_TEST_SECRET"
           {
             echo "## Deployed"
             echo "- api: $API_URL"
@@ -73,7 +66,6 @@ jobs:
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
           echo "ai_configured=${AI_CONFIGURED:-false}" >> "$GITHUB_OUTPUT"
           echo "azure_configured=${AZURE_CONFIGURED:-false}" >> "$GITHUB_OUTPUT"
-          echo "e2e_test_secret=$E2E_TEST_SECRET" >> "$GITHUB_OUTPUT"
         env:
           AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
           # Phase 3a (AI-assisted deck drafting). Optional on purpose: deploy.sh stores
@@ -104,6 +96,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      # E2E_TEST_SECRET can't travel through deploy's job outputs: GitHub Actions silently
+      # drops any output value that matches a registered ::add-mask:: (secrets aren't allowed
+      # to cross job boundaries that way — see the "Skip output ... since it may contain
+      # secret" warning this used to produce), so the password-reset step below always saw
+      # an empty value. Fetching it here, directly from the same SSM parameter deploy.sh
+      # generates it into, avoids that path entirely.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Fetch E2E_TEST_SECRET from SSM
+        run: |
+          set -euo pipefail
+          SECRET="$(aws ssm get-parameter --name /aeon/E2E_TEST_SECRET --with-decryption --query 'Parameter.Value' --output text)"
+          echo "::add-mask::$SECRET"
+          echo "E2E_TEST_SECRET=$SECRET" >> "$GITHUB_ENV"
 
       - name: Install Playwright
         working-directory: infra/e2e
@@ -162,7 +174,7 @@ jobs:
         env:
           BASE_URL: ${{ needs.deploy.outputs.web_url }}
           API_URL: ${{ needs.deploy.outputs.api_url }}
-          E2E_TEST_SECRET: ${{ needs.deploy.outputs.e2e_test_secret }}
+          E2E_TEST_SECRET: ${{ env.E2E_TEST_SECRET }}
 
       # Pricing editing in Edit Deck (Phase 5b). Creates its own dedicated fixture deck via
       # a raw API call (kept separate from wizard-e2e.mjs's Harbor Lane Dental fixture, since

@@ -441,11 +441,10 @@ JWT_PARAM_ARN="arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter${JWT_PARAM_NAME}"
 # JWT_ACCESS_SECRET above, not a repo secret someone has to add by hand. Gates
 # auth.e2eRequestToken (apps/api/src/routers/auth.ts), the live E2E suite's only way to
 # obtain a real password-reset/invite token for a reserved @aeonqa.internal fixture account
-# without a real inbox to read production email from. Its value is fetched here (not just
-# "does it exist", unlike the other SSM-only secrets above) so it can be masked from the
-# log immediately and then handed to the live-e2e CI job as a step output below — masking a
-# value only hides it from the rendered GitHub Actions log, not from this script's own
-# /tmp/deploy.log the workflow step greps, so the later extraction still works.
+# without a real inbox to read production email from. Only its existence is checked here —
+# the live-e2e CI job fetches the actual value itself directly from this same SSM parameter
+# (with its own AWS credentials) rather than having it handed through a job output, since
+# GitHub Actions silently drops any output value that matches a registered ::add-mask::.
 # ============================================================
 E2E_SECRET_PARAM_NAME="/${PROJECT}/E2E_TEST_SECRET"
 if ! aws_ ssm get-parameter --name "$E2E_SECRET_PARAM_NAME" >/dev/null 2>&1; then
@@ -454,8 +453,6 @@ if ! aws_ ssm get-parameter --name "$E2E_SECRET_PARAM_NAME" >/dev/null 2>&1; the
     --value "$(openssl rand -hex 32)" >/dev/null
 fi
 E2E_SECRET_PARAM_ARN="arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter${E2E_SECRET_PARAM_NAME}"
-E2E_TEST_SECRET_VALUE="$(aws_ ssm get-parameter --name "$E2E_SECRET_PARAM_NAME" --with-decryption --query 'Parameter.Value' --output text)"
-echo "::add-mask::${E2E_TEST_SECRET_VALUE}"
 
 # ============================================================
 # Anthropic API key (Phase 3a, AI-assisted deck drafting) — unlike JWT_ACCESS_SECRET this
@@ -825,5 +822,4 @@ echo " api: $API_URL"
 echo " web: $WEB_URL"
 echo " ai_configured: $ANTHROPIC_CONFIGURED"
 echo " azure_configured: $AZURE_CONFIGURED"
-echo " e2e_test_secret: $E2E_TEST_SECRET_VALUE"
 echo "============================================================"
