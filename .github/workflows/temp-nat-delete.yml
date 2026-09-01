@@ -1,0 +1,63 @@
+# TEMPORARY — deletes the old NAT Gateway (nat-0c3c06851c05d7e33) per explicit user
+# instruction, as part of recreating it to fix the broken egress path affecting both
+# ai.draftDeck and Microsoft sign-in's token exchange. ec2:DeleteNatGateway was just
+# granted. Confirms the gateway is in "available" state before deleting (so we don't
+# act on stale/unexpected state), deletes it, then polls until AWS reports "deleted".
+# Triggers on push to this exact file since workflow_dispatch isn't available to this
+# session's token. Remove once the NAT Gateway has been recreated and verified.
+
+name: TEMP - Delete old NAT Gateway
+
+on:
+  push:
+    paths:
+      - ".github/workflows/temp-nat-delete.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  delete-nat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Delete nat-0c3c06851c05d7e33 and wait for deletion
+        run: |
+          set -e
+          NAT_ID=nat-0c3c06851c05d7e33
+
+          echo "## Current state before deletion"
+          aws ec2 describe-nat-gateways --nat-gateway-ids "$NAT_ID" \
+            --query 'NatGateways[0].[NatGatewayId,State]' --output table
+
+          STATE=$(aws ec2 describe-nat-gateways --nat-gateway-ids "$NAT_ID" --query 'NatGateways[0].State' --output text)
+          if [ "$STATE" != "available" ]; then
+            echo "Refusing to delete: expected state 'available', found '$STATE'"
+            exit 1
+          fi
+
+          echo "Deleting $NAT_ID..."
+          aws ec2 delete-nat-gateway --nat-gateway-id "$NAT_ID"
+
+          echo "Waiting for deletion to complete..."
+          for i in $(seq 1 32); do
+            STATE=$(aws ec2 describe-nat-gateways --nat-gateway-ids "$NAT_ID" --query 'NatGateways[0].State' --output text)
+            echo "[$i/32] state=$STATE"
+            if [ "$STATE" = "deleted" ]; then
+              echo "Confirmed deleted."
+              break
+            fi
+            sleep 15
+          done
+
+          echo
+          echo "## Final state"
+          aws ec2 describe-nat-gateways --nat-gateway-ids "$NAT_ID" \
+            --query 'NatGateways[0].[NatGatewayId,State,FailureCode,FailureMessage]' --output table
