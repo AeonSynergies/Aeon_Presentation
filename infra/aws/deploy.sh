@@ -559,6 +559,25 @@ EOF
 aws iam put-role-policy --role-name "${PROJECT}-apprunner-instance" \
   --policy-name "${PROJECT}-read-secrets" --policy-document "$SSM_POLICY_DOC" >/dev/null
 
+# Lets the api service send real email (e.g. Send to Client) via SES instead of a mailto:
+# link — scoped to only the verified aeonsynergies.com identity, not "*", so this role can
+# never send as an arbitrary from-address.
+SES_POLICY_DOC=$(cat <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["ses:SendEmail", "ses:SendRawEmail"],
+      "Resource": "arn:aws:ses:${REGION}:${ACCOUNT_ID}:identity/aeonsynergies.com"
+    }
+  ]
+}
+EOF
+)
+aws iam put-role-policy --role-name "${PROJECT}-apprunner-instance" \
+  --policy-name "${PROJECT}-send-email" --policy-document "$SES_POLICY_DOC" >/dev/null
+
 # IAM changes can take a few seconds to propagate before App Runner can assume the role.
 sleep 10
 
