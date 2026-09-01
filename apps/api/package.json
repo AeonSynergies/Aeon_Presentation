@@ -15,6 +15,7 @@
     "@aeon/types": "workspace:*",
     "@anthropic-ai/sdk": "^0.121.0",
     "@azure/msal-node": "^2.16.2",
+    "@resvg/resvg-js": "^2.6.2",
     "@trpc/server": "^11.18.0",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",

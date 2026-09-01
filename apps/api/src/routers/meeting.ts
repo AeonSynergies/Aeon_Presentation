@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Prisma, prisma } from "@aeon/database";
 import {
   computePricingSummary,
@@ -10,9 +13,11 @@ import {
   type DeckConfig,
   type DiscountConfig,
   type DiscoveryQuestion,
+  type LogoConfig,
   type MeetingOutcome,
   type SessionState,
 } from "@aeon/types";
+import { Resvg } from "@resvg/resvg-js";
 import { TRPCError } from "@trpc/server";
 import { Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
 import PDFDocument from "pdfkit";
@@ -135,18 +140,17 @@ interface QuoteSnapshotRow {
   promoNote: string | null;
 }
 
-interface QuoteSnapshotContact {
-  email: string;
-  phone: string;
-  web: string;
-  address: string;
-}
-
 // The quoted-deck data behind every downstream artifact: the live CSV export, a saved
 // Meeting Record's frozen pricingSnapshot, its text summary, and its regenerated PDF all
 // build from THIS one shape, computed with the exact same @aeon/types pricing engine the
 // live Pricing slide uses. Built once here rather than four times independently, so those
 // four surfaces can never silently disagree with each other about a given deck+state.
+//
+// logo/watermarkSrc are frozen from the deck's config here (not read live at PDF-render
+// time) purely so generateQuotePdf's regeneration can stay self-sufficient from the frozen
+// JSON blob alone, matching how it already avoids re-joining the deck for pricing fidelity
+// — unlike the deck's own qa contact info, these are just small, rarely-changing config
+// references (a URL string), never a reason to bloat this JSON with actual image bytes.
 interface QuoteSnapshot {
   companyName: string;
   industry: string;
@@ -156,7 +160,8 @@ interface QuoteSnapshot {
   rows: QuoteSnapshotRow[];
   totalLabel: string;
   computedAt: string;
-  contact: QuoteSnapshotContact;
+  logo: LogoConfig | null;
+  watermarkSrc: string | null;
 }
 
 function buildQuoteSnapshot(config: DeckConfig, state: SessionState, clientName: string | null): QuoteSnapshot {
@@ -188,12 +193,8 @@ function buildQuoteSnapshot(config: DeckConfig, state: SessionState, clientName:
     rows,
     totalLabel,
     computedAt: new Date().toISOString(),
-    contact: {
-      email: config.staticContent.qa.email,
-      phone: config.staticContent.qa.phone,
-      web: config.staticContent.qa.web,
-      address: config.staticContent.qa.address,
-    },
+    logo: config.logo ?? null,
+    watermarkSrc: config.watermark?.type === "image" ? config.watermark.src : null,
   };
 }
 
@@ -296,6 +297,65 @@ function buildDiscoveryDocxBuffer(snapshot: DiscoverySnapshot): Promise<Buffer> 
   return Packer.toBuffer(doc);
 }
 
+// Aeon's own brand palette — the exact values apps/web/src/styles/app.css sets on :root
+// (what the login page, Home page, and every deck's own default colors already render
+// with; PLATFORM_DEFAULT_COLORS in @aeon/types mirrors the same two), reused verbatim
+// rather than approximated from a reference image so a generated PDF's branding actually
+// matches what's live.
+const BRAND_TEAL = "#0C7B82";
+const BRAND_AMBER = "#16A6CE";
+const BRAND_INK = "#15282D";
+
+// Aeon's own real contact identity for a generated proposal's letterhead footer —
+// hardcoded rather than read from a deck's staticContent.qa. That field is the deck's own
+// in-presentation Q&A slide content (about the service being pitched, e.g.
+// "info@amazondsp.com"), not "who sent this document" — conflating the two was the bug.
+const AEON_CONTACT = {
+  name: "Aeon Synergies LLC",
+  email: "info@aeonsynergies.com",
+  website: "https://www.aeonsynergies.com/",
+  phone: "+1 (302) 498-9899",
+  address: "800 N King St, Suite 304 #3725, Wilmington, DE 19801",
+  tagline: "Aeon Miles — expert solutions for Amazon DSPs / AFPs and FedEx ISPs",
+} as const;
+
+// Brand image assets (the deck's own logo/watermark, e.g. "/brand/aeon-synergies-light-bg.svg")
+// are served as static files by apps/web — but PDF generation runs in this separate
+// service, so a copy lives here too rather than fetching them over the network on every
+// PDF (this is a handful of small, effectively-static files, not live business data).
+const BRAND_ASSETS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../assets/brand");
+
+function brandAssetPath(url: string | null | undefined): string | null {
+  if (!url || !url.startsWith("/brand/")) return null;
+  const resolved = path.join(BRAND_ASSETS_DIR, url.slice("/brand/".length));
+  return resolved.startsWith(BRAND_ASSETS_DIR) ? resolved : null; // guard against path traversal
+}
+
+// SVG isn't a format pdfkit can embed directly, so a real SVG logo is rasterized to PNG
+// first; a plain raster asset (the watermark, always a PNG today) is returned as-is.
+function loadRasterImage(url: string | null | undefined): Buffer | null {
+  const filePath = brandAssetPath(url);
+  if (!filePath) return null;
+  try {
+    const raw = readFileSync(filePath);
+    if (filePath.endsWith(".svg")) return new Resvg(raw, { fitTo: { mode: "width", value: 800 } }).render().asPng();
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
+// The deck's own logo, on a light PDF background — always the "light-bg" variant
+// regardless of the deck's own cover-slide theme (isLightBg elsewhere picks per the DECK's
+// background; this document's background is always white). A "text"-type logo (no image
+// asset configured) falls back to a wordmark drawn to match, in buildQuotePdfBuffer below.
+function loadLogoImage(logo: LogoConfig | null): Buffer | null {
+  if (!logo) return null;
+  if (logo.type === "imagePair") return loadRasterImage(logo.srcLight);
+  if (logo.type === "image") return loadRasterImage(logo.src);
+  return null;
+}
+
 // Draws one row of the pricing table at fixed column x-positions rather than relying on
 // pdfkit's normal single-column text flow — the only way to lay out service/price/note
 // side by side. Computes the row's height from the tallest cell first (a wrapped note can
@@ -308,7 +368,7 @@ function drawPricingTableRow(
   cells: { service: string; price: string; note: string },
   opts: { bold?: boolean } = {}
 ): void {
-  doc.font(opts.bold ? "Helvetica-Bold" : "Helvetica").fontSize(10);
+  doc.font(opts.bold ? "Helvetica-Bold" : "Helvetica").fontSize(10).fillColor(opts.bold ? BRAND_INK : "#333");
   const rowHeight =
     Math.max(
       doc.heightOfString(cells.service, { width: cols.serviceW }),
@@ -321,16 +381,21 @@ function drawPricingTableRow(
   doc.text(cells.price, cols.priceX, y, { width: cols.priceW });
   doc.text(cells.note, cols.noteX, y, { width: cols.noteW });
   doc.y = y + rowHeight;
+  doc.x = doc.page.margins.left; // explicit-position .text() above leaves doc.x at noteX — without
+  // resetting it here, every normal-flow .text() call after the table (the total, the closing
+  // line, the footer) inherits that narrow leftover width and wraps as if squeezed into the
+  // note column, which is exactly the wrapping this PDF used to render silently wrong.
 }
 
-// A real proposal document, not an itemized price list: a client-facing opening, each
-// selected service explained in the deck's own words (its "what we handle" bullets — no
-// copy invented here), a pricing breakdown table with promo notes called out where the
-// deck carries one, a generic closing line, and an Aeon-letterhead-style footer built from
-// whatever contact info the deck's own Q&A slide content already carries. Shared by Send to
-// Client (fed a live-session snapshot) and Meeting Records' PDF re-download (fed the
-// frozen snapshot from when the record was completed) — this function only shapes what the
-// PDF says, never which snapshot it's handed.
+// A real proposal document, not an itemized price list: a client-facing opening headed by
+// the deck's own real logo and the actual client's name, each selected service explained
+// in the deck's own words (its "what we handle" bullets — no copy invented here), a
+// pricing breakdown table with promo notes called out where the deck carries one, a
+// generic closing line, a subtle brand watermark, and an Aeon-letterhead-style footer with
+// Aeon's own real contact details (never the deck's). Shared by Send to Client (fed a
+// live-session snapshot) and Meeting Records' PDF re-download (fed the frozen snapshot
+// from when the record was completed) — this function only shapes what the PDF says, never
+// which snapshot it's handed.
 function buildQuotePdfBuffer(snapshot: QuoteSnapshot): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 50, size: "LETTER" });
@@ -341,25 +406,73 @@ function buildQuotePdfBuffer(snapshot: QuoteSnapshot): Promise<Buffer> {
 
     const contentWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
 
-    // Opening
-    doc.font("Helvetica-Bold").fontSize(20).fillColor("#000").text(snapshot.companyName);
-    doc.font("Helvetica").fontSize(11).fillColor("#555").text(snapshot.industry);
+    // Subtle background watermark on every page — drawn first (bottom of the z-order) and
+    // re-drawn on each later page via pdfkit's own pageAdded event, since the first page
+    // never fires that event itself.
+    const watermarkBuffer = loadRasterImage(snapshot.watermarkSrc);
+    const drawWatermark = () => {
+      if (!watermarkBuffer) return;
+      const savedY = doc.y;
+      const size = 320;
+      doc.save();
+      doc.opacity(0.06);
+      doc.image(watermarkBuffer, (doc.page.width - size) / 2, (doc.page.height - size) / 2, { width: size });
+      doc.opacity(1);
+      doc.restore();
+      doc.y = savedY;
+    };
+    drawWatermark();
+    doc.on("pageAdded", drawWatermark);
+
+    // Header — the deck's real logo (rasterized from its own SVG asset), or a text
+    // wordmark fallback matching the login page's own "Aeon" treatment when a deck has no
+    // image logo configured, then a brand-teal rule.
+    const logoBuffer = loadLogoImage(snapshot.logo);
+    if (logoBuffer) {
+      doc.image(logoBuffer, doc.page.margins.left, doc.y, { width: 150 });
+      doc.y = Math.max(doc.y, doc.page.margins.top + 55);
+    } else {
+      const dotY = doc.y + 8;
+      doc.save().fillColor(BRAND_AMBER).circle(doc.page.margins.left + 4, dotY, 4).fill().restore();
+      doc.font("Helvetica-Bold").fontSize(16).fillColor(BRAND_INK).text("Aeon", doc.page.margins.left + 16, doc.y);
+      doc.y = doc.page.margins.top + 30;
+    }
+    doc.x = doc.page.margins.left;
+    doc
+      .moveTo(doc.page.margins.left, doc.y)
+      .lineTo(doc.page.width - doc.page.margins.right, doc.y)
+      .strokeColor(BRAND_TEAL)
+      .lineWidth(2)
+      .stroke();
     doc.moveDown(1);
-    doc.fillColor("#000").fontSize(14).text(`Proposal for ${snapshot.clientName ?? "Your Organization"}`);
-    doc.fontSize(9).fillColor("#555").text(`Prepared ${new Date(snapshot.computedAt).toLocaleDateString("en-US")}`);
-    doc.moveDown(0.5);
+
+    // Opening — the actual client captured on this meeting, never the deck's own
+    // companyName (that's the specific brand/program being presented, e.g. "Amazon DSP";
+    // this is who the document is FOR), falling back to the same generic framing as before
+    // when no client name was captured.
+    doc.x = doc.page.margins.left;
+    doc.font("Helvetica-Bold").fontSize(20).fillColor(BRAND_INK).text(`Proposal for ${snapshot.clientName ?? "Your Organization"}`);
+    doc.font("Helvetica").fontSize(11).fillColor("#555").text(snapshot.industry);
+    doc.fontSize(9).fillColor("#777").text(`Prepared ${new Date(snapshot.computedAt).toLocaleDateString("en-US")}`);
+    doc.moveDown(0.6);
     doc
       .fontSize(11)
       .fillColor("#333")
       .text("Thank you for the opportunity to share this proposal. Below is an overview of the services we recommend for your operation, followed by a full pricing breakdown.");
     doc.moveDown(1);
 
+    const drawSectionHeading = (title: string) => {
+      doc.x = doc.page.margins.left;
+      doc.font("Helvetica-Bold").fontSize(14).fillColor(BRAND_TEAL).text(title);
+      doc.moveTo(doc.page.margins.left, doc.y + 2).lineTo(doc.page.margins.left + 60, doc.y + 2).strokeColor(BRAND_AMBER).lineWidth(2).stroke();
+      doc.moveDown(0.6);
+    };
+
     // Per-service sections — heading + the deck's own "what we handle" bullets, reused
     // verbatim rather than summarized, so this never drifts from what the live deck shows.
-    doc.font("Helvetica-Bold").fontSize(14).fillColor("#000").text("Services", { underline: true });
-    doc.moveDown(0.5);
+    drawSectionHeading("Services");
     for (const r of snapshot.rows) {
-      doc.font("Helvetica-Bold").fontSize(12).fillColor("#000").text(r.service);
+      doc.font("Helvetica-Bold").fontSize(12).fillColor(BRAND_INK).text(r.service);
       doc.font("Helvetica").fontSize(9).fillColor("#777").text(r.team);
       doc.moveDown(0.3);
       doc.fontSize(10).fillColor("#333");
@@ -371,8 +484,7 @@ function buildQuotePdfBuffer(snapshot: QuoteSnapshot): Promise<Buffer> {
 
     // Pricing breakdown table
     if (doc.y > doc.page.height - doc.page.margins.bottom - 150) doc.addPage();
-    doc.font("Helvetica-Bold").fontSize(14).fillColor("#000").text("Pricing", { underline: true });
-    doc.moveDown(0.5);
+    drawSectionHeading("Pricing");
 
     const gutter = 12;
     const serviceW = Math.round(contentWidth * 0.42);
@@ -387,7 +499,6 @@ function buildQuotePdfBuffer(snapshot: QuoteSnapshot): Promise<Buffer> {
       noteW,
     };
 
-    doc.fillColor("#000");
     drawPricingTableRow(doc, cols, { service: "Service", price: "Price / Month", note: "Note" }, { bold: true });
     doc.moveDown(0.3);
     for (const r of snapshot.rows) {
@@ -398,28 +509,31 @@ function buildQuotePdfBuffer(snapshot: QuoteSnapshot): Promise<Buffer> {
       });
     }
 
-    doc.font("Helvetica");
     doc.moveDown(0.8);
-    doc.fontSize(13).fillColor("#000").text(`Estimated Total / Month: ${snapshot.totalLabel}`, { align: "right" });
+    doc.font("Helvetica-Bold").fontSize(13).fillColor(BRAND_INK).text(`Estimated Total / Month: ${snapshot.totalLabel}`, { align: "right" });
     doc.moveDown(1.2);
 
     // Closing — deliberately generic, not personalized per client.
-    doc.fontSize(11).fillColor("#333").text("Let us know if you have any questions.");
+    doc.x = doc.page.margins.left;
+    doc.font("Helvetica").fontSize(11).fillColor("#333").text("Let us know if you have any questions.");
     doc.moveDown(1.5);
 
-    // Aeon-letterhead-style footer: the deck's own company name plus whatever contact info
-    // its Q&A slide content already carries — no new contact data invented here.
+    // Aeon-letterhead-style footer — Aeon's own real, hardcoded contact details (never the
+    // deck's staticContent.qa, which is about the service being pitched, not the sender).
+    doc.x = doc.page.margins.left;
     doc
       .moveTo(doc.page.margins.left, doc.y)
       .lineTo(doc.page.width - doc.page.margins.right, doc.y)
-      .strokeColor("#ccc")
+      .strokeColor(BRAND_TEAL)
+      .lineWidth(1)
       .stroke();
     doc.moveDown(0.5);
-    doc.font("Helvetica-Bold").fontSize(10).fillColor("#000").text(snapshot.companyName, { align: "center" });
-    const contactLine = [snapshot.contact.email, snapshot.contact.phone, snapshot.contact.web].filter(Boolean).join("  ·  ");
-    doc.font("Helvetica").fontSize(9).fillColor("#555");
-    if (contactLine) doc.text(contactLine, { align: "center" });
-    if (snapshot.contact.address) doc.text(snapshot.contact.address, { align: "center" });
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(BRAND_TEAL).text(AEON_CONTACT.name, { align: "center" });
+    doc.font("Helvetica").fontSize(8).fillColor("#777").text(AEON_CONTACT.tagline, { align: "center" });
+    doc.moveDown(0.2);
+    doc.fontSize(9).fillColor("#555").text(`${AEON_CONTACT.email}  ·  ${AEON_CONTACT.phone}`, { align: "center" });
+    doc.text(AEON_CONTACT.website, { align: "center" });
+    doc.text(AEON_CONTACT.address, { align: "center" });
 
     doc.end();
   });
