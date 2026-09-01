@@ -239,8 +239,30 @@ if [ -z "$PRIVATE_RT_ID" ] || [ "$PRIVATE_RT_ID" = "None" ]; then
   log "Creating private route table (default route -> NAT Gateway)"
   PRIVATE_RT_ID="$(aws_ ec2 create-route-table --vpc-id "$VPC_ID" \
     --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${PROJECT}-private-rt}]" --query 'RouteTable.RouteTableId' --output text)"
-  aws_ ec2 create-route --route-table-id "$PRIVATE_RT_ID" --destination-cidr-block 0.0.0.0/0 --nat-gateway-id "$NAT_GW_ID" >/dev/null
 fi
+
+# The default route must always point at the CURRENT NAT Gateway, not just whichever one
+# existed the first time this route table was created. A NAT Gateway can be replaced (e.g.
+# after nat-0c3c06851c05d7e33 was deleted and recreated to fix a broken egress path) — if
+# this route were only ever set inside the "just created the route table" branch above, a
+# replacement NAT Gateway would leave the route table silently pointing at a deleted one
+# forever, blackholing every outbound request even though a perfectly good new NAT Gateway
+# exists right next to it. replace-route is idempotent (a harmless no-op when the route
+# already points at $NAT_GW_ID) and works whether or not a route already exists, so this one
+# call correctly covers first-ever-run, every later no-op run, and every NAT Gateway
+# replacement, without needing to know which case this is.
+CURRENT_DEFAULT_ROUTE_NAT="$(aws_ ec2 describe-route-tables --route-table-ids "$PRIVATE_RT_ID" \
+  --query "RouteTables[0].Routes[?DestinationCidrBlock=='0.0.0.0/0'].NatGatewayId | [0]" --output text)"
+if [ -z "$CURRENT_DEFAULT_ROUTE_NAT" ] || [ "$CURRENT_DEFAULT_ROUTE_NAT" = "None" ]; then
+  log "Adding default route (0.0.0.0/0 -> $NAT_GW_ID) to the private route table"
+  aws_ ec2 create-route --route-table-id "$PRIVATE_RT_ID" --destination-cidr-block 0.0.0.0/0 --nat-gateway-id "$NAT_GW_ID" >/dev/null
+elif [ "$CURRENT_DEFAULT_ROUTE_NAT" != "$NAT_GW_ID" ]; then
+  log "Private route table's default route pointed at a stale NAT Gateway ($CURRENT_DEFAULT_ROUTE_NAT) — repointing at $NAT_GW_ID"
+  aws_ ec2 replace-route --route-table-id "$PRIVATE_RT_ID" --destination-cidr-block 0.0.0.0/0 --nat-gateway-id "$NAT_GW_ID" >/dev/null
+else
+  log "Private route table's default route already points at the current NAT Gateway ($NAT_GW_ID)"
+fi
+log "NAT Gateway confirmed: $NAT_GW_ID (private route table $PRIVATE_RT_ID, default route -> $NAT_GW_ID)"
 
 # Point every original default-VPC subnet at the private route table — a subnet with no
 # explicit association yet (the default-VPC norm: it implicitly uses the main route table)
