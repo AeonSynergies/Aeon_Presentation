@@ -1,0 +1,49 @@
+# TEMPORARY — verifies ai-draft-e2e.mjs passes for real against the live app now that
+# the NAT Gateway has been recreated and the route table repointed (nat-0fec854a1f61ba4e7).
+# Runs only this one suite against the URLs from the just-completed deploy, so we don't
+# need another full deploy-aws.yml run just to check this. Triggers on push to this exact
+# file since workflow_dispatch isn't available to this session's token. Remove once
+# confirmed (then the real deploy-aws.yml gets its continue-on-error + TEMP DIAGNOSTIC
+# steps cleaned up in a follow-up PR).
+
+name: TEMP - Verify AI-drafting E2E against live app
+
+on:
+  push:
+    paths:
+      - ".github/workflows/temp-ai-draft-verify.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Playwright
+        working-directory: infra/e2e
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install chromium --with-deps
+
+      - name: Run live AI-drafting E2E against the deployment
+        working-directory: infra/e2e
+        run: node ai-draft-e2e.mjs
+        env:
+          BASE_URL: https://mmmi3mct2q.us-east-1.awsapprunner.com
+          API_URL: https://mhsuyfmuam.us-east-1.awsapprunner.com
+
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: infra/e2e/e2e-artifacts/
+          if-no-files-found: ignore
