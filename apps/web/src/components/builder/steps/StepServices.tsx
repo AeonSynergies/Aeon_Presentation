@@ -274,6 +274,12 @@ function ServiceEditor({
           onChange={(v) => update((d) => void (d.services[svcIdx].team = v))}
         />
       </Row>
+      <TextField
+        label="Tagline (shown instead of the delivering team on the Services overview slide)"
+        value={svc.tagline || ""}
+        placeholder="e.g. Accurate, audit-ready records"
+        onChange={(v) => update((d) => void (d.services[svcIdx].tagline = v))}
+      />
       <Row>
         <Field label="Category">
           <select

@@ -113,3 +113,101 @@ export function StringListEditor({
     </Field>
   );
 }
+
+export interface GridItemValue {
+  title: string;
+  description: string;
+}
+
+/** Editor for the Challenges/Benefits numbered-grid items: a short bold title plus a
+ * one-to-two sentence description each. A plain string (an already-persisted deck's old
+ * shape, from before this became a title+description pair) is normalized to {title: "",
+ * description: <the string>} the moment it's edited here, upgrading that item in place. */
+export function GridItemListEditor({
+  label,
+  items,
+  onChange,
+  addLabel,
+  hint,
+}: {
+  label: string;
+  items: (GridItemValue | string)[];
+  onChange: (items: (GridItemValue | string)[]) => void;
+  addLabel?: string;
+  hint?: string;
+}) {
+  const normalized = items.map((it) => (typeof it === "string" ? { title: "", description: it } : it));
+  return (
+    <Field label={label} hint={hint}>
+      {normalized.map((item, i) => (
+        <div className="builder-subcard" key={i}>
+          <div className="builder-subcard-head">
+            <span>ITEM {i + 1}</span>
+            <MiniBtn danger title="Remove" onClick={() => onChange(items.filter((_, xi) => xi !== i))}>
+              ✕
+            </MiniBtn>
+          </div>
+          <TextField
+            label="Title"
+            value={item.title}
+            onChange={(v) => onChange(normalized.map((x, xi) => (xi === i ? { ...x, title: v } : x)))}
+          />
+          <TextAreaField
+            label="Description"
+            value={item.description}
+            onChange={(v) => onChange(normalized.map((x, xi) => (xi === i ? { ...x, description: v } : x)))}
+          />
+        </div>
+      ))}
+      <MiniBtn onClick={() => onChange([...normalized, { title: "", description: "" }])}>＋ {addLabel || "Add item"}</MiniBtn>
+    </Field>
+  );
+}
+
+export interface FocusAreaValue {
+  primary: string;
+  secondary?: string;
+}
+
+/** Editor for the About slide's right-panel grid tiles — a bold primary phrase plus an
+ * optional accent-colored secondary phrase (e.g. primary "Amazon DSPs", secondary "& AFPs"). */
+export function FocusAreaListEditor({
+  label,
+  items,
+  onChange,
+  addLabel,
+  hint,
+}: {
+  label: string;
+  items: FocusAreaValue[];
+  onChange: (items: FocusAreaValue[]) => void;
+  addLabel?: string;
+  hint?: string;
+}) {
+  return (
+    <Field label={label} hint={hint}>
+      {items.map((item, i) => (
+        <div className="builder-list-row" key={i}>
+          <input
+            type="text"
+            style={{ flex: 1, minWidth: 0 }}
+            value={item.primary}
+            placeholder="e.g. Amazon DSPs"
+            onChange={(e) => onChange(items.map((x, xi) => (xi === i ? { ...x, primary: e.target.value } : x)))}
+          />
+          <input
+            type="text"
+            style={{ flex: 1, minWidth: 0 }}
+            value={item.secondary || ""}
+            placeholder="e.g. & AFPs (optional, accent color)"
+            onChange={(e) => onChange(items.map((x, xi) => (xi === i ? { ...x, secondary: e.target.value } : x)))}
+          />
+          <MiniBtn danger title="Remove" onClick={() => onChange(items.filter((_, xi) => xi !== i))}>
+            ✕
+          </MiniBtn>
+        </div>
+      ))}
+      <MiniBtn onClick={() => onChange([...items, { primary: "" }])}>＋ {addLabel || "Add"}</MiniBtn>
+    </Field>
+  );
+}

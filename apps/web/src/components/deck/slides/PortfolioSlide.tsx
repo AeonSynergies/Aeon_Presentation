@@ -1,10 +1,14 @@
 import type { DeckConfig, DeckService } from "@aeon/types";
 
 function ServiceRow({ s }: { s: DeckService }) {
+  // tagline (a short benefit phrase) replaces the team name on this slide only — team
+  // itself is untouched everywhere else (wizard, per-service eyebrows, CSV/PDF exports).
+  // Falls back to team so an already-persisted service without a tagline yet still renders.
+  const label = s.tagline?.trim() || s.team;
   return (
     <div className="svc-row">
       <span className="svc-name">{s.name}</span>
-      <span className="svc-team">{s.team.toUpperCase()}</span>
+      <span className="svc-team">{label.toUpperCase()}</span>
     </div>
   );
 }
