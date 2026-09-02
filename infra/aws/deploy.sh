@@ -577,9 +577,14 @@ EOF
 aws iam put-role-policy --role-name "${PROJECT}-apprunner-instance" \
   --policy-name "${PROJECT}-read-secrets" --policy-document "$SSM_POLICY_DOC" >/dev/null
 
-# Lets the api service send real email (e.g. Send to Client) via SES instead of a mailto:
-# link — scoped to only the verified aeonsynergies.com identity, not "*", so this role can
-# never send as an arbitrary from-address.
+# Lets the api service send real email (e.g. Send to Client, and now Forgot
+# Password/invitations) via SES instead of a mailto: link — scoped to only the verified
+# aeonsynergies.com identity, not "*", so this role can never send as an arbitrary
+# from-address. SES's own IAM authorization check for ses:SendEmail evaluates the Source
+# header against the exact identity/<from-address> ARN, not just the domain identity ARN a
+# domain-verified account might expect to cover it — confirmed live: an otherwise-correct
+# domain-scoped policy still got AccessDenied on identity/no-reply@aeonsynergies.com. Both
+# ARNs are listed so sending from that address works without widening past this one domain.
 SES_POLICY_DOC=$(cat <<EOF
 {
   "Version": "2012-10-17",
@@ -587,7 +592,10 @@ SES_POLICY_DOC=$(cat <<EOF
     {
       "Effect": "Allow",
       "Action": ["ses:SendEmail", "ses:SendRawEmail"],
-      "Resource": "arn:aws:ses:${REGION}:${ACCOUNT_ID}:identity/aeonsynergies.com"
+      "Resource": [
+        "arn:aws:ses:${REGION}:${ACCOUNT_ID}:identity/aeonsynergies.com",
+        "arn:aws:ses:${REGION}:${ACCOUNT_ID}:identity/no-reply@aeonsynergies.com"
+      ]
     }
   ]
 }
