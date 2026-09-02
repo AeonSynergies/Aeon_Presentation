@@ -151,6 +151,29 @@ jobs:
         env:
           BASE_URL: ${{ needs.deploy.outputs.web_url }}
 
+      # Report-sample template redesign (Templates A/B/C — see packages/types/src/deck.ts
+      # ReportTemplate). Makes no assertions of its own — it only captures real screenshots
+      # of the affected Amazon DSP report slides (Worker Comp Validation now under Driver
+      # Compliance Management, the new Unemployment Claims/CDF/DSB/Dispatch Tracking
+      # reports, and the wizard's multi-report list) so they can be reviewed visually
+      # against the reference designs, uploaded always (not just on failure) as a
+      # dedicated artifact.
+      - name: Run live report-template screenshots against the deployment
+        id: report-template-screenshots
+        continue-on-error: true
+        working-directory: infra/e2e
+        run: node report-templates-screenshots.mjs
+        env:
+          BASE_URL: ${{ needs.deploy.outputs.web_url }}
+
+      - name: Upload live report-template screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-report-screenshots
+          path: infra/e2e/e2e-artifacts/report-screenshots/
+          if-no-files-found: ignore
+
       # Present-mode Discovery Notes popout window (safety fix): confirms Discovery Notes
       # is genuinely absent from the DOM while presenting (not just CSS-hidden), that the
       # popout control opens a real separate window, and that edits made there reach the
@@ -280,6 +303,7 @@ jobs:
           declare -A OUTCOMES=(
             [wizard]="${{ steps.wizard.outcome }}"
             [redesign-content]="${{ steps.redesign-content.outcome }}"
+            [report-template-screenshots]="${{ steps.report-template-screenshots.outcome }}"
             [notes-window]="${{ steps.notes-window.outcome }}"
             [send-to-client-pdf]="${{ steps.send-to-client-pdf.outcome }}"
             [role-enforcement]="${{ steps.role-enforcement.outcome }}"
