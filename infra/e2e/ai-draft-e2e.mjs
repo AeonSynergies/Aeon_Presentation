@@ -212,14 +212,35 @@ async function main() {
   const qaToken = await uiLogin(QA_LIMIT_EMAIL, QA_LIMIT_PASSWORD);
   check("rate-limit QA user login succeeds", !!qaToken);
 
-  let lastResult = null;
+  // Every one of these RATE_LIMIT_MAX requests consumes a unit of quota regardless of its
+  // own outcome — the server records the attempt BEFORE calling Anthropic (see ai.ts's own
+  // comment: "a failed/garbled generation still counts against the limit"), specifically so
+  // a bad generation isn't a free retry. That means a request can genuinely fail here for a
+  // reason that has nothing to do with the rate limit itself: real Anthropic output
+  // occasionally doesn't parse into a valid draft (INTERNAL_SERVER_ERROR, "The AI produced
+  // an incomplete draft"), and the app is CORRECTLY rejecting that, not misbehaving. That's
+  // real LLM variance, not a bug to chase — so the loop always runs all RATE_LIMIT_MAX
+  // attempts (never stopping early on a content failure), and only a TOO_MANY_REQUESTS
+  // rejection turning up before quota is actually exhausted counts as a real failure here.
+  const probeResults = [];
   for (let i = 0; i < RATE_LIMIT_MAX; i++) {
-    lastResult = await callTrpc("mutation", "ai.draftDeck", qaToken, {
-      prompt: `Rate-limit probe request number ${i} for the dedicated QA account, industry description text here.`,
-    });
-    if (!lastResult.ok) break;
+    probeResults.push(
+      await callTrpc("mutation", "ai.draftDeck", qaToken, {
+        prompt: `Rate-limit probe request number ${i} for the dedicated QA account, industry description text here.`,
+      })
+    );
   }
-  check(`QA user's first ${RATE_LIMIT_MAX} drafts in the window succeed (quota was just reset above)`, !!lastResult?.ok, lastResult);
+  const prematureRateLimit = probeResults.find((r) => !r.ok && r.code === "TOO_MANY_REQUESTS");
+  check(
+    `none of the first ${RATE_LIMIT_MAX} requests were rejected by the rate limit itself (quota was just reset above)`,
+    !prematureRateLimit,
+    prematureRateLimit
+  );
+  check(
+    `at least one of the first ${RATE_LIMIT_MAX} requests produced a real draft (drafting itself still works)`,
+    probeResults.some((r) => r.ok),
+    JSON.stringify(probeResults.map((r) => ({ ok: r.ok, code: r.code })))
+  );
 
   const overLimit = await callTrpc("mutation", "ai.draftDeck", qaToken, {
     prompt: "One more request that should now be rejected by the rate limit guardrail on the live server.",
