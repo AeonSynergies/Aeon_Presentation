@@ -231,6 +231,7 @@ jobs:
         env:
           BASE_URL: ${{ needs.deploy.outputs.web_url }}
           API_URL: ${{ needs.deploy.outputs.api_url }}
+          E2E_TEST_SECRET: ${{ env.E2E_TEST_SECRET }}
 
       - name: Upload screenshots on failure
         if: failure()

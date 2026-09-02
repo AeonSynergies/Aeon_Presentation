@@ -6,7 +6,8 @@ import { inspect } from "node:util";
 import { z } from "zod";
 import { deckConfigSchema } from "../lib/deck-config-schema.js";
 import { AI_DRAFT_SYSTEM_PROMPT, AI_DRAFT_TOOL_SCHEMA, aiDraftInputSchema, buildTemplateGroundingBlock, normalizeDraft } from "../lib/ai-draft.js";
-import { requirePermission, router } from "../trpc.js";
+import { assertE2eTestAccess } from "../lib/e2e-test-guard.js";
+import { publicProcedure, requirePermission, router } from "../trpc.js";
 
 // A "Connection error." from the Anthropic SDK is APIConnectionError wrapping Node's
 // `TypeError: fetch failed`, which itself wraps the real network error (ECONNREFUSED,
@@ -160,5 +161,20 @@ export const aiRouter = router({
       }
 
       return { config: validated.data as DeckConfig, aiSuggestedFields };
+    }),
+
+  // Test-support only — lets the live E2E suite zero out a QA fixture account's rate-limit
+  // ledger before probing it, so "the first N requests succeed, the N+1th is rejected" is
+  // deterministic regardless of how recently (or how many times) this suite last ran within
+  // the same rolling window. Same secret/domain gate as auth.e2eRequestToken; deletes rows
+  // from the exact table draftDeck's rate check reads, nothing else.
+  e2eResetRateLimit: publicProcedure
+    .input(z.object({ email: z.email(), secret: z.string() }))
+    .mutation(async ({ input }) => {
+      assertE2eTestAccess(input.email, input.secret);
+      const user = await prisma.user.findUnique({ where: { email: input.email.toLowerCase() } });
+      if (!user) throw new TRPCError({ code: "NOT_FOUND" });
+      await prisma.aiDraftRequest.deleteMany({ where: { userId: user.id } });
+      return { ok: true };
     }),
 });

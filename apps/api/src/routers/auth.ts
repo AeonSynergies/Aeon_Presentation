@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import { prisma } from "@aeon/database";
 import { TRPCError } from "@trpc/server";
 import bcrypt from "bcryptjs";
@@ -11,6 +10,7 @@ import {
   signAccessToken,
   verifyAccessToken,
 } from "../lib/auth.js";
+import { assertE2eTestAccess } from "../lib/e2e-test-guard.js";
 import { isMicrosoftAuthConfigured } from "../lib/microsoft-auth.js";
 import { createAndSendPasswordSetToken, hashPasswordSetToken, requestPasswordSetToken } from "../lib/password-tokens.js";
 import { protectedProcedure, publicProcedure, router } from "../trpc.js";
@@ -147,13 +147,7 @@ export const authRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      const expected = process.env.E2E_TEST_SECRET;
-      const provided = Buffer.from(input.secret);
-      const expectedBuf = Buffer.from(expected ?? "");
-      const secretMatches = !!expected && provided.length === expectedBuf.length && crypto.timingSafeEqual(provided, expectedBuf);
-      if (!secretMatches || !input.email.toLowerCase().endsWith("@aeonqa.internal")) {
-        throw new TRPCError({ code: "NOT_FOUND" });
-      }
+      assertE2eTestAccess(input.email, input.secret);
       const user = await prisma.user.findUnique({ where: { email: input.email.toLowerCase() } });
       if (!user) throw new TRPCError({ code: "NOT_FOUND" });
       return createAndSendPasswordSetToken(user, input.purpose, input.ttlSeconds ? input.ttlSeconds * 1000 : undefined);
