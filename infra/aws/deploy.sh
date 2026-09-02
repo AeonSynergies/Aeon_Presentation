@@ -585,6 +585,14 @@ aws iam put-role-policy --role-name "${PROJECT}-apprunner-instance" \
 # domain-verified account might expect to cover it — confirmed live: an otherwise-correct
 # domain-scoped policy still got AccessDenied on identity/no-reply@aeonsynergies.com. Both
 # ARNs are listed so sending from that address works without widening past this one domain.
+# A SECOND, separate resource is also checked: the no-reply@aeonsynergies.com identity has
+# a default configuration set attached (my-first-configuration-set, the name the SES
+# console's verification wizard auto-creates), and every send from that identity implicitly
+# references it — IAM authorizes access to that configuration-set ARN independently of the
+# identity ARNs above. Confirmed live: AccessDenied naming
+# configuration-set/my-first-configuration-set specifically, with the identity ARNs already
+# granted. Wildcarded (not the literal name) so this doesn't silently break again if the
+# identity's default configuration set is ever recreated under a different name.
 SES_POLICY_DOC=$(cat <<EOF
 {
   "Version": "2012-10-17",
@@ -594,7 +602,8 @@ SES_POLICY_DOC=$(cat <<EOF
       "Action": ["ses:SendEmail", "ses:SendRawEmail"],
       "Resource": [
         "arn:aws:ses:${REGION}:${ACCOUNT_ID}:identity/aeonsynergies.com",
-        "arn:aws:ses:${REGION}:${ACCOUNT_ID}:identity/no-reply@aeonsynergies.com"
+        "arn:aws:ses:${REGION}:${ACCOUNT_ID}:identity/no-reply@aeonsynergies.com",
+        "arn:aws:ses:${REGION}:${ACCOUNT_ID}:configuration-set/*"
       ]
     }
   ]
