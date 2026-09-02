@@ -63,34 +63,24 @@ export const fedexPdDeck: DeckConfig = {
         { upTo: null, price: 700 },
       ],
       surcharge: { questionId: "backlogRecon", amount: 150 },
-      reportSlide: {
-        title: "Settlement Reconciliation Summary",
-        illustrative: true,
-        cards: [
-          {
-            type: "metrics",
-            title: "Weekly Settlement Snapshot",
-            meta: "WEEK OF 06/15/2025",
+      reportSlides: [
+        {
+          title: "Settlement Reconciliation Summary, Week of 06/15/2025",
+          illustrative: true,
+          template: {
+            kind: "particulars-table",
             rows: [
-              { label: "Fixed Revenue Expected", value: "$12,400.00" },
-              { label: "Stop-Based Revenue Expected", value: "$8,150.00" },
-              { label: "Package Revenue Expected", value: "$3,200.00" },
-              { label: "Fuel Surcharge Expected", value: "$1,050.00" },
-            ],
-            highlight: { label: "Discrepancy Identified", value: "$620.00" },
-          },
-          {
-            type: "table",
-            title: "Discrepancy Log",
-            columns: ["Line Item", "Expected", "Received", "Variance"],
-            rows: [
-              ["Fixed Revenue", "$12,400.00", "$12,400.00", "$0"],
-              ["Stop-Based Revenue", "$8,150.00", "$7,890.00", "-$260.00"],
-              ["Fuel Surcharge", "$1,050.00", "$690.00", "-$360.00"],
+              { label: "Fixed Revenue Expected", value: "12,400.00" },
+              { label: "Stop-Based Revenue Expected", value: "8,150.00" },
+              { label: "Stop-Based Revenue Variance", value: "-260.00", highlight: "negative" },
+              { label: "Package Revenue Expected", value: "3,200.00" },
+              { label: "Fuel Surcharge Expected", value: "1,050.00" },
+              { label: "Fuel Surcharge Variance", value: "-360.00", highlight: "negative" },
+              { label: "Discrepancy Identified", value: "620.00", bold: true, highlight: "negative" },
             ],
           },
-        ],
-      },
+        },
+      ],
     },
     {
       id: "driverpay",
@@ -120,33 +110,21 @@ export const fedexPdDeck: DeckConfig = {
         { upTo: 200, price: 1050 },
         { upTo: null, price: null },
       ],
-      reportSlide: {
-        title: "Driver Payroll Validation",
-        illustrative: true,
-        cards: [
-          {
-            type: "metrics",
-            title: "Weekly Payroll Snapshot",
-            meta: "PAY WEEK 06/15–06/21/25",
+      reportSlides: [
+        {
+          title: "Driver Payroll Validation, Pay Week (06/15/2025 to 06/21/2025)",
+          illustrative: true,
+          template: {
+            kind: "particulars-table",
             rows: [
-              { label: "Total Driver Pay", value: "$34,200.00" },
-              { label: "Overtime & Bonuses", value: "$2,150.00" },
-              { label: "Deductions", value: "-$980.00" },
-            ],
-            highlight: { label: "Net Payroll Issued", value: "$35,370.00" },
-          },
-          {
-            type: "table",
-            title: "Exceptions Flagged This Cycle",
-            columns: ["Driver", "Issue", "Resolution"],
-            rows: [
-              ["Martinez, Carlos", "Missing stop count", "Corrected before payout"],
-              ["Thompson, Reese", "Duplicate deduction", "Removed before payout"],
-              ["Alvarez, Diego", "Unapproved overtime", "Verified and approved"],
+              { label: "Total Driver Pay", value: "34,200.00" },
+              { label: "Overtime & Bonuses", value: "2,150.00" },
+              { label: "Deductions", value: "-980.00", highlight: "neutral" },
+              { label: "Net Payroll Issued", value: "35,370.00", bold: true, highlight: "neutral" },
             ],
           },
-        ],
-      },
+        },
+      ],
     },
     {
       id: "expenserecon",
@@ -170,32 +148,21 @@ export const fedexPdDeck: DeckConfig = {
       ],
       dashboards: ["Expense Reconciliation Summary", "Vendor Spend Dashboard", "Overbilling Recovery Report", "Route Profitability Impact Report"],
       priceBands: [{ upTo: null, price: 500 }],
-      reportSlide: {
-        title: "Expense Reconciliation Overview",
-        illustrative: true,
-        cards: [
-          {
-            type: "chart",
-            title: "Expense Breakdown",
-            segments: [
-              { label: "Fuel", pct: 38, color: "#16A6CE" },
-              { label: "Vehicle Maintenance", pct: 24, color: "#0C7B82" },
-              { label: "Insurance", pct: 18, color: "#1E9E8A" },
-              { label: "Other Vendor Costs", pct: 20, color: "#E8A13C" },
-            ],
-          },
-          {
-            type: "table",
-            title: "Flagged Vendor Charges",
-            columns: ["Vendor", "Issue", "Amount"],
+      reportSlides: [
+        {
+          title: "Expense Reconciliation Overview, Flagged Vendor Charges",
+          illustrative: true,
+          template: {
+            kind: "particulars-table",
             rows: [
-              ["FleetCare Services", "Duplicate charge", "$340.00"],
-              ["QuickFuel Corp", "Rate above contract", "$210.00"],
-              ["Metro Insurance Group", "Unapproved fee", "$95.00"],
+              { label: "FleetCare Services — Duplicate charge", value: "340.00", highlight: "negative" },
+              { label: "QuickFuel Corp — Rate above contract", value: "210.00", highlight: "negative" },
+              { label: "Metro Insurance Group — Unapproved fee", value: "95.00", highlight: "negative" },
+              { label: "Total Flagged Charges", value: "645.00", bold: true, highlight: "negative" },
             ],
           },
-        ],
-      },
+        },
+      ],
     },
     {
       id: "recruitAssist",
@@ -224,14 +191,12 @@ export const fedexPdDeck: DeckConfig = {
         { upTo: 25, price: 700 },
         { upTo: null, price: 950 },
       ],
-      reportSlide: {
-        title: "Recruitment Pipeline Tracker",
-        illustrative: true,
-        cards: [
-          {
-            type: "table",
-            wide: true,
-            title: "Candidate Pipeline",
+      reportSlides: [
+        {
+          title: "Recruitment Pipeline Tracker",
+          illustrative: true,
+          template: {
+            kind: "operational-table",
             columns: ["Candidate", "Job Posting", "FADV", "Drug Test/DOT", "Ground Cloud", "E-Verify", "Payroll"],
             rows: [
               ["Alvarez, Maria", "Applied", "Completed", "Scheduled", "Not Started", "Not Started", "Not Started"],
@@ -240,18 +205,21 @@ export const fedexPdDeck: DeckConfig = {
               ["Ibrahim, Yusuf", "Hired", "Completed", "Completed", "Completed", "Completed", "Completed"],
             ],
           },
-          {
-            type: "metrics",
-            title: "Pipeline Summary — This Period",
+        },
+        {
+          title: "Pipeline Summary, This Period",
+          illustrative: true,
+          template: {
+            kind: "particulars-table",
             rows: [
-              { label: "Candidates Screened", value: "22" },
-              { label: "FADV Completed", value: "16" },
-              { label: "Drug Test / DOT Scheduled", value: "11" },
+              { label: "Candidates Screened", value: "22", isCurrency: false },
+              { label: "FADV Completed", value: "16", isCurrency: false },
+              { label: "Drug Test / DOT Scheduled", value: "11", isCurrency: false },
+              { label: "Hired & Onboarded", value: "6", isCurrency: false, bold: true, highlight: "positive" },
             ],
-            highlight: { label: "Hired & Onboarded", value: "6" },
           },
-        ],
-      },
+        },
+      ],
     },
   ],
   team: [
