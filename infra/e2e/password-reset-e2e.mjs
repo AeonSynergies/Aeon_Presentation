@@ -240,7 +240,16 @@ await ensureSignedOut();
 await Promise.all([page.waitForURL("**/forgot-password"), page.click("text=Forgot password?")]);
 await page.waitForSelector('input[type="email"]');
 await page.fill('input[type="email"]', RESET_EMAIL);
+// Direct evidence, not another guess: does the field actually hold what we just typed,
+// and does the button's onClick even run (visible as an immediate "Sending…" flip, since
+// TanStack Query sets isPending synchronously when mutate starts — well before the
+// network request settles) — rather than inferring both from a downstream 15s timeout.
+const emailValueBeforeSubmit = await page.inputValue('input[type="email"]');
+console.log(`DIAG: input[type="email"] value right before submit click: "${emailValueBeforeSubmit}" (expected "${RESET_EMAIL}")`);
 await page.click('button[type="submit"]');
+await page.waitForTimeout(250);
+const submitTextJustAfterClick = await page.locator('button[type="submit"]').textContent().catch(() => "<button not found>");
+console.log(`DIAG: submit button text 250ms after click: "${submitTextJustAfterClick}"`);
 await waitForAuthSuccess();
 const realEmailMessage = (await page.locator(".auth-success").textContent()).trim();
 check("forgot password: generic confirmation shown for a real account", realEmailMessage.length > 0, realEmailMessage);
