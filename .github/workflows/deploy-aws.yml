@@ -129,6 +129,17 @@ jobs:
         env:
           BASE_URL: ${{ needs.deploy.outputs.web_url }}
 
+      # About/Challenges/Benefits redesign + per-service Services-slide tagline. Reads
+      # only the seeded Amazon DSP, Meridian, and FedEx P&D decks (never mutates them), so
+      # it's safe to run standalone against every deploy — confirms each deck's own real
+      # content renders in the new layouts (not Amazon's copy leaking onto other decks) and
+      # that the wizard's "Delivering team" field is untouched by the additive tagline field.
+      - name: Run live redesign-content E2E against the deployment
+        working-directory: infra/e2e
+        run: node redesign-content-e2e.mjs
+        env:
+          BASE_URL: ${{ needs.deploy.outputs.web_url }}
+
       # Present-mode Discovery Notes popout window (safety fix): confirms Discovery Notes
       # is genuinely absent from the DOM while presenting (not just CSS-hidden), that the
       # popout control opens a real separate window, and that edits made there reach the
