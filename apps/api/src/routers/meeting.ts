@@ -22,6 +22,7 @@ import { TRPCError } from "@trpc/server";
 import { Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
 import PDFDocument from "pdfkit";
 import { z } from "zod";
+import { sendEmailWithAttachment } from "../lib/email.js";
 import { protectedProcedure, requirePermission, router } from "../trpc.js";
 
 // Prisma's Json columns type as the recursive `JsonValue` union. Left as-is, that
@@ -532,6 +533,59 @@ function buildQuotePdfBuffer(snapshot: QuoteSnapshot): Promise<Buffer> {
   });
 }
 
+// Minutes of Meeting email content — built entirely from the meeting's own frozen data
+// (pricingSnapshot's totalLabel/clientName, meetingOutcome), the same "never recompute
+// independently" principle as the PDF/CSV/Word artifacts above, so this can never disagree
+// with what the saved record actually shows. `sender` is the salesperson sending it (never
+// the client), used only for the closing signature.
+function formatFollowUp(outcome: MeetingOutcome): string | null {
+  if (!outcome.followUp) return null;
+  const parts = [outcome.followUpDate, outcome.followUpTime].filter((p) => p?.trim()).join(" at ");
+  return parts || null;
+}
+
+function buildMinutesEmailContent(
+  snapshot: QuoteSnapshot,
+  outcome: MeetingOutcome | null,
+  sender: { name: string; title: string | null; email: string }
+): { subject: string; text: string; html: string } {
+  const clientLabel = snapshot.clientName || "your organization";
+  const subject = `Minutes of Meeting — ${clientLabel}`;
+  const signatureLines = [sender.name, sender.title, "Aeon Synergies LLC", sender.email].filter((l): l is string => !!l?.trim());
+
+  const outcomeLines: string[] = [];
+  if (outcome) {
+    outcomeLines.push(`Status: ${outcome.status}${outcome.status === "Other" && outcome.otherStatus ? ` (${outcome.otherStatus})` : ""}`);
+    const followUp = formatFollowUp(outcome);
+    if (followUp) outcomeLines.push(`Follow-up scheduled: ${followUp}`);
+    if (outcome.additionalNotes?.trim()) outcomeLines.push(`Notes: ${outcome.additionalNotes.trim()}`);
+  }
+
+  const text = [
+    `Hi ${clientLabel},`,
+    ``,
+    `Thank you for the time today. Here's a quick recap of our meeting, along with the proposal we discussed, attached as a PDF.`,
+    ...(outcomeLines.length ? ["", ...outcomeLines] : []),
+    ``,
+    `Estimated monthly investment: ${snapshot.totalLabel}`,
+    ``,
+    `Let us know if you have any questions.`,
+    ``,
+    signatureLines.join("\n"),
+  ].join("\n");
+
+  const html = [
+    `<p>Hi ${clientLabel},</p>`,
+    `<p>Thank you for the time today. Here's a quick recap of our meeting, along with the proposal we discussed, attached as a PDF.</p>`,
+    outcomeLines.length ? `<ul>${outcomeLines.map((l) => `<li>${l}</li>`).join("")}</ul>` : "",
+    `<p>Estimated monthly investment: ${snapshot.totalLabel}</p>`,
+    `<p>Let us know if you have any questions.</p>`,
+    `<p>${signatureLines.join("<br>")}</p>`,
+  ].join("\n");
+
+  return { subject, text, html };
+}
+
 export const meetingRouter = router({
   create: protectedProcedure
     .input(z.object({ deckId: z.string() }))
@@ -743,6 +797,57 @@ export const meetingRouter = router({
     const filename = meetingExportFilename(meeting.id, meeting.clientName, snapshot.companyName, "pdf");
     return { filename, base64: buffer.toString("base64") };
   }),
+
+  // Send Minutes of Meeting — a real email (SES SendRawEmailCommand, via
+  // sendEmailWithAttachment) with the Client Share Deck PDF genuinely attached. Distinct
+  // from sendToClient/generateLiveQuotePdf above: this is a real send (continuing an
+  // existing thread from the salesperson's own inbox needs mailto:'s attachment-free draft,
+  // which is why that path stays untouched), it only applies to a saved Meeting Record
+  // (built from the frozen pricingSnapshot/meetingOutcome, never live state), and it Reply-
+  // To's the sending user's own email — a client reply should reach the salesperson, never
+  // the no-reply@ address SES actually sends from.
+  sendMinutes: requirePermission("meetingRecords")
+    .input(z.object({ id: z.string(), clientEmail: z.email() }))
+    .mutation(async ({ input, ctx }) => {
+      const meeting = await prisma.meeting.findFirst({ where: { id: input.id, createdById: ctx.user.id } });
+      if (!meeting || !meeting.completedAt || !meeting.pricingSnapshot) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Meeting record not found" });
+      }
+      const sender = await prisma.user.findUnique({ where: { id: ctx.user.id } });
+      if (!sender) throw new TRPCError({ code: "UNAUTHORIZED" });
+
+      const snapshot = meeting.pricingSnapshot as unknown as QuoteSnapshot;
+      const outcome = (meeting.meetingOutcome as unknown as MeetingOutcome | null) ?? null;
+      const buffer = await buildQuotePdfBuffer(snapshot);
+      const filename = meetingExportFilename(meeting.id, meeting.clientName, snapshot.companyName, "pdf");
+      const { subject, text, html } = buildMinutesEmailContent(snapshot, outcome, { name: sender.name, title: sender.title, email: sender.email });
+
+      let messageId: string | null;
+      let rawMessage: Buffer;
+      try {
+        ({ messageId, rawMessage } = await sendEmailWithAttachment({
+          to: input.clientEmail,
+          replyTo: sender.email,
+          subject,
+          text,
+          html,
+          attachment: { filename, contentType: "application/pdf", content: buffer },
+        }));
+      } catch (err) {
+        console.error("meeting.sendMinutes: SES send failed:", err);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Couldn't send the Minutes of Meeting email — please try again." });
+      }
+
+      // Test-support only: a QA fixture recipient gets the exact raw MIME message back too,
+      // so the live E2E suite can parse the real multipart attachment directly rather than
+      // needing a real inbox to read it from — same reasoning as auth.e2eRequestToken
+      // returning a real token directly instead of requiring an inbox. Never included for a
+      // real client address; this is the caller's own meeting/PDF either way, so nothing
+      // new is exposed by handing it back.
+      const rawMessageBase64 = input.clientEmail.toLowerCase().endsWith("@aeonqa.internal") ? rawMessage.toString("base64") : undefined;
+
+      return { ok: true, messageId, rawMessageBase64 };
+    }),
 
   // The Word export of a saved record's frozen discoverySnapshot (never live/current
   // answers or a since-edited deck's discovery questions) — the Discovery Notes Q&A only,

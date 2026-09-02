@@ -29,6 +29,7 @@ function ProfileForm() {
   const changePassword = trpc.user.changePassword.useMutation();
 
   const [name, setName] = React.useState(user?.name ?? "");
+  const [title, setTitle] = React.useState(user?.title ?? "");
   const [email, setEmail] = React.useState(user?.email ?? "");
   const [currentPasswordForEmail, setCurrentPasswordForEmail] = React.useState("");
   const [profileError, setProfileError] = React.useState<string | null>(null);
@@ -51,10 +52,11 @@ function ProfileForm() {
     try {
       const updated = await updateProfile.mutateAsync({
         name: name.trim() || undefined,
+        title,
         email: email.trim() || undefined,
         currentPassword: emailChanged ? currentPasswordForEmail : undefined,
       });
-      updateUser({ name: updated.name, email: updated.email });
+      updateUser({ name: updated.name, email: updated.email, title: updated.title });
       setCurrentPasswordForEmail("");
       setProfileSaved(true);
     } catch (err) {
@@ -93,6 +95,11 @@ function ProfileForm() {
         <div className="q-block">
           <div className="q-label">Name</div>
           <input type="text" required value={name} onChange={(e) => setName(e.target.value)} />
+        </div>
+        <div className="q-block">
+          <div className="q-label">Job title (optional)</div>
+          <input type="text" placeholder="e.g. Account Executive" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <div className="q-hint">Shown in the signature of a Minutes of Meeting email — nowhere else.</div>
         </div>
         <div className="q-block">
           <div className="q-label">Email</div>

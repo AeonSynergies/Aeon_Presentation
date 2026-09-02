@@ -16,8 +16,8 @@ import { protectedProcedure, requirePermission, router } from "../trpc.js";
 
 const roleSchema = z.enum(ROLES);
 
-function toUserDTO(u: { id: string; email: string; name: string; role: string; createdAt: Date }) {
-  return { id: u.id, email: u.email, name: u.name, role: u.role, createdAt: u.createdAt };
+function toUserDTO(u: { id: string; email: string; name: string; title: string | null; role: string; createdAt: Date }) {
+  return { id: u.id, email: u.email, name: u.name, title: u.title, role: u.role, createdAt: u.createdAt };
 }
 
 export const userRouter = router({
@@ -105,13 +105,23 @@ export const userRouter = router({
   // there's no target-user id in the input — ctx.user.id is the only account this can
   // ever touch.
   updateProfile: protectedProcedure
-    .input(z.object({ name: z.string().min(1).optional(), email: z.email().optional(), currentPassword: z.string().optional() }))
+    .input(
+      z.object({
+        name: z.string().min(1).optional(),
+        email: z.email().optional(),
+        // Job title — shown only in a Minutes of Meeting email's signature
+        // (meeting.sendMinutes). "" clears it; undefined leaves it untouched.
+        title: z.string().max(120).optional(),
+        currentPassword: z.string().optional(),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
       const user = await prisma.user.findUnique({ where: { id: ctx.user.id } });
       if (!user) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-      const data: { name?: string; email?: string } = {};
+      const data: { name?: string; email?: string; title?: string | null } = {};
       if (input.name !== undefined) data.name = input.name;
+      if (input.title !== undefined) data.title = input.title.trim() || null;
 
       const newEmail = input.email?.toLowerCase();
       if (newEmail !== undefined && newEmail !== user.email) {

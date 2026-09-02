@@ -49,7 +49,7 @@ export const authRouter = router({
       const valid = await bcrypt.compare(input.password, user.passwordHash);
       if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
       const accessToken = await issueSession(ctx.res, user);
-      return { accessToken, user: { id: user.id, email: user.email, name: user.name, role: user.role } };
+      return { accessToken, user: { id: user.id, email: user.email, name: user.name, title: user.title, role: user.role } };
     }),
 
   // No public self-registration: accounts are created by an Admin via Team Management
@@ -70,7 +70,7 @@ export const authRouter = router({
     const accessToken = await issueSession(ctx.res, record.user);
     return {
       accessToken,
-      user: { id: record.user.id, email: record.user.email, name: record.user.name, role: record.user.role },
+      user: { id: record.user.id, email: record.user.email, name: record.user.name, title: record.user.title, role: record.user.role },
     };
   }),
 
@@ -87,7 +87,7 @@ export const authRouter = router({
   me: protectedProcedure.query(async ({ ctx }) => {
     const user = await prisma.user.findUnique({ where: { id: ctx.user.id } });
     if (!user) throw new TRPCError({ code: "UNAUTHORIZED" });
-    return { id: user.id, email: user.email, name: user.name, role: user.role };
+    return { id: user.id, email: user.email, name: user.name, title: user.title, role: user.role };
   }),
 
   // Lets the login page know whether to show "Sign in with Microsoft" at all — a plain

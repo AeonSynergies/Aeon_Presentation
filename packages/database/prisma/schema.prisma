@@ -31,6 +31,10 @@ model User {
   email        String   @unique
   passwordHash String
   name         String
+  // Job title (e.g. "Account Executive") — shown in the signature of a Minutes of Meeting
+  // email (meeting.sendMinutes), nowhere else. Self-service via user.updateProfile, same as
+  // name/email; optional since it has no bearing on permissions or login.
+  title        String?
   // Role enforcement is a later phase (CLAUDE.md Build Order #9) — this column exists now
   // so it doesn't need a migration later, but no permission checks read it yet.
   role         Role     @default(SALES_EXECUTIVE)
