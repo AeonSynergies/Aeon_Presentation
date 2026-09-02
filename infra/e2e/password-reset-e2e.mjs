@@ -246,7 +246,25 @@ await page.fill('input[type="email"]', RESET_EMAIL);
 // network request settles) — rather than inferring both from a downstream 15s timeout.
 const emailValueBeforeSubmit = await page.inputValue('input[type="email"]');
 console.log(`DIAG: input[type="email"] value right before submit click: "${emailValueBeforeSubmit}" (expected "${RESET_EMAIL}")`);
+// A prior round ruled out both "fill() didn't land" and "value got wiped before submit"
+// (validity.valid was true, yet still no request). The only remaining question a 15s
+// timeout can't answer: does clicking this button dispatch a real "submit" event at all —
+// i.e. is it actually inside a <form> right now, not just visually in the right place. A
+// capture-phase listener on the document sees every submit event regardless of which
+// element it targets, so this doesn't depend on guessing which form/handler is involved.
+await page.evaluate(() => {
+  window.__submitEvents = [];
+  document.addEventListener("submit", (e) => window.__submitEvents.push({ defaultPrevented: e.defaultPrevented }), true);
+});
+const submitButtonInForm = await page
+  .locator('button[type="submit"]')
+  .evaluate((el) => !!el.closest("form"))
+  .catch(() => "<eval failed>");
+console.log(`DIAG: submit button is inside a <form> element: ${submitButtonInForm}`);
 await page.click('button[type="submit"]');
+await page.waitForTimeout(100);
+const submitEventsFired = await page.evaluate(() => window.__submitEvents).catch(() => "<eval failed>");
+console.log(`DIAG: submit events observed on document within 100ms of click: ${JSON.stringify(submitEventsFired)}`);
 // The value read above proved fill() landed at that moment — but if a re-render (e.g. a
 // late remount from the lazy-loaded route chunk still settling) resets this controlled
 // input's React state after that read and before the click lands, the DOM value could be
