@@ -42,43 +42,47 @@ export const amazonDspDeck: DeckConfig = {
         { upTo: 50, price: 850 },
         { upTo: null, price: null },
       ],
-      reportSlide: {
-        title: "Payroll vs Revenue & Overtime",
-        cards: [
-          {
-            type: "metrics",
-            title: "Payroll vs Revenue Analysis",
-            meta: "PAY DATE 06/27/2025",
+      reportSlides: [
+        {
+          title: "Payroll vs Revenue, Week 25 (06/15/2025 to 06/21/2025)",
+          template: {
+            kind: "particulars-table",
             rows: [
-              { label: "Total Gross Pay (Payroll)", value: "$148,150.73" },
-              { label: "Tax — Employer Contributions", value: "$13,813.80" },
-              { label: "Worker Comp Benefits", value: "$8,390.60" },
-              { label: "Employee Insurance", value: "$29.00" },
-              { label: "Employee 401k", value: "$1,860.13" },
-              { label: "Total Company Liability", value: "$172,244.26" },
-              { label: "Total Route Revenue", value: "$161,351.00" },
-            ],
-            highlight: { label: "Profit / Loss", value: "-$10,893.26" },
-          },
-          {
-            type: "table",
-            title: "Overtime Analysis — Week 25",
-            stats: [
-              { label: "Overtime Employees", value: "10" },
-              { label: "Employees > 12 hrs", value: "2" },
-            ],
-            columns: ["Employee", "Hours"],
-            rows: [
-              ["Brown, Tavianna", "11.35"],
-              ["Kellam, Tahira", "12.30"],
-              ["Samaniego, Joel", "12.15"],
-              ["Watkins, Tyree", "10.35"],
-              ["Sesay, Unisa", "10.26"],
-              ["Souders, Jason", "11.04"],
+              { label: "Pay Date", value: "06/27/2025", isCurrency: false },
+              { label: "Total Gross Pay (Payroll)", value: "148,150.73" },
+              { label: "Tax - Employer Contributions", value: "13,813.80" },
+              { label: "Worker Comp Benefits", value: "8,390.60" },
+              { label: "Employee Insurance", value: "29.00" },
+              { label: "Employee 401k", value: "1,860.13" },
+              { label: "Total Company Liability (Payroll)", value: "172,244.26", bold: true },
+              { label: "Total Route Revenue", value: "161,351.00" },
+              { label: "Profit/Loss (Revenue - Payroll)", value: "10,893.26", bold: true, highlight: "negative" },
             ],
           },
-        ],
-      },
+        },
+        {
+          title: "Overtime Analysis, Week 25 (06/15/2025 to 06/21/2025)",
+          template: {
+            kind: "particulars-table",
+            valueColumnLabel: "Nos",
+            rows: [
+              { label: "No of OT Employees", value: "10.00", isCurrency: false },
+              { label: "Employees more than 12hrs", value: "2.00", isCurrency: false },
+            ],
+            extraList: {
+              heading: "List of Overtime Employees",
+              items: [
+                { label: "Brown, Tavianna", value: "11.35" },
+                { label: "Kellam, Tahira", value: "12.30" },
+                { label: "Samaniego, Joel", value: "12.15" },
+                { label: "Watkins, Tyree", value: "10.35" },
+                { label: "Sesay, Unisa", value: "10.26" },
+                { label: "Souders, Jason", value: "11.04" },
+              ],
+            },
+          },
+        },
+      ],
     },
     {
       id: "invoice",
@@ -111,53 +115,43 @@ export const amazonDspDeck: DeckConfig = {
         { upTo: null, price: 400 },
       ],
       promoNote: "Free Trial: 3 Months — Comparison & Analysis of Revenue vs Expense",
-      reportSlide: {
-        title: "Invoice Validation in Action",
-        cards: [
-          {
-            type: "metrics",
-            title: "Route Invoice",
-            meta: "WEEK 25 · 06/15–06/21/25",
+      reportSlides: [
+        {
+          title: "Route Invoice Validation, Week 25 (06/15/2025 to 06/21/2025)",
+          template: {
+            kind: "particulars-table",
             rows: [
-              { label: "Route Revenue Expected", value: "$85,154.00" },
-              { label: "Route Revenue Received", value: "$85,154.00" },
+              { label: "Route Revenue Expected", value: "85,154.00" },
+              { label: "Route Revenue Received", value: "85,154.00" },
+              { label: "Dispute Value", value: "0", bold: true, highlight: "neutral" },
             ],
-            highlight: { label: "Dispute Value", value: "$0" },
           },
-          {
-            type: "metrics",
-            title: "Vehicle Invoice",
-            meta: "JAN 2025",
+        },
+        {
+          title: "Vehicle Invoice Validation, Jan 2025",
+          template: {
+            kind: "particulars-table",
             rows: [
-              { label: "Rent & Lease Receivable", value: "$56,000.00" },
-              { label: "Vehicle Prepaid Amount", value: "$50,004.03" },
-              { label: "Reconciled Amount", value: "$4,724.99" },
+              { label: "Vehicle Rent and Lease Receivable", value: "56,000.00" },
+              { label: "Amazon Payments", sectionHeader: true },
+              { label: "Vehicle Prepaid Amount", value: "50,004.03" },
+              { label: "Vehicle Reconciled Amount", value: "4,724.99" },
+              { label: "Dispute Value", value: "1,270.98", bold: true, highlight: "negative" },
             ],
-            highlight: { label: "Dispute Value", value: "$1,270.98" },
           },
-          {
-            type: "metrics",
-            title: "Worker Comp",
-            meta: "WEEK 25 · 06/15–06/21/25",
+        },
+        {
+          title: "Vehicle Rental Validation, Week 25 (06/15/2025 to 06/21/2025)",
+          template: {
+            kind: "particulars-table",
             rows: [
-              { label: "Drivers Worker Comp", value: "$7,650.00" },
-              { label: "Management Worker Comp", value: "$1,300.00" },
-              { label: "Worker Comp Payable", value: "$10,856.00" },
+              { label: "Rental Paid", value: "6,300" },
+              { label: "Rental Payable", value: "6,300" },
+              { label: "Dispute Value", value: "0", bold: true, highlight: "neutral" },
             ],
-            highlight: { label: "Dispute Value", value: "$1,906.00" },
           },
-          {
-            type: "metrics",
-            title: "Rental & Lease Invoice",
-            meta: "WEEK 25 · 06/15–06/21/25",
-            rows: [
-              { label: "Rental Paid", value: "$6,300" },
-              { label: "Rental Payable", value: "$6,300" },
-            ],
-            highlight: { label: "Dispute Value", value: "$0" },
-          },
-        ],
-      },
+        },
+      ],
     },
     {
       id: "compliance",
@@ -191,23 +185,45 @@ export const amazonDspDeck: DeckConfig = {
         { upTo: null, price: 650 },
       ],
       promoNote: "Free Trial: 30 Days",
-      reportSlide: {
-        title: "Workers' Comp Claim Snapshot",
-        illustrative: true,
-        cards: [
-          {
-            type: "metrics",
-            title: "Open Claims Overview",
-            meta: "CURRENT PERIOD",
+      reportSlides: [
+        {
+          title: "Workers' Comp Claim Snapshot, Current Period",
+          illustrative: true,
+          template: {
+            kind: "particulars-table",
             rows: [
-              { label: "Claims Filed", value: "3" },
-              { label: "Claims In Review", value: "2" },
-              { label: "Claims Resolved", value: "1" },
+              { label: "Claims Filed", value: "3", isCurrency: false },
+              { label: "Claims In Review", value: "2", isCurrency: false },
+              { label: "Claims Resolved", value: "1", isCurrency: false },
+              { label: "Avg. Resolution Time", value: "18 days", isCurrency: false, bold: true, highlight: "neutral" },
             ],
-            highlight: { label: "Avg. Resolution Time", value: "18 days" },
           },
-        ],
-      },
+        },
+        {
+          title: "Worker Comp Validation, Week 25 (06/15/2025 to 06/21/2025)",
+          template: {
+            kind: "particulars-table",
+            rows: [
+              { label: "Drivers Worker Comp", value: "7,650.00" },
+              { label: "Management Worker Comp", value: "1,300.00" },
+              { label: "Worker Comp Payable", value: "10,856.00" },
+              { label: "Dispute Value", value: "1,906.00", bold: true, highlight: "positive" },
+            ],
+          },
+        },
+        {
+          title: "Unemployment Claims, Week 25 (06/15/2025 to 06/21/2025)",
+          template: {
+            kind: "particulars-table",
+            rows: [
+              { label: "Claims Filed by Former Employees", value: "4", isCurrency: false },
+              { label: "Claims Contested", value: "3", isCurrency: false },
+              { label: "Claims Successfully Contested", value: "3", isCurrency: false },
+              { label: "Unemployment Tax Impact Avoided", value: "2,340.00", bold: true, highlight: "positive" },
+            ],
+          },
+        },
+      ],
     },
     {
       id: "bookkeeping",
@@ -234,46 +250,26 @@ export const amazonDspDeck: DeckConfig = {
         { upTo: 25, price: 300 },
         { upTo: null, price: 350 },
       ],
-      reportSlide: {
-        title: "Profitability & Financial Dashboard",
-        cards: [
-          {
-            type: "chart",
-            title: "Expenses Bifurcation",
-            segments: [
-              { label: "Wages & Salary", pct: 73, color: "#16A6CE" },
-              { label: "Fleet Insurance", pct: 9, color: "#0C7B82" },
-              { label: "Fleet Other Exp", pct: 7, color: "#1E9E8A" },
-              { label: "Fleet Rental", pct: 6, color: "#5E7E84" },
-              { label: "Worker's Comp", pct: 5, color: "#E8A13C" },
-            ],
-          },
-          {
-            type: "chart",
-            title: "Revenue Bifurcation",
-            segments: [
-              { label: "Weekly Route Payouts", pct: 81, color: "#16A6CE" },
-              { label: "Incentives & Bonus", pct: 11, color: "#1E9E8A" },
-              { label: "Fleet Reimbursements", pct: 8, color: "#E8A13C" },
-            ],
-          },
-          {
-            type: "table",
-            title: "Profitability Metrics — Jan 2025",
-            columns: ["Particulars", "Sugg %", "Actual %", "Amount ($)"],
+      reportSlides: [
+        {
+          title: "Profitability Metrics, Jan 2025",
+          template: {
+            kind: "particulars-table",
+            showPctColumns: true,
             rows: [
-              ["Total Revenue", "100", "100", "515,079.21"],
-              ["Total Wages & Salaries", "50", "93.52", "481,704.96"],
-              ["Worker's Comp Insurance", "5", "5.96", "30,695.66"],
-              ["Vehicle Rental & Lease", "10", "9.35", "48,174.25"],
-              ["Vehicle Insurance", "5", "9.26", "47,684.48"],
-              ["Other Vehicle Exp (R&M)", "5", "3.26", "16,779.36"],
-              ["Other Business Exp", "15", "6.41", "33,006.81"],
-              ["Net Profit / Loss", "10–12", "−27.76", "−142,967.53"],
+              { label: "Total Revenue", suggestedPct: "100", actualPct: "100", value: "515,079.21" },
+              { label: "Expenses", sectionHeader: true },
+              { label: "Total Wages and Salaries", suggestedPct: "50", actualPct: "93.52", value: "481,704.96", highlight: "negative" },
+              { label: "Worker's Comp Insurance", suggestedPct: "5", actualPct: "5.96", value: "30,695.66", highlight: "negative" },
+              { label: "Total Vehicle Rental and Lease", suggestedPct: "10", actualPct: "9.35", value: "48,174.25", highlight: "positive" },
+              { label: "Total Vehicle Insurance", suggestedPct: "5", actualPct: "9.26", value: "47,684.48", highlight: "negative" },
+              { label: "Total Other Vehicle Exp (R&M)", suggestedPct: "5", actualPct: "3.26", value: "16,779.36", highlight: "positive" },
+              { label: "Total Other Business Exp", suggestedPct: "15", actualPct: "6.41", value: "33,006.81", highlight: "positive" },
+              { label: "Net Profit/Loss", suggestedPct: "10 - 12", actualPct: "-27.76", value: "-142,967.53", bold: true, highlight: "negative" },
             ],
           },
-        ],
-      },
+        },
+      ],
     },
     {
       id: "recruitment",
@@ -301,35 +297,35 @@ export const amazonDspDeck: DeckConfig = {
         { upTo: 25, price: 700 },
         { upTo: null, price: 950 },
       ],
-      reportSlide: {
-        title: "Recruitment Tracking System",
-        cards: [
-          {
-            type: "table",
-            title: "Candidate Status",
-            wide: true,
-            columns: ["Candidate", "Email", "Current Status", "Onboarding", "BGV", "Drug Test"],
+      reportSlides: [
+        {
+          title: "Recruitment Tracking System",
+          template: {
+            kind: "operational-table",
+            columns: ["Candidate Name", "Email Address", "Phone Number", "Current Status", "Onboarding Status", "BGV Status", "Drug Test Status"],
             rows: [
-              ["Vandyke, Alvin", "alvin.dglb@gmail.com", "Onboarding", "In-Progress", "Not Started", "Not Started"],
-              ["Francis, Julia", "julia.dglb@gmail.com", "Payroll Enroll", "On-boarded", "Completed", "Passed"],
-              ["Smith, Isaiah", "isaiah.dglb@gmail.com", "Drug Test", "On-boarded", "Completed", "In-Progress"],
-              ["Griffith, Ty Andrew", "andrew.dglb@gmail.com", "Training", "Off-boarded", "Completed", "Completed"],
-              ["Johnson, Daniel A.", "johnson.dglb@gmail.com", "BGV", "Off-boarded", "Failed", "Not Started"],
+              ["Vandyke, Alvin", "Alvin.dglb@gmail.com", "+1 (321) 526-8233", "Onboarding", "In-Progress", "Not Started", "Not Started"],
+              ["Francis, Julia", "Julia.dglb@gmail.com", "+1 (321) 526-8233", "Payroll Enroll", "On-boarded", "Completed", "Passed"],
+              ["Smith, Isaiah", "Isaiah.dglb@gmail.com", "+1 (321) 526-8233", "Drug Test", "On-boarded", "Completed", "In-Progress"],
+              ["Griffith, Ty Andrew", "Andrew.dglb@gmail.com", "+1 (321) 526-8233", "Training", "Off-boarded", "Completed", "Completed"],
+              ["Johnson, Daniel Anthony", "Johnson.dglb@gmail.com", "+1 (321) 526-8233", "BGV", "Off-boarded", "Failed", "Not Started"],
             ],
           },
-          {
-            type: "metrics",
-            title: "Funnel Summary — This Period",
+        },
+        {
+          title: "Recruitment Funnel Summary, This Period",
+          template: {
+            kind: "particulars-table",
             rows: [
-              { label: "Onboarded — Total onboarded", value: "88" },
-              { label: "BGV — Pending of 60", value: "15" },
-              { label: "Drug Test — Passed of 40", value: "26" },
-              { label: "Training — In progress", value: "19" },
+              { label: "Onboarded — Total onboarded", value: "88", isCurrency: false },
+              { label: "BGV — Pending of 60", value: "15", isCurrency: false },
+              { label: "Drug Test — Passed of 40", value: "26", isCurrency: false },
+              { label: "Training — In progress", value: "19", isCurrency: false },
+              { label: "Offboarded — This period", value: "12", isCurrency: false, bold: true, highlight: "negative" },
             ],
-            highlight: { label: "Offboarded — This period", value: "12" },
           },
-        ],
-      },
+        },
+      ],
     },
     {
       id: "dispatch",
@@ -364,23 +360,74 @@ export const amazonDspDeck: DeckConfig = {
         { upTo: null, price: null },
       ],
       surcharge: { questionId: "hoursOver12", amount: 200 },
-      reportSlide: {
-        title: "End-of-Day Dispatch Summary",
-        illustrative: true,
-        cards: [
-          {
-            type: "metrics",
-            title: "EOD Route Completion",
-            meta: "WEEK 25 · 06/15–06/21/25",
+      reportSlides: [
+        {
+          title: "End-of-Day Dispatch Summary, Week 25 (06/15/2025 to 06/21/2025)",
+          illustrative: true,
+          template: {
+            kind: "particulars-table",
             rows: [
-              { label: "Routes Dispatched", value: "22" },
-              { label: "Routes Completed On-Time", value: "20" },
-              { label: "RTS / Returned Packages", value: "14" },
+              { label: "Routes Dispatched", value: "22", isCurrency: false },
+              { label: "Routes Completed On-Time", value: "20", isCurrency: false },
+              { label: "RTS / Returned Packages", value: "14", isCurrency: false },
+              { label: "On-Time Completion Rate", value: "91%", isCurrency: false, bold: true, highlight: "positive" },
             ],
-            highlight: { label: "On-Time Completion Rate", value: "91%" },
           },
-        ],
-      },
+        },
+        {
+          title: "Dispatch Tracking, Week 25",
+          template: {
+            kind: "operational-table",
+            columns: [
+              "Van Details",
+              "Delivery Associates",
+              "Route Code",
+              "Device No",
+              "BP No",
+              "Route Type",
+              "Stops",
+              "PSTD",
+              "NSL",
+              "MIS",
+              "UTL",
+              "BC",
+              "RJD",
+              "FDD",
+              "UTA",
+              "MP",
+              "D",
+              "OODT",
+              "PD",
+              "Fuel Level",
+              "Mileage",
+              "Pre-Trip DVIC",
+              "Break 1",
+              "Break 2",
+              "Total Break",
+              "Violation",
+              "Post-Trip DVIC",
+            ],
+            rows: [
+              [
+                "4339", "Dwain Coleman Jr", "CX57", "4339", "11", "Standard Parcel Electric - Rivian MEDIUM", "170",
+                "244", "", "1", "", "", "", "", "", "", "", "", "243", "", "67,043", "Completed", "", "", "", "", "Completed",
+              ],
+              [
+                "2787", "Neciko Willams", "CX60", "2787", "44", "Standard Parcel Electric - Rivian MEDIUM", "174",
+                "298", "", "", "", "", "", "", "", "", "1", "", "297", "", "26,224", "Completed", "30", "", "30", "", "Completed",
+              ],
+              [
+                "8", "Kawan Clark Jr", "CX63", "8", "15", "Standard Parcel Step Van - US", "165",
+                "240", "", "", "", "", "3", "", "2", "", "", "", "235", "1/2", "84,544", "Completed", "30", "", "30", "", "Completed",
+              ],
+              [
+                "27", "Deon Thomas", "CX69", "4403", "37", "Standard Parcel Electric - Rivian MEDIUM", "172",
+                "284", "", "2", "", "", "", "", "", "", "", "1", "283", "", "27,259", "Completed", "30", "", "30", "Speed violation", "Completed",
+              ],
+            ],
+          },
+        },
+      ],
     },
     {
       id: "performance",
@@ -413,13 +460,45 @@ export const amazonDspDeck: DeckConfig = {
         { upTo: 35, price: 600 },
         { upTo: null, price: 800 },
       ],
-      reportSlide: {
-        title: "Weekly Scorecard Snapshot",
-        illustrative: true,
-        cards: [
-          {
-            type: "table",
-            title: "Driver Scorecards — Week 25",
+      reportSlides: [
+        {
+          title: "CDF",
+          template: {
+            kind: "bar-highlights",
+            chartTitle: "Incidents",
+            items: [
+              { label: "Delivered to Wrong Address", count: 30 },
+              { label: "DA did not follow my delivery instructions", count: 28 },
+              { label: "DA Mishandled Package", count: 4 },
+              { label: "DA was Unprofessional", count: 4 },
+              { label: "Received Wrong Item", count: 3 },
+            ],
+            sidebarLabel: "Top 3",
+            summary: "69 total incidents across 46 drivers this week",
+            colorVariant: "teal",
+          },
+        },
+        {
+          title: "DSB",
+          template: {
+            kind: "bar-highlights",
+            chartTitle: "Incidents",
+            items: [
+              { label: "Incorrect Scan Usage - Attended Delivery", count: 6 },
+              { label: "Delivered > 50 m", count: 2 },
+              { label: "Scanned - Not Delivered - Not Returned", count: 2 },
+              { label: "Simultaneous Deliveries", count: 1 },
+            ],
+            sidebarLabel: "Top Fields",
+            summary: "11 total scorecard-impacting incidents across 7 drivers this week",
+            colorVariant: "amber",
+          },
+        },
+        {
+          title: "Weekly Scorecard Snapshot",
+          illustrative: true,
+          template: {
+            kind: "operational-table",
             columns: ["Driver", "CDF", "DSB", "DCR"],
             rows: [
               ["Brown, Tavianna", "Fantastic", "Great", "98.2%"],
@@ -427,8 +506,8 @@ export const amazonDspDeck: DeckConfig = {
               ["Samaniego, Joel", "Good", "Great", "94.1%"],
             ],
           },
-        ],
-      },
+        },
+      ],
     },
   ],
   team: [

@@ -368,14 +368,16 @@ function ServiceEditor({
 
       <SurchargeEditor deck={deck} svcIdx={svcIdx} update={update} />
 
-      {svc.reportSlide ? (
-        <Field label="Report & Sample slide" hint="Carried over from the cloned deck. Editing report slides in the builder comes in a later phase.">
-          <div className="builder-list-row">
-            <span className="builder-report-note">“{svc.reportSlide.title}” — {svc.reportSlide.cards.length} card(s)</span>
-            <MiniBtn danger onClick={() => update((d) => void delete d.services[svcIdx].reportSlide)}>
-              Remove sample slide
-            </MiniBtn>
-          </div>
+      {svc.reportSlides && svc.reportSlides.length > 0 ? (
+        <Field label="Report & Sample slides" hint="Carried over from the cloned deck. Editing report slides in the builder comes in a later phase.">
+          {svc.reportSlides.map((report, ri) => (
+            <div className="builder-list-row" key={ri}>
+              <span className="builder-report-note">“{report.title}” — {report.template.kind}</span>
+              <MiniBtn danger onClick={() => update((d) => void d.services[svcIdx].reportSlides!.splice(ri, 1))}>
+                Remove sample slide
+              </MiniBtn>
+            </div>
+          ))}
         </Field>
       ) : null}
 

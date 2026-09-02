@@ -1,23 +1,16 @@
-import type { DeckService } from "@aeon/types";
-import { ReportCard, reportGridClass } from "../ReportCard";
+import type { DeckService, ReportSlide } from "@aeon/types";
+import { ReportTemplate } from "../ReportTemplate";
 
-export function ServiceReportSlide({ svc }: { svc: DeckService }) {
-  const r = svc.reportSlide;
-  if (!r) return null;
+export function ServiceReportSlide({ svc, report }: { svc: DeckService; report: ReportSlide }) {
   const eyebrow = `${svc.team.toUpperCase()} · OUTPUT`;
-  const gridClass = reportGridClass(r.cards);
   return (
     <>
       <div className="eyebrow">
         <span>{eyebrow}</span>
       </div>
-      <h1 className="slide-title">{r.title}</h1>
-      <div className={gridClass}>
-        {r.cards.map((card, i) => (
-          <ReportCard card={card} key={i} />
-        ))}
-      </div>
-      {r.illustrative && (
+      <h1 className="slide-title">{report.title}</h1>
+      <ReportTemplate template={report.template} />
+      {report.illustrative && (
         <div className="illustrative-note" style={{ marginTop: 12 }}>
           Illustrative sample — swap in your verified client output before presenting.
         </div>

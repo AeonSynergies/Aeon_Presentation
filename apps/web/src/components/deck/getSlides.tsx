@@ -39,13 +39,16 @@ export function getSlides(deck: DeckConfig, state: SessionState): SlideEntry[] {
         label: s.name.split(" ").slice(0, 2).join(" "),
         render: () => <ServiceSlide deck={deck} svc={s} state={state} />,
       });
-      if (s.reportSlide) {
+      // One nav slide per report — a service can carry several (e.g. Route Performance
+      // Management showing both a CDF and a DSB incident breakdown), each labeled by its
+      // own report title rather than the shared service name so they stay distinguishable.
+      (s.reportSlides ?? []).forEach((report, ri) => {
         svcSlides.push({
-          id: "report-" + s.id,
-          label: "Sample: " + s.name.split(" ").slice(0, 2).join(" "),
-          render: () => <ServiceReportSlide svc={s} />,
+          id: "report-" + s.id + "-" + ri,
+          label: "Sample: " + report.title.split(",")[0].split(" ").slice(0, 3).join(" "),
+          render: () => <ServiceReportSlide svc={s} report={report} />,
         });
-      }
+      });
     });
 
   const tail: SlideEntry[] = [

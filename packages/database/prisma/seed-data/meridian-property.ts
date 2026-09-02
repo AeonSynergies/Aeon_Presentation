@@ -7,8 +7,8 @@ import type { DeckConfig } from "@aeon/types";
 // Colors intentionally specify only amber/teal (matching the source exactly) — the rest
 // fall back to PLATFORM_DEFAULT_COLORS at render time, same as the prototype's
 // PLATFORM_THEME_DEFAULTS fallback in bootDeckPlayer(). None of this deck's services
-// define a reportSlide in the source, so it has no "Sample:" slides — that's a faithful
-// port, not a gap (getSlides() already gates that slide on `if (s.reportSlide)`).
+// define reportSlides in the source, so it has no "Sample:" slides — that's a faithful
+// port, not a gap (getSlides() already gates those slides on `s.reportSlides ?? []`).
 export const meridianPropertyDeck: DeckConfig = {
   id: "meridian-property",
   industry: "Property Management",

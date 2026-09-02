@@ -64,59 +64,82 @@ export interface ServiceSurcharge {
   amount: number; // flat $/mo added when the toggle is on
 }
 
-export type ReportCardType = "chart" | "metrics" | "table" | "image";
-
-export interface ChartSegment {
+// Three reusable report-sample templates (Phase 6), replacing the old free-form
+// chart/metrics/table/image card grid. Each real client-facing report a service can show
+// maps onto exactly one of these — chosen by data shape, not by service:
+//   A "bar-highlights"    — a category/count breakdown (e.g. incident types) as a
+//                           horizontal bar chart, a "Top N" sidebar of the leading values,
+//                           and a one-line footer summary. Two color variants exist in the
+//                           reference designs (teal/amber) — always the DECK's own two
+//                           accent colors (colors.teal/colors.amber), never hardcoded hex.
+//   B "particulars-table" — a particulars/amount table (optionally with Suggested %/Actual %
+//                           columns too, for a budget-vs-actual view), ending in a bold
+//                           bottom-line figure. Every colorable row/bottom-line's color is
+//                           an explicit authored field (positive/negative/neutral), never
+//                           auto-inferred from the number's sign or from comparing percents
+//                           — the same shape of number means different things in different
+//                           reports (a positive "Dispute Value" is a win in one report and
+//                           an unresolved shortfall in another), so only the content author
+//                           can know which it is.
+//   C "operational-table" — a wide, dense, spreadsheet-style table (many columns) — for
+//                           recruitment pipeline tracking and dispatch/route operations
+//                           specifically, per the reference designs; not a catch-all for any
+//                           table-shaped report.
+export interface ReportBarChartItem {
   label: string;
-  pct: number;
-  color: string;
+  count: number;
 }
 
-export interface MetricsRow {
+export interface ReportBarHighlights {
+  kind: "bar-highlights";
+  chartTitle: string; // e.g. "Incidents"
+  items: ReportBarChartItem[]; // rendered in the given order — sort before authoring
+  sidebarLabel: string; // e.g. "Top 3" or "Top Fields"
+  sidebarCount?: number; // how many leading items the sidebar highlights (default 3)
+  summary: string; // footer line, e.g. "69 total incidents across 46 drivers this week"
+  colorVariant: "amber" | "teal"; // which of the deck's own two accent colors to render in
+}
+
+export interface ReportTableRow {
   label: string;
-  value: string;
+  value?: string; // plain formatted value, no currency symbol embedded — e.g. "148,150.73",
+  // "06/27/2025", "10.00" — the "$" prefix (when isCurrency) is rendered by the template.
+  // Omit `value` entirely for a section-header row (see `sectionHeader`).
+  isCurrency?: boolean; // true = render a "$" prefix before `value`; default true
+  suggestedPct?: string; // e.g. "50" — only meaningful when the table's showPctColumns is set
+  actualPct?: string; // e.g. "93.52"
+  bold?: boolean; // true for a subtotal row or the final bottom-line row
+  highlight?: "positive" | "negative" | "neutral"; // colors `value`/`actualPct`; omit = plain
+  sectionHeader?: boolean; // true = a bold, label-only divider row (no value/pct columns)
 }
 
-export interface ReportCardChart {
-  type: "chart";
-  title: string;
-  segments: ChartSegment[];
+export interface ReportParticularsTable {
+  kind: "particulars-table";
+  showPctColumns?: boolean; // true = render the Suggested %/Actual % columns too
+  valueColumnLabel?: string; // header for the value column — default "Amount ($)"; e.g. "Nos"
+  // for a report whose rows are plain counts, not dollar amounts (isCurrency: false throughout)
+  rows: ReportTableRow[]; // by convention the last row is the bold bottom-line summary
+  // An optional secondary compact name/value list rendered below the main table (e.g. a
+  // "List of Overtime Employees" name → hours breakdown) — not every particulars-table
+  // report needs one.
+  extraList?: { heading: string; items: { label: string; value: string }[] };
 }
 
-export interface ReportCardMetrics {
-  type: "metrics";
-  title: string;
-  meta?: string;
-  rows: MetricsRow[];
-  highlight?: MetricsRow;
-}
-
-export interface ReportCardTable {
-  type: "table";
-  title: string;
-  wide?: boolean;
-  stats?: MetricsRow[];
+export interface ReportOperationalTable {
+  kind: "operational-table";
   columns: string[];
   rows: string[][];
 }
 
-export interface ReportCardImage {
-  type: "image";
-  title: string;
-  src: string;
-  caption?: string;
-}
-
-export type ReportCard =
-  | ReportCardChart
-  | ReportCardMetrics
-  | ReportCardTable
-  | ReportCardImage;
+export type ReportTemplate =
+  | ReportBarHighlights
+  | ReportParticularsTable
+  | ReportOperationalTable;
 
 export interface ReportSlide {
-  title: string;
+  title: string; // full on-slide heading, e.g. "Worker Comp Validation, Week 25 (06/15/2025 to 06/21/2025)"
   illustrative?: boolean; // marks sample/placeholder data rather than a real client export
-  cards: ReportCard[];
+  template: ReportTemplate;
 }
 
 export interface ServiceStat {
@@ -147,7 +170,10 @@ export interface DeckService {
   pricingModelId: string;
   surcharge?: ServiceSurcharge;
   promoNote?: string;
-  reportSlide?: ReportSlide;
+  /** Zero or more "Sample: X" report slides shown right after this service's own slide —
+   * one nav slide per entry, in order. Optional/omittable, and a service can have several
+   * (e.g. Route Performance Management showing both a CDF and a DSB incident breakdown). */
+  reportSlides?: ReportSlide[];
 }
 
 export interface TeamMember {

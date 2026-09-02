@@ -41,34 +41,43 @@ const priceBandSchema = z.object({
   price: z.number().min(0).nullable(),
 });
 
-const metricsRowSchema = z.object({ label: z.string(), value: z.string() });
+const reportTableRowSchema = z.object({
+  label: z.string().min(1),
+  value: z.string().optional(),
+  isCurrency: z.boolean().optional(),
+  suggestedPct: z.string().optional(),
+  actualPct: z.string().optional(),
+  bold: z.boolean().optional(),
+  highlight: z.enum(["positive", "negative", "neutral"]).optional(),
+  sectionHeader: z.boolean().optional(),
+});
 
-const reportCardSchema = z.discriminatedUnion("type", [
+const reportTemplateSchema = z.discriminatedUnion("kind", [
   z.object({
-    type: z.literal("chart"),
-    title: z.string().min(1),
-    segments: z.array(z.object({ label: z.string(), pct: z.number(), color: z.string() })).min(1),
+    kind: z.literal("bar-highlights"),
+    chartTitle: z.string().min(1),
+    items: z.array(z.object({ label: z.string().min(1), count: z.number() })).min(1),
+    sidebarLabel: z.string().min(1),
+    sidebarCount: z.number().positive().optional(),
+    summary: z.string().min(1),
+    colorVariant: z.enum(["amber", "teal"]),
   }),
   z.object({
-    type: z.literal("metrics"),
-    title: z.string().min(1),
-    meta: z.string().optional(),
-    rows: z.array(metricsRowSchema).min(1),
-    highlight: metricsRowSchema.optional(),
+    kind: z.literal("particulars-table"),
+    showPctColumns: z.boolean().optional(),
+    valueColumnLabel: z.string().optional(),
+    rows: z.array(reportTableRowSchema).min(1),
+    extraList: z
+      .object({
+        heading: z.string().min(1),
+        items: z.array(z.object({ label: z.string().min(1), value: z.string().min(1) })).min(1),
+      })
+      .optional(),
   }),
   z.object({
-    type: z.literal("table"),
-    title: z.string().min(1),
-    wide: z.boolean().optional(),
-    stats: z.array(metricsRowSchema).optional(),
+    kind: z.literal("operational-table"),
     columns: z.array(z.string()).min(1),
     rows: z.array(z.array(z.string())).min(1),
-  }),
-  z.object({
-    type: z.literal("image"),
-    title: z.string().min(1),
-    src: z.string().min(1),
-    caption: z.string().optional(),
   }),
 ]);
 
@@ -96,12 +105,14 @@ const serviceSchema = z.object({
   pricingModelId: z.string().min(1, "Every service must be assigned a pricing model"),
   surcharge: z.object({ questionId: z.string().min(1), amount: z.number().positive() }).optional(),
   promoNote: z.string().optional(),
-  reportSlide: z
-    .object({
-      title: z.string().min(1),
-      illustrative: z.boolean().optional(),
-      cards: z.array(reportCardSchema).min(1),
-    })
+  reportSlides: z
+    .array(
+      z.object({
+        title: z.string().min(1),
+        illustrative: z.boolean().optional(),
+        template: reportTemplateSchema,
+      }),
+    )
     .optional(),
 });
 
