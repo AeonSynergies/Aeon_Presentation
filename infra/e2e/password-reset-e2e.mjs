@@ -97,6 +97,35 @@ const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePa
 const page = await browser.newPage();
 page.on("pageerror", (e) => console.log("PAGE ERROR:", e.message));
 
+// Diagnostics: every tRPC call's real status code and wall-clock time, and any request
+// that fails at the network level (DNS, TLS, connection reset, CORS) rather than getting
+// an HTTP response at all — the .auth-success waits below only say "didn't appear in
+// time," not why, so this is what actually shows whether a request completed, errored, or
+// never got a response.
+const pendingSince = new Map();
+page.on("request", (req) => {
+  if (req.url().includes("/api/trpc/")) pendingSince.set(req, Date.now());
+});
+page.on("requestfinished", async (req) => {
+  if (!req.url().includes("/api/trpc/")) return;
+  const started = pendingSince.get(req);
+  pendingSince.delete(req);
+  const res = await req.response().catch(() => null);
+  const elapsed = started ? Date.now() - started : null;
+  let bodySnippet = "";
+  try {
+    bodySnippet = ((await res?.text()) ?? "").slice(0, 300);
+  } catch {
+    // response body already consumed or unavailable — status/timing below still stands
+  }
+  console.log(`NET: ${req.method()} ${req.url()} -> ${res ? res.status() : "?"} in ${elapsed}ms — ${bodySnippet}`);
+});
+page.on("requestfailed", (req) => {
+  if (!req.url().includes("/api/trpc/")) return;
+  pendingSince.delete(req);
+  console.log(`NET FAILED: ${req.method()} ${req.url()} — ${req.failure()?.errorText}`);
+});
+
 // /login redirects away immediately if a valid session cookie is already present (see
 // login.tsx), so every path that needs to actually land on /login — including
 // /forgot-password's own "Forgot password?" link starting there — has to make sure no
@@ -171,7 +200,26 @@ async function completeSetPasswordScreen(token, newPassword) {
   await passwordInputs.nth(0).fill(newPassword);
   await passwordInputs.nth(1).fill(newPassword);
   await page.click('button[type="submit"]');
-  await page.waitForSelector(".auth-success", { timeout: 10000 });
+  await waitForAuthSuccess();
+}
+
+// Same wait as every other .auth-success check, but on failure dumps enough of the live
+// page state (URL, submit button's current text, any .auth-error text, full body length)
+// to tell a slow-but-real request apart from a request that errored quietly or a selector
+// that no longer matches what the page renders — the NET: log lines above show the
+// request/response side of that same question.
+async function waitForAuthSuccess(timeoutMs = 15000) {
+  try {
+    await page.waitForSelector(".auth-success", { timeout: timeoutMs });
+  } catch (err) {
+    const url = page.url();
+    const submitText = await page.locator('button[type="submit"]').textContent().catch(() => "<no submit button found>");
+    const errorText = await page.locator(".auth-error").textContent().catch(() => null);
+    const bodyText = await page.locator("body").innerText().catch(() => "<could not read body>");
+    console.log(`DIAG: .auth-success never appeared within ${timeoutMs}ms — url=${url} submitButtonText="${submitText}" authError=${errorText === null ? "<none>" : `"${errorText}"`}`);
+    console.log(`DIAG: page body text at failure:\n${bodyText.slice(0, 1000)}`);
+    throw err;
+  }
 }
 
 console.log("\n=== Setup: Admin creates the reset-flow fixture account (direct password) ===");
@@ -181,11 +229,19 @@ check("setup: reset-flow fixture account exists in the roster", (await rosterRow
 
 console.log("\n=== Forgot Password: request via the real UI ===");
 await ensureSignedOut();
-await page.click("text=Forgot password?");
+// waitForURL (not just waitForSelector('input[type="email"]')) matters here specifically:
+// /login has its own email input, so immediately after clicking a client-side route
+// transition, that selector can still resolve against the old /login page for a brief
+// window before the new route's JS chunk finishes loading and swaps it in — filling that
+// stale, about-to-be-unmounted field and clicking submit on the real (but still-empty,
+// required) field on the new page silently fails browser-native validation with no
+// request ever sent. Waiting for the URL to actually become /forgot-password first closes
+// that window.
+await Promise.all([page.waitForURL("**/forgot-password"), page.click("text=Forgot password?")]);
 await page.waitForSelector('input[type="email"]');
 await page.fill('input[type="email"]', RESET_EMAIL);
 await page.click('button[type="submit"]');
-await page.waitForSelector(".auth-success", { timeout: 10000 });
+await waitForAuthSuccess();
 const realEmailMessage = (await page.locator(".auth-success").textContent()).trim();
 check("forgot password: generic confirmation shown for a real account", realEmailMessage.length > 0, realEmailMessage);
 
@@ -193,7 +249,7 @@ console.log("\n=== Forgot Password: non-existent email returns the identical mes
 await page.goto(`${BASE}/forgot-password`, { waitUntil: "networkidle" });
 await page.fill('input[type="email"]', `qa-nonexistent-${Date.now()}@aeonqa.internal`);
 await page.click('button[type="submit"]');
-await page.waitForSelector(".auth-success", { timeout: 10000 });
+await waitForAuthSuccess();
 const fakeEmailMessage = (await page.locator(".auth-success").textContent()).trim();
 check("forgot password: non-existent email gets the exact same message as a real one", fakeEmailMessage === realEmailMessage, `real="${realEmailMessage}" fake="${fakeEmailMessage}"`);
 
