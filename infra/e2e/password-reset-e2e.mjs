@@ -247,6 +247,21 @@ await page.fill('input[type="email"]', RESET_EMAIL);
 const emailValueBeforeSubmit = await page.inputValue('input[type="email"]');
 console.log(`DIAG: input[type="email"] value right before submit click: "${emailValueBeforeSubmit}" (expected "${RESET_EMAIL}")`);
 await page.click('button[type="submit"]');
+// The value read above proved fill() landed at that moment — but if a re-render (e.g. a
+// late remount from the lazy-loaded route chunk still settling) resets this controlled
+// input's React state after that read and before the click lands, the DOM value could be
+// wiped back to "" right as the click fires: HTML5 required-field validation would then
+// silently block the actual form submission with no visible error and no request, which
+// looks exactly like everything observed so far. Re-reading the value plus the input's own
+// validity state immediately after the click either confirms or rules this out directly.
+const emailValueRightAfterClick = await page.inputValue('input[type="email"]').catch(() => "<read failed>");
+const emailValidity = await page
+  .locator('input[type="email"]')
+  .evaluate((el) => ({ valid: el.validity.valid, message: el.validationMessage }))
+  .catch(() => ({ valid: "<eval failed>", message: "" }));
+console.log(
+  `DIAG: input[type="email"] value right after click: "${emailValueRightAfterClick}" — validity.valid=${emailValidity.valid} validationMessage="${emailValidity.message}"`
+);
 await page.waitForTimeout(250);
 const submitTextJustAfterClick = await page.locator('button[type="submit"]').textContent().catch(() => "<button not found>");
 console.log(`DIAG: submit button text 250ms after click: "${submitTextJustAfterClick}"`);
