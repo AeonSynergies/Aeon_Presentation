@@ -123,7 +123,16 @@ jobs:
           npm install --no-audit --no-fund
           npx playwright install chromium --with-deps
 
+      # Every suite below sets continue-on-error: true and gets an id — an unexpected
+      # exception in one suite (a broken assertion, a wrong fixture assumption, a
+      # navigation timeout) must not prevent unrelated suites from running at all, the way
+      # a plain step failure would by stopping the rest of the job. The final "Summarize"
+      # step (if: always()) reads every outcome and fails the JOB if any suite failed, so
+      # this stays a real gate — it just stops one suite's crash from hiding whether every
+      # other suite passed.
       - name: Run live wizard E2E against the deployment
+        id: wizard
+        continue-on-error: true
         working-directory: infra/e2e
         run: node wizard-e2e.mjs
         env:
@@ -135,6 +144,8 @@ jobs:
       # content renders in the new layouts (not Amazon's copy leaking onto other decks) and
       # that the wizard's "Delivering team" field is untouched by the additive tagline field.
       - name: Run live redesign-content E2E against the deployment
+        id: redesign-content
+        continue-on-error: true
         working-directory: infra/e2e
         run: node redesign-content-e2e.mjs
         env:
@@ -146,6 +157,8 @@ jobs:
       # presenting window's Pricing slide through the real backend — not direct
       # window-to-window messaging.
       - name: Run live notes-window E2E against the deployment
+        id: notes-window
+        continue-on-error: true
         working-directory: infra/e2e
         run: node notes-window-e2e.mjs
         env:
@@ -158,6 +171,8 @@ jobs:
       # it reflects the actual current session state — not a cached or default one. Only
       # needs the seeded demo/admin account, so it runs standalone.
       - name: Run live send-to-client-pdf E2E against the deployment
+        id: send-to-client-pdf
+        continue-on-error: true
         working-directory: infra/e2e
         run: node send-to-client-pdf-e2e.mjs
         env:
@@ -168,6 +183,8 @@ jobs:
       # calls to the API, bypassing the web UI entirely — that every permission each role
       # lacks is genuinely rejected with FORBIDDEN, and everything it has succeeds.
       - name: Run live role-enforcement E2E against the deployment
+        id: role-enforcement
+        continue-on-error: true
         working-directory: infra/e2e
         run: node role-enforcement-e2e.mjs
         env:
@@ -180,6 +197,8 @@ jobs:
       # without needing a real inbox, while still exercising real SES delivery, the real
       # reset-password screen, and a real login with the new password end to end.
       - name: Run live password-reset E2E against the deployment
+        id: password-reset
+        continue-on-error: true
         working-directory: infra/e2e
         run: node password-reset-e2e.mjs
         env:
@@ -193,6 +212,8 @@ jobs:
       # for the QA Operations Manager account, used to confirm the pricing section inherits
       # Edit Deck's existing role check rather than adding a separate one.
       - name: Run live pricing-edit E2E against the deployment
+        id: pricing-edit
+        continue-on-error: true
         working-directory: infra/e2e
         run: node pricing-edit-e2e.mjs
         env:
@@ -208,6 +229,8 @@ jobs:
       # role-enforcement-e2e.mjs above for the QA Operations Manager account, used to
       # confirm meetingRecords (deliberately narrower than discoveryNotes) blocks that role.
       - name: Run live meeting-records E2E against the deployment
+        id: meeting-records
+        continue-on-error: true
         working-directory: infra/e2e
         run: node meeting-records-e2e.mjs
         env:
@@ -222,6 +245,8 @@ jobs:
       # to confirm every archive-management procedure is genuinely rejected at the API
       # level for a non-Admin, not just kept off the /archived screen.
       - name: Run live archive E2E against the deployment
+        id: archive
+        continue-on-error: true
         working-directory: infra/e2e
         run: node archive-e2e.mjs
         env:
@@ -236,6 +261,8 @@ jobs:
       # rejected, and the browser network tab never carries the API key or an Anthropic
       # request.
       - name: Run live AI-drafting E2E against the deployment
+        id: ai-drafting
+        continue-on-error: true
         if: needs.deploy.outputs.ai_configured == 'true'
         working-directory: infra/e2e
         run: node ai-draft-e2e.mjs
@@ -243,6 +270,39 @@ jobs:
           BASE_URL: ${{ needs.deploy.outputs.web_url }}
           API_URL: ${{ needs.deploy.outputs.api_url }}
           E2E_TEST_SECRET: ${{ env.E2E_TEST_SECRET }}
+
+      # Reads back every suite's outcome above (each ran regardless of its siblings'
+      # results, via continue-on-error) and fails the JOB if any suite failed or crashed —
+      # this is what keeps continue-on-error from silently turning the whole gate green.
+      - name: Summarize live-e2e results
+        if: always()
+        run: |
+          declare -A OUTCOMES=(
+            [wizard]="${{ steps.wizard.outcome }}"
+            [redesign-content]="${{ steps.redesign-content.outcome }}"
+            [notes-window]="${{ steps.notes-window.outcome }}"
+            [send-to-client-pdf]="${{ steps.send-to-client-pdf.outcome }}"
+            [role-enforcement]="${{ steps.role-enforcement.outcome }}"
+            [password-reset]="${{ steps.password-reset.outcome }}"
+            [pricing-edit]="${{ steps.pricing-edit.outcome }}"
+            [meeting-records]="${{ steps.meeting-records.outcome }}"
+            [archive]="${{ steps.archive.outcome }}"
+            [ai-drafting]="${{ steps.ai-drafting.outcome }}"
+          )
+          failed=0
+          for name in "${!OUTCOMES[@]}"; do
+            outcome="${OUTCOMES[$name]}"
+            echo "$name: $outcome"
+            if [ "$outcome" = "failure" ]; then
+              echo "::error::live-e2e suite '$name' failed"
+              failed=1
+            fi
+          done
+          if [ "$failed" = "1" ]; then
+            echo "One or more live-e2e suites failed — see the ::error:: annotations above."
+            exit 1
+          fi
+          echo "All live-e2e suites passed (or were intentionally skipped)."
 
       - name: Upload screenshots on failure
         if: failure()
