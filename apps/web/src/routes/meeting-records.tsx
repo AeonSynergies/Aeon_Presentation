@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import * as React from "react";
 import { Header } from "~/components/layout/Header";
 import { RequireAuth } from "~/components/layout/RequireAuth";
+import { SendMinutesDialog } from "~/components/meeting/SendMinutesDialog";
 import { useAuth } from "~/hooks/useAuth";
 import { downloadBase64 } from "~/lib/download";
 import { trpc } from "~/lib/trpc";
@@ -48,6 +49,7 @@ function MeetingRecordsList() {
   const [search, setSearch] = React.useState("");
   const [rowError, setRowError] = React.useState<{ id: string; message: string } | null>(null);
   const [pendingId, setPendingId] = React.useState<string | null>(null);
+  const [sendMinutesId, setSendMinutesId] = React.useState<string | null>(null);
 
   const { data: decks } = trpc.deck.list.useQuery();
   const { data: records, isLoading, error } = trpc.meeting.listRecords.useQuery({
@@ -164,6 +166,9 @@ function MeetingRecordsList() {
                       <button type="button" className="mini-btn" onClick={() => onRegeneratePdf(r.id)} disabled={pendingId === r.id}>
                         ⬇ PDF
                       </button>
+                      <button type="button" className="mini-btn" onClick={() => setSendMinutesId(r.id)} disabled={pendingId === r.id}>
+                        ✉ Send Minutes
+                      </button>
                       <button type="button" className="mini-btn mini-btn-danger" onClick={() => onDelete(r.id)} disabled={pendingId === r.id}>
                         Delete
                       </button>
@@ -182,6 +187,8 @@ function MeetingRecordsList() {
           </table>
         </div>
       )}
+
+      {sendMinutesId && <SendMinutesDialog meetingId={sendMinutesId} onClose={() => setSendMinutesId(null)} />}
     </div>
   );
 }

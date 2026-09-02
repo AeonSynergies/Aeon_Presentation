@@ -6,6 +6,7 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
+  title: string | null;
   role: string;
 }
 
@@ -14,7 +15,7 @@ interface AuthContextValue {
   status: "loading" | "authed" | "anonymous";
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  updateUser: (patch: Partial<Pick<AuthUser, "name" | "email">>) => void;
+  updateUser: (patch: Partial<Pick<AuthUser, "name" | "email" | "title">>) => void;
 }
 
 const AuthContext = React.createContext<AuthContextValue | null>(null);

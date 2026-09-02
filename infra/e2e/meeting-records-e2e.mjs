@@ -71,6 +71,21 @@ function extractDocxText(bytes) {
   return [...xml.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join(" ");
 }
 
+// meeting.sendMinutes has no real inbox to read from, so it hands the exact raw MIME
+// message it sent (or would send) back directly for a @aeonqa.internal recipient — same
+// reasoning as auth.e2eRequestToken returning a real token instead of requiring an inbox.
+// This picks the Reply-To header and the base64 application/pdf attachment part back out of
+// that raw RFC 2822 message, so what's checked below is the actual bytes SES was handed,
+// not just a claim the server makes about them.
+function parseMomRawMessage(bytes) {
+  const raw = bytes.toString("latin1"); // 1:1 byte-preserving; the body itself is base64 (pure ASCII) anyway
+  const replyToMatch = raw.match(/^Reply-To:\s*(.+)$/im);
+  const replyTo = replyToMatch ? replyToMatch[1].trim() : null;
+  const attachmentMatch = raw.match(/Content-Type: application\/pdf[\s\S]*?Content-Disposition: attachment[^\r\n]*\r\n\r\n([\s\S]*?)\r\n--/);
+  const attachmentBytes = attachmentMatch ? Buffer.from(attachmentMatch[1].replace(/\r\n/g, ""), "base64") : null;
+  return { replyTo, attachmentBytes };
+}
+
 // Mirrors apps/api/src/routers/meeting.ts's safeFilenamePart exactly, to predict the
 // "{Meeting ID}_{Org Name}" filename a download should have.
 function safeFilenamePart(v) {
@@ -391,7 +406,42 @@ const priceRestore = await callTrpc("mutation", "deck.update", adminLogin.token,
 });
 check("cleanup: fixture deck pricing restored", priceRestore.ok, priceRestore.message);
 
-// ========== 6. Role enforcement: Operations Manager is blocked from this screen ==========
+// ========== 6. Send Minutes of Meeting: a real email, a real PDF attachment ==========
+console.log("\n=== Send Minutes of Meeting ===");
+const MOM_RECIPIENT = `qa-mom-recipient-${RUN_TAG}@aeonqa.internal`;
+const sendMinutesResult = await callTrpc("mutation", "meeting.sendMinutes", adminLogin.token, { id: meetingId, clientEmail: MOM_RECIPIENT });
+check("mom: meeting.sendMinutes succeeds", sendMinutesResult.ok, sendMinutesResult.message);
+check("mom: a real SES MessageId came back (non-null)", !!sendMinutesResult.data?.messageId, JSON.stringify(sendMinutesResult.data?.messageId));
+check("mom: the raw MIME message was returned for this QA fixture recipient", !!sendMinutesResult.data?.rawMessageBase64);
+
+if (sendMinutesResult.data?.rawMessageBase64) {
+  const rawBytes = Buffer.from(sendMinutesResult.data.rawMessageBase64, "base64");
+  const { replyTo, attachmentBytes } = parseMomRawMessage(rawBytes);
+  check("mom: email Reply-To is the sender's own address, never no-reply@", replyTo === EMAIL, replyTo ?? "<none>");
+  check(
+    "mom: a real PDF attachment was extracted from the raw MIME message",
+    !!attachmentBytes && attachmentBytes.slice(0, 5).toString("latin1") === "%PDF-",
+    attachmentBytes ? attachmentBytes.slice(0, 5).toString("latin1") : "<no attachment found>"
+  );
+  if (attachmentBytes?.slice(0, 5).toString("latin1") === "%PDF-") {
+    const momPdfText = await extractPdfText(attachmentBytes);
+    check(
+      "mom: attached PDF is the actual quoted deck — kept service and its frozen price",
+      momPdfText.includes(KEPT_SERVICE_NAME) && momPdfText.includes("$100"),
+      momPdfText.slice(0, 400)
+    );
+    check("mom: attached PDF excludes the removed (deselected) service", !momPdfText.includes(REMOVED_SERVICE_NAME));
+  }
+}
+
+const momForRealClient = await callTrpc("mutation", "meeting.sendMinutes", adminLogin.token, { id: meetingId, clientEmail: "not-a-real-client@example.com" });
+check("mom: sendMinutes succeeds for a non-QA-fixture address too", momForRealClient.ok, momForRealClient.message);
+check(
+  "mom: no raw MIME payload is returned for a real (non-QA-fixture) recipient",
+  momForRealClient.data?.rawMessageBase64 === undefined
+);
+
+// ========== 7. Role enforcement: Operations Manager is blocked from this screen ==========
 console.log("\n=== Role enforcement ===");
 await uiLogin(OM_EMAIL, OM_PASSWORD);
 await page.goto(`${BASE}/meeting-records`, { waitUntil: "networkidle" });
