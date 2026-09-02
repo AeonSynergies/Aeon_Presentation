@@ -86,6 +86,7 @@ const serviceSchema = z.object({
   id: z.string().regex(idPattern, "Service ids must start with a letter and use only letters, digits, - or _"),
   name: z.string().min(1),
   team: z.string(),
+  tagline: z.string().optional(),
   category: z.enum(["major", "strategic"]),
   bandLabel: z.string(),
   handle: z.array(z.string().min(1)).min(1, "Each service needs at least one 'what we handle' bullet"),
@@ -112,17 +113,27 @@ const teamMemberSchema = z.object({
   phone: z.string(),
 });
 
+const focusAreaSchema = z.object({ primary: z.string().min(1), secondary: z.string().optional() });
+
+// A plain string is an already-persisted deck's old shape (before this became a
+// title+description pair) — accepted so existing data never fails validation on
+// re-save; GridSlide renders it as a description-only tile.
+const gridItemSchema = z.union([z.string().min(1), z.object({ title: z.string().min(1), description: z.string().min(1) })]);
+
 const staticContentSchema = z.object({
   cover: z.object({ title1: z.string().min(1), title2: z.string().min(1), sub: z.string() }),
   about: z.object({
+    eyebrow: z.string().optional(),
     title1: z.string().min(1),
     title2: z.string().min(1),
     body: z.string(),
     bullets: z.array(z.string().min(1)),
+    focusLabel: z.string().optional(),
+    focusAreas: z.array(focusAreaSchema).optional(),
   }),
   how: z.object({ steps: z.array(z.object({ t: z.string().min(1), d: z.string() })).min(1) }),
-  challenges: z.object({ items: z.array(z.string().min(1)) }),
-  benefits: z.object({ items: z.array(z.string().min(1)) }),
+  challenges: z.object({ items: z.array(gridItemSchema) }),
+  benefits: z.object({ items: z.array(gridItemSchema) }),
   qa: z.object({
     title: z.string().min(1),
     sub: z.string(),

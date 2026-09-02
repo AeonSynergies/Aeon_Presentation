@@ -130,6 +130,12 @@ export interface DeckService {
   id: string;
   name: string;
   team: string; // delivering team
+  /** Short benefit phrase (3-5 words, e.g. "Accurate, audit-ready records") shown instead
+   * of `team` on the Services overview slide only — every other use of `team` (the wizard's
+   * "Delivering team" field, per-service slide eyebrows, the CSV export column, the PDF
+   * proposal) is untouched. Optional so an already-persisted deck without one still renders
+   * (that slide falls back to `team`). */
+  tagline?: string;
   category: ServiceCategory;
   bandLabel: string; // e.g. "Route-based · 5 bands"
   handle: string[]; // "what we handle" bullets
@@ -158,11 +164,32 @@ export interface StaticContentCover {
   sub: string;
 }
 
+/** One tile in the About slide's right-panel grid, e.g. {primary: "Amazon DSPs", secondary:
+ * "& AFPs"} rendered as bold ink text followed by bold accent-colored text. `secondary` is
+ * optional for a tile that's just a single short phrase. */
+export interface AboutFocusArea {
+  primary: string;
+  secondary?: string;
+}
+
 export interface StaticContentAbout {
+  /** Small label above the heading, e.g. "WHO WE ARE" — optional, defaults to "ABOUT US". */
+  eyebrow?: string;
   title1: string;
   title2: string;
+  /** Supports light inline markup for key terms: **bold** for bold ink text, __bold__ for
+   * bold accent-colored text (double underscore) — parsed by AboutSlide, not raw HTML. */
   body: string;
+  /** Superseded by focusAreas below (the About slide no longer renders a bullet list) —
+   * kept only so an already-persisted deck's data isn't silently dropped; write new decks
+   * with focusAreas instead. */
   bullets: string[];
+  /** Right-panel label, e.g. "INDUSTRIES WE SERVE" — optional, defaults to "FOCUS AREAS". */
+  focusLabel?: string;
+  /** Right-panel grid tiles (a "2x2, or as many as needed" grid). The panel is omitted
+   * entirely when this is empty/unset, so an already-persisted deck without it still
+   * renders (just without the right panel). */
+  focusAreas?: AboutFocusArea[];
 }
 
 export interface StaticContentHowStep {
@@ -174,12 +201,18 @@ export interface StaticContentHow {
   steps: StaticContentHowStep[];
 }
 
+/** One tile in the Challenges/Benefits numbered grid: a short bold title plus a one-to-two
+ * sentence explanation. A plain `string` is also accepted (an already-persisted deck's old
+ * shape, from before this became a title+description pair) — GridSlide renders it as a
+ * description-only tile with no title, so old data never breaks, it just isn't as rich. */
+export type StaticContentGridItem = { title: string; description: string } | string;
+
 export interface StaticContentChallenges {
-  items: string[];
+  items: StaticContentGridItem[];
 }
 
 export interface StaticContentBenefits {
-  items: string[];
+  items: StaticContentGridItem[];
 }
 
 export interface StaticContentQA {

@@ -39,6 +39,7 @@ export function blankService(name: string, id: string, pricingModelId: string): 
     id,
     name,
     team: "",
+    tagline: "",
     category: "major",
     bandLabel: "",
     pricingModelId,

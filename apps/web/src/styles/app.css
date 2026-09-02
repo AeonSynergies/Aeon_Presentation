@@ -1074,27 +1074,60 @@ h1.slide-title .accent {
   padding: 16px 18px;
   line-height: 1.6;
 }
-.problem-grid {
+/* Challenges/Benefits (redesigned): a full self-contained dark card — same "sits inside the
+   shared .slide frame" convention as .about-split below, rather than a full-bleed slide
+   background — holding a numbered grid of {title, description} items. */
+.dark-slide {
+  background: linear-gradient(155deg, var(--paper) 0%, #0d1f24 100%);
+  border-radius: 16px;
+  padding: 40px 44px;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.dark-slide .slide-title {
+  color: #fff;
+}
+.dark-slide .slide-title .accent {
+  color: var(--amber);
+}
+.dark-slide .lede {
+  color: rgba(255, 255, 255, 0.65);
+}
+.grid-numbered {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-top: 6px;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px 40px;
+  margin-top: 20px;
 }
-.problem-card {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--amber);
-  border-radius: 9px;
-  padding: 14px 16px;
-  font-size: 12px;
+.grid-item-numbered {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.grid-item-num {
+  font-family: var(--disp);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--amber);
+  line-height: 1.2;
+  flex-shrink: 0;
+  min-width: 34px;
+}
+.grid-item-numbered h3 {
+  font-family: var(--disp);
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 6px;
+}
+.grid-item-numbered p {
+  font-size: 12.5px;
   line-height: 1.5;
-  color: var(--paper);
-  box-shadow:
-    0 1px 3px rgba(21, 40, 45, 0.08),
-    0 1px 2px rgba(21, 40, 45, 0.04);
-}
-.problem-card.benefit {
-  border-left-color: var(--teal);
+  color: rgba(255, 255, 255, 0.65);
+  margin: 0;
 }
 .surcharge-note {
   margin-top: 10px;
@@ -1193,6 +1226,80 @@ h1.slide-title .accent {
   color: var(--fog);
   font-family: var(--mono);
   font-size: 16px;
+}
+
+/* About (redesigned): two-panel layout — a light copy panel and a dark "focus areas" panel,
+   self-contained inside the shared .slide frame (same convention as .dark-slide above). */
+.about-split {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  height: 100%;
+  box-shadow:
+    0 1px 3px rgba(21, 40, 45, 0.08),
+    0 1px 2px rgba(21, 40, 45, 0.04);
+}
+.about-split.single {
+  grid-template-columns: 1fr;
+}
+.about-split-left {
+  background: var(--panel2);
+  padding: 40px 44px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+.about-split-left .lede {
+  font-size: 14.5px;
+  max-width: 100%;
+}
+.about-split-left .lede + .lede {
+  margin-top: 12px;
+}
+.about-split-left b {
+  color: var(--paper);
+  font-weight: 700;
+}
+.about-split-left b.accent {
+  color: var(--teal);
+}
+.about-split-right {
+  background: linear-gradient(155deg, var(--paper) 0%, #0d1f24 100%);
+  padding: 40px 36px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+.focus-label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  color: var(--amber);
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+.focus-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.focus-tile {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 10px;
+  padding: 16px 18px;
+  font-family: var(--disp);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #fff;
+}
+.focus-tile .accent {
+  color: var(--amber);
 }
 .team-grid {
   display: grid;
@@ -1555,8 +1662,14 @@ select:focus {
   .grid-3-wide-last {
     grid-template-columns: 1fr;
   }
-  .problem-grid {
-    grid-template-columns: 1fr 1fr;
+  .grid-numbered {
+    grid-template-columns: 1fr;
+  }
+  .about-split {
+    grid-template-columns: 1fr;
+  }
+  .focus-grid {
+    grid-template-columns: 1fr;
   }
   .price-grid-3 {
     grid-template-columns: 1fr 1fr;

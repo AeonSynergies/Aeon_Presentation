@@ -1,6 +1,6 @@
 import type { DeckConfig } from "@aeon/types";
 import * as React from "react";
-import { MiniBtn, Row, StringListEditor, TextAreaField, TextField } from "../fields";
+import { FocusAreaListEditor, GridItemListEditor, MiniBtn, Row, TextAreaField, TextField } from "../fields";
 import type { UpdateDraft } from "./StepBasics";
 
 // Static slide copy, one collapsible section per slide. Opening a section snaps the
@@ -67,6 +67,12 @@ export function StepContent({
               )}
               {key === "about" && (
                 <>
+                  <TextField
+                    label="Eyebrow (small label above the heading)"
+                    value={sc.about.eyebrow || ""}
+                    placeholder="ABOUT US"
+                    onChange={(v) => update((d) => void (d.staticContent.about.eyebrow = v))}
+                  />
                   <Row>
                     <TextField
                       label="Title line 1"
@@ -79,12 +85,23 @@ export function StepContent({
                       onChange={(v) => update((d) => void (d.staticContent.about.title2 = v))}
                     />
                   </Row>
-                  <TextAreaField label="Body" value={sc.about.body} onChange={(v) => update((d) => void (d.staticContent.about.body = v))} />
-                  <StringListEditor
-                    label="Bullets"
-                    items={sc.about.bullets}
-                    addLabel="Add bullet"
-                    onChange={(items) => update((d) => void (d.staticContent.about.bullets = items))}
+                  <TextAreaField
+                    label="Body"
+                    value={sc.about.body}
+                    hint="Use **word** to bold a key term, or __word__ to bold it in accent color. A blank line between paragraphs starts a new one."
+                    onChange={(v) => update((d) => void (d.staticContent.about.body = v))}
+                  />
+                  <TextField
+                    label="Focus panel label (right-side dark panel)"
+                    value={sc.about.focusLabel || ""}
+                    placeholder="INDUSTRIES WE SERVE"
+                    onChange={(v) => update((d) => void (d.staticContent.about.focusLabel = v))}
+                  />
+                  <FocusAreaListEditor
+                    label="Focus areas (right-panel tiles — left empty to omit the right panel entirely)"
+                    items={sc.about.focusAreas ?? []}
+                    addLabel="Add focus area"
+                    onChange={(items) => update((d) => void (d.staticContent.about.focusAreas = items))}
                   />
                 </>
               )}
@@ -118,7 +135,7 @@ export function StepContent({
                 </>
               )}
               {key === "challenges" && (
-                <StringListEditor
+                <GridItemListEditor
                   label="Challenge items (the problems this deck speaks to)"
                   items={sc.challenges.items}
                   addLabel="Add challenge"
@@ -126,7 +143,7 @@ export function StepContent({
                 />
               )}
               {key === "benefits" && (
-                <StringListEditor
+                <GridItemListEditor
                   label="Benefit items"
                   items={sc.benefits.items}
                   addLabel="Add benefit"
