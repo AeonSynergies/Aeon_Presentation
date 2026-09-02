@@ -28,8 +28,9 @@ import { chromium } from "playwright";
 
 const BASE = process.env.BASE_URL;
 const API = process.env.API_URL;
-if (!BASE || !API) {
-  console.error("BASE_URL and API_URL are both required");
+const E2E_TEST_SECRET = process.env.E2E_TEST_SECRET;
+if (!BASE || !API || !E2E_TEST_SECRET) {
+  console.error("BASE_URL, API_URL, and E2E_TEST_SECRET are all required");
   process.exit(2);
 }
 const EMAIL = process.env.DEMO_EMAIL || "demo@aeonsynergies.com";
@@ -50,7 +51,11 @@ page.on("pageerror", (e) => pageErrors.push("PAGE ERROR: " + e.message));
 const results = [];
 function check(name, ok, detail = "") {
   results.push({ name, ok });
-  console.log(`${ok ? "PASS" : "FAIL"}: ${name}${detail ? " — " + detail : ""}`);
+  // Callers sometimes pass a raw object (e.g. the full tRPC result) rather than a
+  // pre-stringified string — string-concatenating that yields the useless "[object
+  // Object]" instead of the actual diagnostic content a failure needs.
+  const detailText = typeof detail === "string" ? detail : detail ? JSON.stringify(detail) : "";
+  console.log(`${ok ? "PASS" : "FAIL"}: ${name}${detailText ? " — " + detailText : ""}`);
 }
 
 async function callTrpc(kind, path, token, input) {
@@ -192,21 +197,29 @@ async function main() {
   await page.waitForSelector(".deck-grid");
 
   // ---------- 4. Rate limit actually trips, via the dedicated QA user ----------
+  // Reset this account's rate-limit ledger first: without this, whether "the first N
+  // succeed" and "the N+1th is rejected" hold depends on how recently (and how many times)
+  // this suite last ran within the same rolling 60-minute window — deploys in quick
+  // succession would otherwise leave this account's quota already partially or fully
+  // consumed before the loop below even starts. Same secret/domain gate as
+  // auth.e2eRequestToken.
+  const resetResult = await callTrpc("mutation", "ai.e2eResetRateLimit", null, {
+    email: QA_LIMIT_EMAIL,
+    secret: E2E_TEST_SECRET,
+  });
+  check("rate-limit QA user's quota reset before the probe (deterministic regardless of prior runs)", resetResult.ok, resetResult);
+
   const qaToken = await uiLogin(QA_LIMIT_EMAIL, QA_LIMIT_PASSWORD);
   check("rate-limit QA user login succeeds", !!qaToken);
 
   let lastResult = null;
-  let rejectedEarly = false;
   for (let i = 0; i < RATE_LIMIT_MAX; i++) {
     lastResult = await callTrpc("mutation", "ai.draftDeck", qaToken, {
       prompt: `Rate-limit probe request number ${i} for the dedicated QA account, industry description text here.`,
     });
-    if (!lastResult.ok) {
-      rejectedEarly = true;
-      break;
-    }
+    if (!lastResult.ok) break;
   }
-  check(`QA user's first ${RATE_LIMIT_MAX} drafts in the window succeed (unless a prior run in the same hour already used some)`, lastResult.ok || rejectedEarly);
+  check(`QA user's first ${RATE_LIMIT_MAX} drafts in the window succeed (quota was just reset above)`, !!lastResult?.ok, lastResult);
 
   const overLimit = await callTrpc("mutation", "ai.draftDeck", qaToken, {
     prompt: "One more request that should now be rejected by the rate limit guardrail on the live server.",
