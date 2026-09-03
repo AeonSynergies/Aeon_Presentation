@@ -263,41 +263,54 @@ async function createViaWizard() {
 }
 
 // ---------- behavior verification (always runs) ----------
+// Discovery Notes has no in-page panel anymore in any mode (see DeckPlayer.tsx) — every
+// edit here goes through the real popped-out notes window, exactly like a real user would,
+// and every check reads the main window's Pricing slide to confirm the two stay in sync
+// through the real backend (save debounce + poll — see useNotesWindowSession.ts /
+// useDeckSession.ts), not a shortcut back into the main page's own state.
+const SYNC_WAIT_MS = 3000; // 800ms save debounce + 1500ms poll + margin
 async function verifyDeckBehavior() {
   await page.goto(`${BASE}/decks/${DECK_SLUG}`);
-  await page.waitForSelector(".chip-grid");
+  await page.waitForSelector(".notes-btn");
   await page.waitForTimeout(400);
 
   const playerVars = await page.$eval('[style*="--amber"]', (el) => el.getAttribute("style"));
   check("player: created deck uses its own colors", playerVars.includes("#7C5CBF") && playerVars.includes("#2E8B74"));
 
-  await page.locator('.q-block:has-text("REQUIRED · DRIVES PRICING") input[type="number"]').first().fill("7");
-  await page.locator(".q-block", { hasText: "How many hygienists" }).first().locator("input").fill("2");
-  await page.waitForTimeout(200);
+  check("player: Discovery Notes has no in-page panel — popout button visible instead", (await page.locator(".notes-wrap").count()) === 0 && (await page.locator(".notes-btn").isVisible()));
+
+  const [notesPage] = await Promise.all([page.context().waitForEvent("page"), page.locator(".notes-btn").click()]);
+  await notesPage.waitForLoadState("networkidle");
+  await notesPage.waitForSelector(".chip-grid", { timeout: 15000 });
+
+  await notesPage.locator('.q-block:has-text("REQUIRED · DRIVES PRICING") input[type="number"]').first().fill("7");
+  await notesPage.locator(".q-block", { hasText: "How many hygienists" }).first().locator("input").fill("2");
+  await notesPage.waitForTimeout(SYNC_WAIT_MS);
   await page.locator(".routebar .stop", { hasText: "Pricing" }).click();
   await page.waitForTimeout(300);
   let total = await page.$eval(".tval", (el) => el.textContent.trim());
   check("player: band math (7 operatories → $600, 2 hygienists → $300)", total === "$900", total);
 
-  await page.locator(".q-block", { hasText: "aged-claims cleanup" }).first().locator(".toggle-opt").nth(1).click();
-  await page.waitForTimeout(200);
+  await notesPage.locator(".q-block", { hasText: "aged-claims cleanup" }).first().locator(".toggle-opt").nth(1).click();
+  await notesPage.waitForTimeout(SYNC_WAIT_MS);
   total = await page.$eval(".tval", (el) => el.textContent.trim());
   check("player: surcharge adds exactly $250 to its own service", total === "$1,150", total);
 
-  await page.locator(".q-block", { hasText: "How many hygienists" }).first().locator("input").fill("5");
-  await page.waitForTimeout(200);
+  await notesPage.locator(".q-block", { hasText: "How many hygienists" }).first().locator("input").fill("5");
+  await notesPage.waitForTimeout(SYNC_WAIT_MS);
   total = await page.$eval(".tval", (el) => el.textContent.trim());
   check("player: alternate-driver band change (5 hygienists → $450)", total === "$1,300", total);
 
   // Deselecting removes that service's slide, shifting Pricing's index — re-navigate.
-  await page.locator(".chip", { hasText: "Patient Scheduling Support" }).click();
-  await page.waitForTimeout(200);
-  const hygVisible = await page.locator(".q-block", { hasText: "How many hygienists" }).count();
+  await notesPage.locator(".chip", { hasText: "Patient Scheduling Support" }).click();
+  await notesPage.waitForTimeout(SYNC_WAIT_MS);
+  const hygVisible = await notesPage.locator(".q-block", { hasText: "How many hygienists" }).count();
   await page.locator(".routebar .stop", { hasText: "Pricing" }).click();
   await page.waitForTimeout(300);
   total = await page.$eval(".tval", (el) => el.textContent.trim());
   check("player: tier-3 gating + pricing after deselect", hygVisible === 0 && total === "$850", `q=${hygVisible} total=${total}`);
   await page.screenshot({ path: `${OUT}/player-pricing.png`, fullPage: true });
+  await notesPage.close();
 }
 
 // Phase 5c: a real client's live deck should never double as another client's template,

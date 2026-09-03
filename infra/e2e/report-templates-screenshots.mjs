@@ -147,7 +147,7 @@ await section("aeon-logistics: Expert Bookkeeping stays a single full-size slide
   await checkGroupSlide("aeon-logistics", "Sample: Profitability Metrics", 1, ["Profitability Metrics"], [], "04-bookkeeping-single");
 });
 
-await section("aeon-logistics: Driver Recruitment Management grid", async () => {
+await section("aeon-logistics: Driver Recruitment Management grid — width and stacking order (was cropped and side-by-side)", async () => {
   await checkGroupSlide(
     "aeon-logistics",
     "Sample: Driver Recruitment",
@@ -155,6 +155,25 @@ await section("aeon-logistics: Driver Recruitment Management grid", async () => 
     ["Recruitment Tracking System", "Recruitment Funnel Summary"],
     ["Dispatch Tracking", "End-of-Day Dispatch Summary"],
     "05-recruitment-grid",
+  );
+  // The confirmed bug: Recruitment Tracking System's operational table was cropped
+  // (scrollWidth > clientWidth) inside a half-width grid cell, cutting off "Current
+  // Status". Fixed by stacking any grid containing an operational table full-width.
+  const scrollInfo = await page.locator(".report-operational-table").first().evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+  check(
+    "aeon-logistics recruitment grid: Recruitment Tracking System's table has no horizontal overflow",
+    scrollInfo.scrollWidth <= scrollInfo.clientWidth + 1,
+    JSON.stringify(scrollInfo),
+  );
+  check(
+    "aeon-logistics recruitment grid: stacked full-width (not the 2-column side-by-side grid)",
+    (await page.locator(".report-card-grid.stacked").count()) === 1,
+  );
+  const cardTitles = await page.locator(".report-card-title").allInnerTexts();
+  check(
+    "aeon-logistics recruitment grid: Recruitment Funnel Summary appears BELOW Recruitment Tracking System (array/DOM order)",
+    cardTitles[0]?.includes("Recruitment Tracking System") && cardTitles[1]?.includes("Recruitment Funnel Summary"),
+    JSON.stringify(cardTitles),
   );
 });
 

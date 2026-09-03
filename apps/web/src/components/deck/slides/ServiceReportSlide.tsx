@@ -27,13 +27,20 @@ export function ServiceReportSlide({ svc, reports }: { svc: DeckService; reports
     );
   }
 
+  // A dense operational table needs real width to display without a horizontal scrollbar —
+  // a half-width grid cell crops it. When a grid contains one, stack every card in this
+  // grid full-width in a single column (array order = top-to-bottom order) instead of the
+  // normal 2-up grid, rather than mixing a full-width card with an empty gap beside a
+  // half-width one.
+  const stacked = reports.some((r) => r.template.kind === "operational-table");
+
   return (
     <>
       <div className="eyebrow">
         <span>{eyebrow}</span>
       </div>
       <h1 className="slide-title">Sample Reports</h1>
-      <div className="report-card-grid">
+      <div className={`report-card-grid${stacked ? " stacked" : ""}`}>
         {reports.map((report, i) => (
           <div className="report-card" key={i}>
             <h3 className="report-card-title">{report.title}</h3>

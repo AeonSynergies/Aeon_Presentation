@@ -189,11 +189,14 @@ check("home: restored deck is back on Home", names.includes(DECK_NAME), names.jo
 // ========== 2. Meeting Records: Delete (soft-delete) a record, find it, Restore ==========
 console.log("\n=== Meeting record: Delete -> Archived Files -> Restore ===");
 await page.goto(`${BASE}/decks/${deckSlug}`, { waitUntil: "networkidle" });
-await page.waitForSelector(".chip-grid");
-await page.waitForTimeout(300);
-await page.locator('.q-block:has-text("Client name") input[type="text"]').fill(CLIENT_NAME);
-await page.locator('.q-block:has-text("REQUIRED · DRIVES PRICING") input[type="number"]').first().fill("3");
-await page.waitForTimeout(1200);
+await page.waitForSelector(".notes-btn");
+const [notesPage] = await Promise.all([page.context().waitForEvent("page"), page.locator(".notes-btn").click()]);
+await notesPage.waitForSelector(".chip-grid");
+await notesPage.waitForTimeout(300);
+await notesPage.locator('.q-block:has-text("Client name") input[type="text"]').fill(CLIENT_NAME);
+await notesPage.locator('.q-block:has-text("REQUIRED · DRIVES PRICING") input[type="number"]').first().fill("3");
+await notesPage.waitForTimeout(1200); // exceeds useNotesWindowSession's 800ms save debounce
+await notesPage.close();
 
 const saveBtn = page.locator(".icon-btn", { hasText: "Save Meeting Record" });
 await saveBtn.click();

@@ -135,24 +135,23 @@ await login();
 await page.click(`.deck-card:has-text("${DECK_NAME}")`);
 await page.waitForSelector(".viewport", { timeout: 15000 });
 
-const notesToggle = page.locator(".icon-btn", { hasText: "Discovery Notes" });
-if ((await page.locator(".notes-wrap").count()) === 0) {
-  await notesToggle.click();
-}
-await page.waitForSelector(".chip-grid", { timeout: 15000 });
+await page.waitForSelector(".notes-btn");
+const [notesPage] = await Promise.all([page.context().waitForEvent("page"), page.locator(".notes-btn").click()]);
+await notesPage.waitForSelector(".chip-grid", { timeout: 15000 });
 
-await page.locator('.q-block:has-text("REQUIRED · DRIVES PRICING") input[type="number"]').first().fill(DRIVER_VALUE);
-await page.locator('input[placeholder="e.g. Coleman Logistics LLC"]').first().fill(CLIENT_NAME);
+await notesPage.locator('.q-block:has-text("REQUIRED · DRIVES PRICING") input[type="number"]').first().fill(DRIVER_VALUE);
+await notesPage.locator('input[placeholder="e.g. Coleman Logistics LLC"]').first().fill(CLIENT_NAME);
 
-const keepChip = page.locator(".chip-grid .chip", { hasText: KEEP_SERVICE });
-const dropChip = page.locator(".chip-grid .chip", { hasText: DROP_SERVICE });
+const keepChip = notesPage.locator(".chip-grid .chip", { hasText: KEEP_SERVICE });
+const dropChip = notesPage.locator(".chip-grid .chip", { hasText: DROP_SERVICE });
 check("setup: reference deck has the expected known services", (await keepChip.count()) === 1 && (await dropChip.count()) === 1);
 check("setup: both services start opted-in by default", (await keepChip.getAttribute("class")).includes("selected") && (await dropChip.getAttribute("class")).includes("selected"));
 
 await dropChip.click();
-await page.waitForTimeout(1500); // clear useDeckSession's debounce so the server has the real current state before we ask it for a PDF
+await notesPage.waitForTimeout(1500); // clear useNotesWindowSession's debounce so the server has the real current state before we ask it for a PDF
 check("setup: dropped service is now deselected", !(await dropChip.getAttribute("class")).includes("selected"));
 check("setup: kept service is still selected", (await keepChip.getAttribute("class")).includes("selected"));
+await notesPage.close();
 
 console.log("\n=== Trigger Download PDF from Send to Client ===");
 const sendBtn = page.locator(".icon-btn", { hasText: "Send to Client" });
