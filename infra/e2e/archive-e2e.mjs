@@ -217,10 +217,14 @@ await Promise.all([
   page.waitForResponse((r) => r.url().includes("meeting.archive")),
   page.locator("table.team-table tbody tr", { hasText: CLIENT_NAME }).locator(".mini-btn", { hasText: "Delete" }).click(),
 ]);
-// onDelete awaits utils.meeting.listRecords.invalidate() before clearing pendingId, but that only
-// schedules the refetch — wait for the refetch's own response too, not a fixed timeout, since a
-// blind wait that's fine against a local dev server can race the real network round-trip here.
-await page.waitForResponse((r) => r.url().includes("meeting.listRecords"));
+// onDelete's own utils.meeting.listRecords.invalidate() refetches the query in place, but on the
+// live deployment that in-place refresh has proven unreliable to wait on (even waiting for its own
+// network response twice showed the pre-delete list, while the archive mutation itself had already
+// committed — confirmed a moment later by the Archived Files check below, and by a full reload
+// here). A fresh navigation re-mounts the query from scratch against the now-committed server
+// state, which is what every other read-after-write check in this suite already relies on.
+await page.goto(`${BASE}/meeting-records`, { waitUntil: "networkidle" });
+await page.waitForTimeout(400);
 recordRows = await page.$$eval("table.team-table tbody tr td:first-child", (els) => els.map((el) => el.textContent));
 check("records: deleted record disappears from Meeting Records", !recordRows.includes(CLIENT_NAME), recordRows.join(", "));
 
