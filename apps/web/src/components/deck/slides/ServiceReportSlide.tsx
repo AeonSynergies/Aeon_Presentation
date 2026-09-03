@@ -1,11 +1,16 @@
 import type { DeckService, ReportSlide } from "@aeon/types";
+import { groupIntoRows } from "@aeon/types";
 import { ReportTemplate } from "../ReportTemplate";
 
-// A service with exactly one report keeps the original full-size single-report layout. A
-// service with more than one (its own already-assigned reports — this never regroups which
-// service a report belongs to) renders them together as a card grid on one slide instead of
-// one slide per report, matching the reference decks' layout (e.g. Route Invoice + Vehicle
-// Invoice + Worker Comp + Rental & Lease Invoice together on one slide).
+// A service with exactly one report on this slide (the common case — most services'
+// reports fit on one slide, see paginateReports in getSlides.tsx) keeps the original
+// full-size single-report layout. More than one renders together as rows of cards on one
+// slide, matching the reference decks' layout (e.g. Route Invoice + Vehicle Invoice +
+// Worker Comp + Rental & Lease Invoice together). Each row is sized to what's actually in
+// it — a lone report in a row renders full-width, a pair renders side by side — rather
+// than a fixed-column grid that leaves an empty half-width gap or crops a wide report (see
+// reportSizeHint/groupIntoRows in packages/types/src/deck.ts). `reports` here is always
+// already one page's worth (paginateReports already split off anything that wouldn't fit).
 export function ServiceReportSlide({ svc, reports }: { svc: DeckService; reports: ReportSlide[] }) {
   const eyebrow = `${svc.team.toUpperCase()} · OUTPUT`;
 
@@ -17,7 +22,9 @@ export function ServiceReportSlide({ svc, reports }: { svc: DeckService; reports
           <span>{eyebrow}</span>
         </div>
         <h1 className="slide-title">{report.title}</h1>
-        <ReportTemplate template={report.template} />
+        <div className="report-single">
+          <ReportTemplate template={report.template} />
+        </div>
         {report.illustrative && (
           <div className="illustrative-note" style={{ marginTop: 12 }}>
             Illustrative sample — swap in your verified client output before presenting.
@@ -27,12 +34,7 @@ export function ServiceReportSlide({ svc, reports }: { svc: DeckService; reports
     );
   }
 
-  // A dense operational table needs real width to display without a horizontal scrollbar —
-  // a half-width grid cell crops it. When a grid contains one, stack every card in this
-  // grid full-width in a single column (array order = top-to-bottom order) instead of the
-  // normal 2-up grid, rather than mixing a full-width card with an empty gap beside a
-  // half-width one.
-  const stacked = reports.some((r) => r.template.kind === "operational-table");
+  const rows = groupIntoRows(reports);
 
   return (
     <>
@@ -40,12 +42,18 @@ export function ServiceReportSlide({ svc, reports }: { svc: DeckService; reports
         <span>{eyebrow}</span>
       </div>
       <h1 className="slide-title">Sample Reports</h1>
-      <div className={`report-card-grid${stacked ? " stacked" : ""}`}>
-        {reports.map((report, i) => (
-          <div className="report-card" key={i}>
-            <h3 className="report-card-title">{report.title}</h3>
-            <ReportTemplate template={report.template} />
-            {report.illustrative && <div className="illustrative-note report-card-note">Illustrative sample — swap in your verified client output before presenting.</div>}
+      <div className="report-page">
+        {rows.map((row, ri) => (
+          <div className={`report-row report-row-${row.length}`} key={ri}>
+            {row.map((report, ci) => (
+              <div className="report-card" key={ci}>
+                <h3 className="report-card-title">{report.title}</h3>
+                <div className="report-card-body">
+                  <ReportTemplate template={report.template} />
+                </div>
+                {report.illustrative && <div className="illustrative-note report-card-note">Illustrative sample — swap in your verified client output before presenting.</div>}
+              </div>
+            ))}
           </div>
         ))}
       </div>

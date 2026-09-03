@@ -137,9 +137,32 @@ function OperationalTable({ t }: { t: Extract<ReportTemplateT, { kind: "operatio
   );
 }
 
+function UploadedImage({ t }: { t: Extract<ReportTemplateT, { kind: "uploaded-image" }> }) {
+  return (
+    <div className="report-uploaded-image">
+      <img src={t.src} alt={t.alt || ""} />
+    </div>
+  );
+}
+
+// Renders the AI-generated freeform HTML/CSS inside a sandboxed iframe with NO
+// allow-scripts (and no allow-same-origin, so it can't reach the parent document either)
+// — the markup itself is untrusted (model output, ultimately steered by whatever the
+// wizard user typed), so this is the one thing standing between "genuinely custom report
+// layout" and a stored-script-injection vector reachable by anyone who can open the deck.
+// A plain <style> reset is injected ahead of the model's own markup so it can assume a
+// clean slate (no default margins) without needing to know that itself.
+const IFRAME_RESET = "<style>*{box-sizing:border-box}html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:sans-serif}</style>";
+
+function CustomHtml({ t }: { t: Extract<ReportTemplateT, { kind: "custom-html" }> }) {
+  return <iframe className="report-custom-html" srcDoc={IFRAME_RESET + t.html} sandbox="" title="Custom report" />;
+}
+
 export function ReportTemplate({ template }: { template: ReportTemplateT }) {
   if (template.kind === "bar-highlights") return <BarHighlights t={template} />;
   if (template.kind === "particulars-table") return <ParticularsTable t={template} />;
   if (template.kind === "operational-table") return <OperationalTable t={template} />;
+  if (template.kind === "uploaded-image") return <UploadedImage t={template} />;
+  if (template.kind === "custom-html") return <CustomHtml t={template} />;
   return null;
 }

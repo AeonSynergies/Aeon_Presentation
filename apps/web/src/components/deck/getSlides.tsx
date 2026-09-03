@@ -1,4 +1,5 @@
 import type { DeckConfig, SessionState } from "@aeon/types";
+import { paginateReports } from "@aeon/types";
 import type { ReactNode } from "react";
 import { AboutSlide } from "./slides/AboutSlide";
 import { BenefitsSlide, ChallengesSlide } from "./slides/ChallengesBenefitsSlide";
@@ -45,21 +46,27 @@ export function getSlides(deck: DeckConfig, state: SessionState): SlideEntry[] {
         label: s.name.split(" ").slice(0, 2).join(" ") + " Details",
         render: () => <ServiceSlide deck={deck} svc={s} state={state} />,
       });
-      // One nav slide per SERVICE's whole set of reports, not one per report — a service
-      // can carry several (e.g. Route Performance Management showing both a CDF and a DSB
-      // incident breakdown), and those render together as a card grid on a single slide
-      // (see ServiceReportSlide) rather than as separate slides. A lone report still gets
-      // its own full-size slide, unchanged. Never regroups which service a report belongs
-      // to — this only changes how many slides its own already-assigned reports span.
+      // One or more nav slides per SERVICE's whole set of reports, not one per report — a
+      // service can carry several (e.g. Route Performance Management showing both a CDF
+      // and a DSB incident breakdown), and those render together as a card grid (see
+      // ServiceReportSlide) rather than as separate slides. A lone report still gets its
+      // own full-size slide, unchanged. Never regroups which service a report belongs to
+      // — this only changes how many slides its own already-assigned reports span.
+      // paginateReports splits into more than one slide only when a service's reports
+      // genuinely don't fit together without cropping or shrinking illegibly (uploaded
+      // images and AI-generated custom reports can carry arbitrary/large natural sizes,
+      // unlike the three original fixed templates) — see packages/types/src/deck.ts.
       const reports = s.reportSlides ?? [];
-      if (reports.length > 0) {
-        const label = reports.length === 1 ? "Sample: " + reports[0].title.split(",")[0].split(" ").slice(0, 3).join(" ") : "Sample: " + s.name.split(" ").slice(0, 2).join(" ");
+      const pages = paginateReports(reports);
+      pages.forEach((pageReports, pageIdx) => {
+        const baseLabel = pageReports.length === 1 && pages.length === 1 ? "Sample: " + pageReports[0].title.split(",")[0].split(" ").slice(0, 3).join(" ") : "Sample: " + s.name.split(" ").slice(0, 2).join(" ");
+        const label = pages.length > 1 ? `${baseLabel} (${pageIdx + 1}/${pages.length})` : baseLabel;
         svcSlides.push({
-          id: "report-" + s.id,
+          id: `report-${s.id}-${pageIdx}`,
           label,
-          render: () => <ServiceReportSlide svc={s} reports={reports} />,
+          render: () => <ServiceReportSlide svc={s} reports={pageReports} />,
         });
-      }
+      });
     });
 
   const tail: SlideEntry[] = [

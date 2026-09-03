@@ -141,10 +141,122 @@ export interface ReportOperationalTable {
   summary?: { label: string; items: ReportSummaryItem[] };
 }
 
+// D "uploaded-image" — a real report screenshot/export the user attached directly (S3-
+//   backed, see apps/api/src/routers/reportAssets.ts). width/height are the image's own
+//   natural pixel dimensions, captured client-side at upload time — used to render it at
+//   its real aspect ratio (object-fit: contain, never stretched) and to classify it via
+//   reportSizeHint below (a wide/landscape screenshot packs differently than a narrow one).
+export interface ReportUploadedImage {
+  kind: "uploaded-image";
+  src: string; // public S3 URL
+  width: number;
+  height: number;
+  alt?: string;
+}
+
+// E "custom-html" — a genuinely custom report layout the AI generated from a free-text
+//   description (and optionally a reference image), NOT constrained to Templates A/B/C's
+//   shapes (see apps/api/src/lib/ai-report-draft.ts). Rendered inside a sandboxed iframe
+//   with no allow-scripts (ReportTemplate.tsx) — real HTML/CSS rendering, same rendering
+//   model as everything else in this app, just isolated so arbitrary model-generated
+//   markup can never execute script in the app's own context. sizeHint is the model's own
+//   judgment of the layout's natural footprint (see reportSizeHint below); the HTML itself
+//   is written to fill its container responsively (100% width/height), so the same markup
+//   still looks right whether it lands in a grid cell or as a lone full-slide report.
+export interface ReportCustomHtml {
+  kind: "custom-html";
+  html: string;
+  sizeHint: "compact" | "wide";
+}
+
 export type ReportTemplate =
   | ReportBarHighlights
   | ReportParticularsTable
-  | ReportOperationalTable;
+  | ReportOperationalTable
+  | ReportUploadedImage
+  | ReportCustomHtml;
+
+/** Which packing lane a report belongs in when a service has several (see
+ * paginateReports below): "compact" reports pair up two-per-row; "wide" ones always take
+ * a full row alone (a dense operational table or a wide screenshot/custom layout would
+ * crop or look cramped squeezed into half a row — see the Recruitment Tracking System
+ * bug this replaced). The three original templates keep their existing, already-shipped
+ * classification (operational-table alone was "wide" — the old `stacked` flag); the two
+ * asset-backed kinds classify themselves explicitly (an uploaded image by its own aspect
+ * ratio, a custom-html report by the model's own sizeHint). */
+export function reportSizeHint(t: ReportTemplate): "compact" | "wide" {
+  if (t.kind === "operational-table") return "wide";
+  if (t.kind === "uploaded-image") return t.width / t.height >= 1.5 ? "wide" : "compact";
+  if (t.kind === "custom-html") return t.sizeHint;
+  return "compact";
+}
+
+/** Groups reports into display rows in array order: a "wide" report always gets a row to
+ * itself; "compact" reports pair up two per row (a lone trailing compact report gets a
+ * row of one, which renders full-width rather than half-width-with-a-gap — see
+ * ServiceReportSlide.tsx). Pure and order-preserving, so calling it again on any
+ * contiguous slice of an already-grouped list (e.g. one page's worth, from
+ * paginateReports below) reproduces the exact same rows. */
+export function groupIntoRows(reports: ReportSlide[]): ReportSlide[][] {
+  const rows: ReportSlide[][] = [];
+  let row: ReportSlide[] = [];
+  const closeRow = () => {
+    if (row.length > 0) rows.push(row);
+    row = [];
+  };
+  for (const report of reports) {
+    if (reportSizeHint(report.template) === "wide") {
+      closeRow();
+      rows.push([report]);
+    } else {
+      row.push(report);
+      if (row.length === 2) closeRow();
+    }
+  }
+  closeRow();
+  return rows;
+}
+
+/** Packs a service's reports into pages, never more than MAX_ROWS_PER_PAGE display rows
+ * (per groupIntoRows above) each. A report that would push a page past that row budget
+ * starts a new page instead, which the caller (getSlides.tsx) renders as an additional
+ * "Sample: X (n/m)" slide — the whole point being that nothing is ever cropped or shrunk
+ * to illegibility to force a fit. Deliberately a fixed, deterministic heuristic rather
+ * than real DOM measurement: getSlides has to know the slide (and so nav-dot) count
+ * synchronously, before anything renders. Returns each page as a flat, still-ordered
+ * report array — re-derive its rows with groupIntoRows when rendering it. */
+export function paginateReports(reports: ReportSlide[]): ReportSlide[][] {
+  const MAX_ROWS_PER_PAGE = 2;
+  const pages: ReportSlide[][] = [];
+  let pageRows: ReportSlide[][] = [];
+  let row: ReportSlide[] = [];
+
+  const closeRow = () => {
+    if (row.length > 0) pageRows.push(row);
+    row = [];
+  };
+  const closePage = () => {
+    closeRow();
+    if (pageRows.length > 0) pages.push(pageRows.flat());
+    pageRows = [];
+  };
+
+  for (const report of reports) {
+    const hint = reportSizeHint(report.template);
+    if (hint === "wide") {
+      closeRow();
+      if (pageRows.length >= MAX_ROWS_PER_PAGE) closePage();
+      pageRows.push([report]);
+    } else {
+      if (row.length === 0 && pageRows.length >= MAX_ROWS_PER_PAGE) closePage();
+      row.push(report);
+      if (row.length === 2) closeRow();
+    }
+  }
+  closePage();
+
+  return pages;
+}
 
 export interface ReportSlide {
   title: string; // full on-slide heading, e.g. "Worker Comp Validation, Week 25 (06/15/2025 to 06/21/2025)"

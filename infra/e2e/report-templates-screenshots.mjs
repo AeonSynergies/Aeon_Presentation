@@ -93,7 +93,7 @@ async function checkGroupSlide(deckLabel, groupLabel, reportCount, ownTitles, mu
   if (reportCount > 1) {
     check(`${deckLabel} "${groupLabel}": grid renders ${reportCount} report cards`, (await page.locator(".report-card").count()) === reportCount);
   } else {
-    check(`${deckLabel} "${groupLabel}": single report stays full-size, no grid wrapper`, (await page.locator(".report-card-grid").count()) === 0);
+    check(`${deckLabel} "${groupLabel}": single report stays full-size, no report-page wrapper`, (await page.locator(".report-page").count()) === 0);
   }
   await page.locator(".slide").screenshot({ path: `${OUT}/${filename}.png` });
   console.log(`Saved ${filename}.png`);
@@ -166,8 +166,8 @@ await section("aeon-logistics: Driver Recruitment Management grid — width and 
     JSON.stringify(scrollInfo),
   );
   check(
-    "aeon-logistics recruitment grid: stacked full-width (not the 2-column side-by-side grid)",
-    (await page.locator(".report-card-grid.stacked").count()) === 1,
+    "aeon-logistics recruitment grid: both reports render full-width, one per row (not the old 2-column side-by-side grid)",
+    (await page.locator(".report-row-1").count()) === 2,
   );
   const cardTitles = await page.locator(".report-card-title").allInnerTexts();
   check(

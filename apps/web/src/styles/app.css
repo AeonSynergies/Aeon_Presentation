@@ -876,21 +876,22 @@ h1.slide-title .accent {
   border-bottom: none;
 }
 
-/* ---------- Report card grid: multiple of a service's own reports on one slide ---------- */
-/* Layout only — the card grid never changes which of Templates A/B/C a report uses, only
-   how many render together. Fixed at 2 columns: 2 reports = one row, 3 = a short second
-   row, matching the reference decks' "2x2 typical" grid without a per-count layout
-   algorithm this app has no real use for yet (no service currently carries more than 3). */
-.report-card-grid {
+/* ---------- Report page: a service's reports laid out as rows of cards on one slide ---------- */
+/* Rows are sized to what's actually in them (see groupIntoRows in packages/types/src/deck.ts)
+   instead of one fixed-column grid for the whole page: a "wide" report (a dense operational
+   table, a wide screenshot, a custom-html report the model marked wide) gets a row to itself
+   full-width — squeezing it into a half-width cell either crops it (a table) or leaves no
+   room to read it (an image/custom layout). "compact" reports pair up two per row; a lone
+   trailing compact report still gets a full-width row of one rather than a half-empty grid. */
+.report-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.report-row-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
-}
-/* A grid containing a dense operational table (see ServiceReportSlide.tsx) stacks every
-   card full-width in array order instead of the normal 2-up grid — a half-width cell crops
-   a wide table into a horizontal scrollbar it doesn't need at full width. */
-.report-card-grid.stacked {
-  grid-template-columns: 1fr;
 }
 .report-card {
   background: var(--panel);
@@ -901,6 +902,14 @@ h1.slide-title .accent {
     0 1px 3px rgba(21, 40, 45, 0.08),
     0 1px 2px rgba(21, 40, 45, 0.04);
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.report-card-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .report-card-title {
   font-family: var(--disp);
@@ -974,6 +983,49 @@ h1.slide-title .accent {
 .report-card .ot-table th,
 .report-card .ot-table td {
   padding: 4px 6px;
+}
+
+/* ---------- Report Template D: an uploaded real report image ---------- */
+/* max-height (not a fixed height) so the browser shrinks to fit while object-fit: contain
+   preserves the image's real aspect ratio — it's never stretched or, per the whole point
+   of paginateReports, ever cropped by exceeding its box. */
+.report-uploaded-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.report-uploaded-image img {
+  display: block;
+  max-width: 100%;
+  object-fit: contain;
+  border-radius: 6px;
+}
+.report-single .report-uploaded-image img {
+  max-height: 60vh;
+}
+.report-card .report-uploaded-image img {
+  max-height: 260px;
+}
+
+/* ---------- Report Template E: AI-generated custom HTML/CSS ---------- */
+/* Sandboxed with no allow-scripts (see ReportTemplate.tsx) — the markup is untrusted model
+   output, so this is what stands between "genuinely custom layout" and a stored-script
+   vector reachable by anyone who opens the deck. The iframe itself is the one fixed-size
+   box; the model is told to fill it responsively (100% width/height), not the other way
+   around, so the same generated markup looks right whether it lands in a grid row or as a
+   lone full-slide report — an explicit height here, not flex-fill, so it can never grow
+   past what the slide (or the row it shares with siblings) actually has room for. */
+.report-custom-html {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+}
+.report-single .report-custom-html {
+  height: 60vh;
+}
+.report-card .report-custom-html {
+  height: 260px;
 }
 
 .stat-row {
