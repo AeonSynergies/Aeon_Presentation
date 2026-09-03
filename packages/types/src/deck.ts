@@ -125,10 +125,20 @@ export interface ReportParticularsTable {
   extraList?: { heading: string; items: { label: string; value: string }[] };
 }
 
+export interface ReportSummaryItem {
+  label: string;
+  value: string;
+  highlight?: "positive" | "negative" | "neutral"; // same explicit, author-set convention as
+  // ReportTableRow.highlight — never inferred from the value itself.
+}
+
 export interface ReportOperationalTable {
   kind: "operational-table";
   columns: string[];
   rows: string[][];
+  // Optional highlighted roll-up below the dense table — e.g. a "Planned vs. Executed" line
+  // for a dispatch/route report. Not every operational-table report needs one.
+  summary?: { label: string; items: ReportSummaryItem[] };
 }
 
 export type ReportTemplate =

@@ -120,6 +120,19 @@ function OperationalTable({ t }: { t: Extract<ReportTemplateT, { kind: "operatio
           ))}
         </tbody>
       </table>
+      {t.summary && (
+        <div className="rpt-extra">
+          <h4>{t.summary.label}</h4>
+          <div className="rpt-extra-grid">
+            {t.summary.items.map((item, i) => (
+              <div className="rpt-extra-item" key={i}>
+                <span>{item.label}</span>
+                <b className={item.highlight ? `rpt-${item.highlight}` : ""}>{item.value}</b>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

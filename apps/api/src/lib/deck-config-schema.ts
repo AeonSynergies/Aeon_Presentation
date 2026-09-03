@@ -78,6 +78,14 @@ const reportTemplateSchema = z.discriminatedUnion("kind", [
     kind: z.literal("operational-table"),
     columns: z.array(z.string()).min(1),
     rows: z.array(z.array(z.string())).min(1),
+    summary: z
+      .object({
+        label: z.string().min(1),
+        items: z
+          .array(z.object({ label: z.string().min(1), value: z.string().min(1), highlight: z.enum(["positive", "negative", "neutral"]).optional() }))
+          .min(1),
+      })
+      .optional(),
   }),
 ]);
 

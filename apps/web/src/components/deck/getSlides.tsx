@@ -45,16 +45,21 @@ export function getSlides(deck: DeckConfig, state: SessionState): SlideEntry[] {
         label: s.name.split(" ").slice(0, 2).join(" ") + " Details",
         render: () => <ServiceSlide deck={deck} svc={s} state={state} />,
       });
-      // One nav slide per report — a service can carry several (e.g. Route Performance
-      // Management showing both a CDF and a DSB incident breakdown), each labeled by its
-      // own report title rather than the shared service name so they stay distinguishable.
-      (s.reportSlides ?? []).forEach((report, ri) => {
+      // One nav slide per SERVICE's whole set of reports, not one per report — a service
+      // can carry several (e.g. Route Performance Management showing both a CDF and a DSB
+      // incident breakdown), and those render together as a card grid on a single slide
+      // (see ServiceReportSlide) rather than as separate slides. A lone report still gets
+      // its own full-size slide, unchanged. Never regroups which service a report belongs
+      // to — this only changes how many slides its own already-assigned reports span.
+      const reports = s.reportSlides ?? [];
+      if (reports.length > 0) {
+        const label = reports.length === 1 ? "Sample: " + reports[0].title.split(",")[0].split(" ").slice(0, 3).join(" ") : "Sample: " + s.name.split(" ").slice(0, 2).join(" ");
         svcSlides.push({
-          id: "report-" + s.id + "-" + ri,
-          label: "Sample: " + report.title.split(",")[0].split(" ").slice(0, 3).join(" "),
-          render: () => <ServiceReportSlide svc={s} report={report} />,
+          id: "report-" + s.id,
+          label,
+          render: () => <ServiceReportSlide svc={s} reports={reports} />,
         });
-      });
+      }
     });
 
   const tail: SlideEntry[] = [
