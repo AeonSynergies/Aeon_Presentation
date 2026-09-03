@@ -428,6 +428,15 @@ export const amazonDspDeck: DeckConfig = {
                 "284", "", "2", "", "", "", "", "", "", "", "1", "283", "", "27,259", "Completed", "30", "", "30", "Speed violation", "Completed",
               ],
             ],
+            summary: {
+              label: "Planned vs. Executed",
+              items: [
+                { label: "Planned Stops (Target)", value: "700" },
+                { label: "Stops Executed", value: "681", highlight: "negative" },
+                { label: "Planned Routes", value: "4" },
+                { label: "Routes Executed", value: "4", highlight: "positive" },
+              ],
+            },
           },
         },
       ],
