@@ -657,16 +657,19 @@ EOF
 aws iam put-role-policy --role-name "${PROJECT}-apprunner-instance" \
   --policy-name "${PROJECT}-send-email" --policy-document "$SES_POLICY_DOC" >/dev/null
 
-# Lets the api service write uploaded report images (apps/api/src/lib/s3.ts) — scoped to
-# only the reports/ prefix of this one bucket, not "*", so this role can never touch any
-# other bucket or object in the account. No s3:GetObject here: reads go through the
-# bucket's own public-read policy above, not this role.
+# Lets the api service read and write uploaded report images (apps/api/src/lib/s3.ts) —
+# scoped to only the reports/ prefix of this one bucket, not "*", so this role can never
+# touch any other bucket or object in the account. Browser reads of an already-uploaded
+# image go through the bucket's own public-read policy above, not this role — s3:GetObject
+# is granted anyway so the api service itself can read an object it wrote (e.g. to
+# validate it, or if a future feature needs to reprocess/re-serve one server-side) without
+# that being a second permissions gap to discover later.
 REPORTS_S3_POLICY_DOC=$(cat <<EOF
 {
   "Version": "2012-10-17",
   "Statement": [{
     "Effect": "Allow",
-    "Action": "s3:PutObject",
+    "Action": ["s3:PutObject", "s3:GetObject"],
     "Resource": "arn:aws:s3:::${REPORTS_BUCKET}/reports/*"
   }]
 }
