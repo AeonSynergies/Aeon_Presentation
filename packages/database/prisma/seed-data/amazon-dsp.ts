@@ -191,16 +191,17 @@ export const amazonDspDeck: DeckConfig = {
           illustrative: true,
           template: {
             kind: "particulars-table",
+            valueColumnLabel: "Number of Claims",
             rows: [
               { label: "Claims Filed", value: "3", isCurrency: false },
               { label: "Claims In Review", value: "2", isCurrency: false },
               { label: "Claims Resolved", value: "1", isCurrency: false },
-              { label: "Avg. Resolution Time", value: "18 days", isCurrency: false, bold: true, highlight: "neutral" },
+              { label: "Total Active Claims", value: "2", isCurrency: false, bold: true, highlight: "neutral" },
             ],
           },
         },
         {
-          title: "Worker Comp Validation, Week 25 (06/15/2025 to 06/21/2025)",
+          title: "Worker Comp Validation, Week 25",
           template: {
             kind: "particulars-table",
             rows: [
@@ -215,11 +216,12 @@ export const amazonDspDeck: DeckConfig = {
           title: "Unemployment Claims, Week 25 (06/15/2025 to 06/21/2025)",
           template: {
             kind: "particulars-table",
+            valueColumnLabel: "Number of Claims",
             rows: [
               { label: "Claims Filed by Former Employees", value: "4", isCurrency: false },
-              { label: "Claims Contested", value: "3", isCurrency: false },
-              { label: "Claims Successfully Contested", value: "3", isCurrency: false },
-              { label: "Unemployment Tax Impact Avoided", value: "2,340.00", bold: true, highlight: "positive" },
+              { label: "Claims Contested by Us", value: "3", isCurrency: false },
+              { label: "Claims Still Pending Decision", value: "1", isCurrency: false },
+              { label: "Claims Successfully Contested", value: "3", isCurrency: false, bold: true, highlight: "positive" },
             ],
           },
         },
@@ -316,6 +318,7 @@ export const amazonDspDeck: DeckConfig = {
           title: "Recruitment Funnel Summary, This Period",
           template: {
             kind: "particulars-table",
+            valueColumnLabel: "Count",
             rows: [
               { label: "Onboarded — Total onboarded", value: "88", isCurrency: false },
               { label: "BGV — Pending of 60", value: "15", isCurrency: false },
@@ -362,7 +365,7 @@ export const amazonDspDeck: DeckConfig = {
       surcharge: { questionId: "hoursOver12", amount: 200 },
       reportSlides: [
         {
-          title: "End-of-Day Dispatch Summary, Week 25 (06/15/2025 to 06/21/2025)",
+          title: "End-of-Day Dispatch Summary, Week 25",
           illustrative: true,
           template: {
             kind: "particulars-table",
@@ -501,9 +504,9 @@ export const amazonDspDeck: DeckConfig = {
             kind: "operational-table",
             columns: ["Driver", "CDF", "DSB", "DCR"],
             rows: [
-              ["Brown, Tavianna", "Fantastic", "Great", "98.2%"],
-              ["Kellam, Tahira", "Great", "Fantastic", "96.5%"],
-              ["Samaniego, Joel", "Good", "Great", "94.1%"],
+              ["Brown, Tavianna", "1", "2", "98.2"],
+              ["Kellam, Tahira", "2", "1", "96.5"],
+              ["Samaniego, Joel", "3", "2", "94.1"],
             ],
           },
         },
