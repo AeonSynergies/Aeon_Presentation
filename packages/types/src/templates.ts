@@ -5,15 +5,19 @@
 // apps/api/src/lib/ai-draft.ts) offers.
 //
 // Two categories:
-//   - "generic": invented, industry-flavored structures not tied to any real company.
+//   - "generic": invented, industry-flavored structures not tied to any real company. Each
+//     one's services carry their own illustrative reportSlides (illustrative: true — the
+//     schema's existing "swap in your verified client output" marker) so a drafted deck
+//     reads as fully considered from the first preview, not a stripped-down shape waiting
+//     for sample content. Fabricated numbers are fine here specifically because they're
+//     always marked illustrative.
 //   - "anonymized": same structural shape (service categories, price-band patterns,
 //     surcharge/alternate-driver mechanisms, question tiers) as one of the three seeded
 //     decks, with the real company name, logo, team, contact details, and any
 //     company-specific program jargon (e.g. Amazon's "AMZL/AMXL", "DSP") stripped and
-//     replaced with generic language. Deliberately excludes reportSlide — that's the most
-//     content-heavy, most identifying part (specific illustrative dollar figures and
-//     dates), and isn't part of the shape a template needs to provide (services, price
-//     bands, team, static content, discovery questions).
+//     replaced with generic language. Deliberately excludes reportSlide — unlike the
+//     generic templates above, this category's whole point is being a stripped mirror of a
+//     real deck, and specific illustrative figures are exactly the kind of thing it strips.
 //
 // Identity fields (companyName, logo, team, staticContent.qa contact fields) are left
 // blank on every template, same as blankDeck() — a template's job is to supply STRUCTURE
@@ -81,6 +85,40 @@ const itManagedServicesTemplate: DeckConfig = {
         { upTo: null, price: 1300 },
       ],
       surcharge: { questionId: "afterHoursSupport", amount: 250 },
+      reportSlides: [
+        {
+          title: "Ticket Queue Summary, This Week",
+          illustrative: true,
+          template: {
+            kind: "particulars-table",
+            valueColumnLabel: "Count",
+            rows: [
+              { label: "Tickets Opened", value: "142", isCurrency: false },
+              { label: "Tickets Resolved", value: "138", isCurrency: false },
+              { label: "Escalated to Tier 2/3", value: "9", isCurrency: false },
+              { label: "Open at End of Week", value: "4", isCurrency: false, bold: true, highlight: "positive" },
+            ],
+          },
+        },
+        {
+          title: "Ticket Volume by Category, This Week",
+          illustrative: true,
+          template: {
+            kind: "bar-highlights",
+            chartTitle: "Tickets by Category",
+            items: [
+              { label: "Password Reset", count: 38 },
+              { label: "Software Install", count: 29 },
+              { label: "Hardware Issue", count: 22 },
+              { label: "Network Connectivity", count: 18 },
+              { label: "Account Access", count: 15 },
+            ],
+            sidebarLabel: "Top 3",
+            summary: "122 tickets resolved across 5 categories this week",
+            colorVariant: "teal",
+          },
+        },
+      ],
     },
     {
       id: "patchsecurity",
@@ -105,6 +143,35 @@ const itManagedServicesTemplate: DeckConfig = {
         { upTo: 150, price: 500 },
         { upTo: null, price: 750 },
       ],
+      reportSlides: [
+        {
+          title: "Patch Compliance Summary, This Month",
+          illustrative: true,
+          template: {
+            kind: "particulars-table",
+            valueColumnLabel: "Count",
+            rows: [
+              { label: "Devices Scanned", value: "312", isCurrency: false },
+              { label: "Devices Fully Patched", value: "298", isCurrency: false },
+              { label: "Devices Pending Patch", value: "14", isCurrency: false },
+              { label: "Patch Compliance Rate", value: "95.5%", isCurrency: false, bold: true, highlight: "positive" },
+            ],
+          },
+        },
+        {
+          title: "Vulnerability Remediation, This Month",
+          illustrative: true,
+          template: {
+            kind: "particulars-table",
+            valueColumnLabel: "Count",
+            rows: [
+              { label: "Critical Vulnerabilities Found", value: "6", isCurrency: false },
+              { label: "Remediated Within SLA", value: "6", isCurrency: false },
+              { label: "Open Past SLA", value: "0", isCurrency: false, bold: true, highlight: "positive" },
+            ],
+          },
+        },
+      ],
     },
     {
       id: "cloudbackup",
@@ -122,6 +189,22 @@ const itManagedServicesTemplate: DeckConfig = {
       stats: [{ v: "100%", l: "Backup jobs monitored daily" }, { v: "↑ Verified", l: "Restore-tested, not just \"completed\"" }],
       dashboards: ["Backup Job Status", "Restore Test Log"],
       priceBands: [{ upTo: null, price: 450 }],
+      reportSlides: [
+        {
+          title: "Backup Job Status, This Week",
+          illustrative: true,
+          template: {
+            kind: "operational-table",
+            columns: ["Client Environment", "Backup Job", "Last Run", "Status", "Restore Tested"],
+            rows: [
+              ["Beacon Retail", "Nightly File + DB", "09/01/2026 02:00", "Completed", "Yes — Passed"],
+              ["Harlow Logistics", "Nightly File + DB", "09/01/2026 02:15", "Completed", "Yes — Passed"],
+              ["Cinder Legal Group", "Nightly File Only", "09/01/2026 02:30", "Completed", "Not Due This Cycle"],
+              ["Fenwick Dental", "Nightly File + DB", "09/01/2026 02:45", "Failed — Retried", "Yes — Passed"],
+            ],
+          },
+        },
+      ],
     },
     {
       id: "onboarding",
@@ -142,6 +225,21 @@ const itManagedServicesTemplate: DeckConfig = {
         { upTo: 25, price: 250 },
         { upTo: 75, price: 400 },
         { upTo: null, price: 600 },
+      ],
+      reportSlides: [
+        {
+          title: "Onboarding & Offboarding Summary, This Month",
+          illustrative: true,
+          template: {
+            kind: "particulars-table",
+            valueColumnLabel: "Count",
+            rows: [
+              { label: "New Hires Onboarded", value: "11", isCurrency: false },
+              { label: "Departures Offboarded", value: "6", isCurrency: false },
+              { label: "Access Revoked Same Day as Departure", value: "6", isCurrency: false, bold: true, highlight: "positive" },
+            ],
+          },
+        },
       ],
     },
   ],
@@ -247,6 +345,35 @@ const multiLocationHospitalityTemplate: DeckConfig = {
         { upTo: 15, price: 1000 },
         { upTo: null, price: 1400 },
       ],
+      reportSlides: [
+        {
+          title: "Group Payroll Summary, Pay Period",
+          illustrative: true,
+          template: {
+            kind: "particulars-table",
+            rows: [
+              { label: "Total Gross Pay", value: "218,450.00" },
+              { label: "Locations Processed", value: "6", isCurrency: false },
+              { label: "Payroll Exceptions Flagged", value: "3", isCurrency: false },
+              { label: "Exceptions Resolved Before Run", value: "3", isCurrency: false, bold: true, highlight: "positive" },
+            ],
+          },
+        },
+        {
+          title: "Labor Cost by Location, Pay Period",
+          illustrative: true,
+          template: {
+            kind: "operational-table",
+            columns: ["Location", "Region", "Scheduled Hours", "Actual Hours", "Labor Cost", "% of Revenue"],
+            rows: [
+              ["Downtown", "Central", "612", "624", "$14,980", "28.4%"],
+              ["Riverside", "East", "480", "471", "$11,420", "27.1%"],
+              ["Uptown", "Central", "556", "560", "$13,660", "29.8%"],
+              ["Airport", "West", "398", "412", "$10,240", "26.5%"],
+            ],
+          },
+        },
+      ],
     },
     {
       id: "vendorinventory",
@@ -269,6 +396,21 @@ const multiLocationHospitalityTemplate: DeckConfig = {
         { upTo: null, price: 850 },
       ],
       surcharge: { questionId: "realTimeVendorMatching", amount: 300 },
+      reportSlides: [
+        {
+          title: "Vendor Reconciliation Summary, This Month",
+          illustrative: true,
+          template: {
+            kind: "particulars-table",
+            rows: [
+              { label: "Vendor Invoices Received", value: "96", isCurrency: false },
+              { label: "Invoices Matched to Receiving", value: "91", isCurrency: false },
+              { label: "Discrepancies Flagged", value: "5", isCurrency: false },
+              { label: "Overcharges Caught & Recovered", value: "1,240.00", bold: true, highlight: "positive" },
+            ],
+          },
+        },
+      ],
     },
     {
       id: "financialreporting",
@@ -286,6 +428,23 @@ const multiLocationHospitalityTemplate: DeckConfig = {
       stats: [{ v: "100%", l: "Reports delivered on schedule" }, { v: "↑ Visibility", l: "Consolidated group-wide financial view" }],
       dashboards: ["Consolidated P&L", "Per-Location Performance Report"],
       priceBands: [{ upTo: null, price: 500 }],
+      reportSlides: [
+        {
+          title: "Consolidated P&L Summary, This Month",
+          illustrative: true,
+          template: {
+            kind: "particulars-table",
+            showPctColumns: true,
+            rows: [
+              { label: "Total Revenue", suggestedPct: "100", actualPct: "100", value: "482,600.00" },
+              { label: "Cost of Goods / Vendor Spend", suggestedPct: "28", actualPct: "26.1", value: "125,959.00", highlight: "positive" },
+              { label: "Labor Cost", suggestedPct: "30", actualPct: "32.4", value: "156,362.00", highlight: "negative" },
+              { label: "Occupancy & Overhead", suggestedPct: "12", actualPct: "11.4", value: "55,016.00", highlight: "positive" },
+              { label: "Net Operating Margin", suggestedPct: "20 - 25", actualPct: "21.3", value: "102,874.00", bold: true, highlight: "positive" },
+            ],
+          },
+        },
+      ],
     },
     {
       id: "staffrecruiting",
@@ -306,6 +465,36 @@ const multiLocationHospitalityTemplate: DeckConfig = {
         { upTo: 5, price: 350 },
         { upTo: 15, price: 550 },
         { upTo: null, price: 800 },
+      ],
+      reportSlides: [
+        {
+          title: "Hiring Pipeline, This Quarter",
+          illustrative: true,
+          template: {
+            kind: "operational-table",
+            columns: ["Candidate", "Location", "Role", "Stage", "Start Date"],
+            rows: [
+              ["Alvarez, Priya", "Downtown", "Server", "Offer", "09/15/2026"],
+              ["Nakamura, Jonah", "Riverside", "Line Cook", "Interview", ""],
+              ["Boateng, Sasha", "Uptown", "Shift Supervisor", "Hired", "09/08/2026"],
+              ["Delgado, Mateo", "Airport", "Host", "Applied", ""],
+            ],
+          },
+        },
+        {
+          title: "Time-to-Hire Summary, This Quarter",
+          illustrative: true,
+          template: {
+            kind: "particulars-table",
+            valueColumnLabel: "Count",
+            rows: [
+              { label: "Total Hires", value: "14", isCurrency: false },
+              { label: "Avg Time-to-Hire (Days)", value: "18", isCurrency: false },
+              { label: "Fastest Fill (Days)", value: "9", isCurrency: false },
+              { label: "Positions Still Open", value: "3", isCurrency: false, bold: true, highlight: "negative" },
+            ],
+          },
+        },
       ],
     },
   ],
@@ -410,6 +599,38 @@ const staffingAgencyTemplate: DeckConfig = {
         { upTo: 150, price: 950 },
         { upTo: null, price: 1350 },
       ],
+      reportSlides: [
+        {
+          title: "Payroll Summary, Pay Period",
+          illustrative: true,
+          template: {
+            kind: "particulars-table",
+            rows: [
+              { label: "Total Gross Pay", value: "312,880.00" },
+              { label: "Contractors Paid", value: "96", isCurrency: false },
+              { label: "Timesheet Exceptions Flagged", value: "7", isCurrency: false },
+              { label: "Exceptions Resolved Before Run", value: "7", isCurrency: false, bold: true, highlight: "positive" },
+            ],
+          },
+        },
+        {
+          title: "Timesheet Exception Report, Pay Period",
+          illustrative: true,
+          template: {
+            kind: "bar-highlights",
+            chartTitle: "Exceptions by Type",
+            items: [
+              { label: "Missing Approval", count: 3 },
+              { label: "Overtime Flag", count: 2 },
+              { label: "Rate Mismatch", count: 1 },
+              { label: "Late Submission", count: 1 },
+            ],
+            sidebarLabel: "Top 3",
+            summary: "7 timesheet exceptions resolved before this payroll run",
+            colorVariant: "amber",
+          },
+        },
+      ],
     },
     {
       id: "clientbilling",
@@ -432,6 +653,21 @@ const staffingAgencyTemplate: DeckConfig = {
         { upTo: null, price: 800 },
       ],
       surcharge: { questionId: "rushInvoicing", amount: 200 },
+      reportSlides: [
+        {
+          title: "Billing Summary, This Month",
+          illustrative: true,
+          template: {
+            kind: "particulars-table",
+            rows: [
+              { label: "Total Client Invoices", value: "84", isCurrency: false },
+              { label: "Total Billed", value: "458,900.00" },
+              { label: "Total Contractor Pay", value: "312,880.00" },
+              { label: "Gross Margin", value: "146,020.00", bold: true, highlight: "positive" },
+            ],
+          },
+        },
+      ],
     },
     {
       id: "compliancecred",
@@ -449,6 +685,22 @@ const staffingAgencyTemplate: DeckConfig = {
       stats: [{ v: "100%", l: "Credentials tracked with renewal alerts" }, { v: "↓ 70%", l: "Fewer lapsed credentials" }],
       dashboards: ["Credential Expiration Tracker", "Compliance Status Report"],
       priceBands: [{ upTo: null, price: 400 }],
+      reportSlides: [
+        {
+          title: "Credential Expiration Tracker, This Month",
+          illustrative: true,
+          template: {
+            kind: "operational-table",
+            columns: ["Contractor", "Credential Type", "Expiration Date", "Status", "Renewal Reminder Sent"],
+            rows: [
+              ["Ramirez, Dana", "RN License", "10/12/2026", "Active", "Yes"],
+              ["Okafor, Brian", "CPR/BLS Cert", "09/20/2026", "Renewal In Progress", "Yes"],
+              ["Whitfield, Lucas", "Forklift Cert", "09/30/2026", "Active", "Yes"],
+              ["Park, Grace", "RN License", "08/28/2026", "Expired — Suspended", "Yes"],
+            ],
+          },
+        },
+      ],
     },
     {
       id: "clientaccounts",
@@ -469,6 +721,36 @@ const staffingAgencyTemplate: DeckConfig = {
         { upTo: 10, price: 300 },
         { upTo: 25, price: 500 },
         { upTo: null, price: 750 },
+      ],
+      reportSlides: [
+        {
+          title: "Account Health Summary, This Quarter",
+          illustrative: true,
+          template: {
+            kind: "particulars-table",
+            valueColumnLabel: "Count",
+            rows: [
+              { label: "Active Client Accounts", value: "22", isCurrency: false },
+              { label: "Accounts Reviewed On-Cadence", value: "22", isCurrency: false },
+              { label: "Escalations Opened", value: "2", isCurrency: false },
+              { label: "Escalations Resolved", value: "2", isCurrency: false, bold: true, highlight: "positive" },
+            ],
+          },
+        },
+        {
+          title: "Contract Renewal Tracker, This Quarter",
+          illustrative: true,
+          template: {
+            kind: "operational-table",
+            columns: ["Client Account", "Contract End Date", "Renewal Status", "Rate Card Change"],
+            rows: [
+              ["Meridian Health Staffing", "10/31/2026", "Renewal In Progress", "None"],
+              ["Corebridge Logistics", "11/15/2026", "Renewed", "+3% bill rate"],
+              ["Larkspur Manufacturing", "09/30/2026", "Renewal In Progress", "None"],
+              ["Northbay Clinical Group", "12/01/2026", "Not Yet Due", "—"],
+            ],
+          },
+        },
       ],
     },
   ],
