@@ -291,17 +291,25 @@ if (!(await svcCard(REMOVABLE_SERVICE_NAME).count())) {
 await saveChanges("driver + existing service + new services + removable service");
 
 // Verify the save actually landed: fresh meeting session so `selected` includes every
-// service, including the ones just added.
+// service, including the ones just added. Discovery Notes has no in-page panel anymore in
+// any mode (see DeckPlayer.tsx) — every edit here goes through the real popped-out notes
+// window, and every check reads the main window's Pricing slide to confirm the two stay in
+// sync through the real backend (save debounce + poll).
+const SYNC_WAIT_MS = 3000; // 800ms save debounce + 1500ms poll + margin
 await page.goto(`${BASE}/decks/${DECK_SLUG}`, { waitUntil: "networkidle" });
-await page.waitForSelector(".chip-grid");
+await page.waitForSelector(".notes-btn");
 await page.waitForTimeout(300);
 
-const driverQLabel = await page.locator('.q-block:has-text("REQUIRED · DRIVES PRICING") .q-label').first().textContent();
+const [notesPage] = await Promise.all([page.context().waitForEvent("page"), page.locator(".notes-btn").click()]);
+await notesPage.waitForLoadState("networkidle");
+await notesPage.waitForSelector(".chip-grid", { timeout: 15000 });
+
+const driverQLabel = await notesPage.locator('.q-block:has-text("REQUIRED · DRIVES PRICING") .q-label').first().textContent();
 check("player: edited pricing driver question text is live", driverQLabel?.trim() === NEW_DRIVER_QUESTION, driverQLabel ?? "");
 
-await page.locator('.q-block:has-text("REQUIRED · DRIVES PRICING") input[type="number"]').first().fill("3");
-await page.locator(".q-block", { hasText: "How many field technicians" }).first().locator("input").fill("4");
-await page.waitForTimeout(200);
+await notesPage.locator('.q-block:has-text("REQUIRED · DRIVES PRICING") input[type="number"]').first().fill("3");
+await notesPage.locator(".q-block", { hasText: "How many field technicians" }).first().locator("input").fill("4");
+await notesPage.waitForTimeout(SYNC_WAIT_MS);
 await page.locator(".routebar .stop", { hasText: "Pricing" }).click();
 await page.waitForTimeout(300);
 
@@ -317,6 +325,7 @@ check("player: new tiered service on its own alternate driver (4 field technicia
 const removableCountBefore = await (await priceCard(REMOVABLE_SERVICE_NAME)).count();
 check("player: throwaway service renders on the pricing slide before removal", removableCountBefore === 1);
 await page.screenshot({ path: `${OUT}/pricing-edit-before-removal.png`, fullPage: true });
+await notesPage.close();
 
 // ========== Now remove the throwaway service and confirm it's gone ==========
 console.log("\n=== Confirm removal persists ===");
@@ -330,7 +339,7 @@ check("edit: removable service no longer in the Services list", (await svcCard(R
 await saveChanges("removable service gone");
 
 await page.goto(`${BASE}/decks/${DECK_SLUG}`, { waitUntil: "networkidle" });
-await page.waitForSelector(".chip-grid");
+await page.waitForSelector(".notes-btn");
 await page.waitForTimeout(300);
 await page.locator(".routebar .stop", { hasText: "Pricing" }).click();
 await page.waitForTimeout(300);

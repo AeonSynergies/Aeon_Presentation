@@ -237,25 +237,35 @@ if (existingFixture.ok) {
 }
 
 // ========== 1. Run a live Discovery Notes session and save it as a Meeting Record ==========
+// Discovery Notes has no in-page panel anymore in any mode (see DeckPlayer.tsx) — every
+// edit below goes through the real popped-out notes window. meeting.complete (triggered
+// from the main window below) reads the meeting row straight off the backend by id, not
+// this window's own polled state, so completing only needs the notes window's OWN save
+// debounce to have landed — not a full round-trip back to this window.
 console.log("\n=== Save a Meeting Record ===");
 await uiLogin(EMAIL, PASSWORD);
 await page.goto(`${BASE}/decks/${DECK_SLUG}`, { waitUntil: "networkidle" });
-await page.waitForSelector(".chip-grid");
+await page.waitForSelector(".notes-btn");
 await page.waitForTimeout(300);
 
-await page.locator('.q-block:has-text("Client name") input[type="text"]').fill(CLIENT_NAME);
-await page.locator('.q-block:has-text("REQUIRED · DRIVES PRICING") input[type="number"]').first().fill("3");
-await page.locator(`.q-block:has-text("${GENERAL_Q_LABEL}") input[type="text"]`).fill(GENERAL_ANSWER);
+const [notesPage] = await Promise.all([page.context().waitForEvent("page"), page.locator(".notes-btn").click()]);
+await notesPage.waitForLoadState("networkidle");
+await notesPage.waitForSelector(".chip-grid", { timeout: 15000 });
+
+await notesPage.locator('.q-block:has-text("Client name") input[type="text"]').fill(CLIENT_NAME);
+await notesPage.locator('.q-block:has-text("REQUIRED · DRIVES PRICING") input[type="number"]').first().fill("3");
+await notesPage.locator(`.q-block:has-text("${GENERAL_Q_LABEL}") input[type="text"]`).fill(GENERAL_ANSWER);
 
 // Deselect the "Removed" service — both its price and its discovery question must be
 // absent from every export below, proving the exports reflect this exact opted-in set.
-const removedChip = page.locator(".chip-grid .chip", { hasText: REMOVED_SERVICE_NAME });
+const removedChip = notesPage.locator(".chip-grid .chip", { hasText: REMOVED_SERVICE_NAME });
 await removedChip.click();
-await page.waitForTimeout(300);
+await notesPage.waitForTimeout(300);
 check("setup: removed service is deselected before saving the record", !(await removedChip.getAttribute("class")).includes("selected"));
 
-await page.locator(`.q-block:has-text("${KEPT_SERVICE_Q_LABEL}") input[type="text"]`).fill(KEPT_SERVICE_ANSWER);
-await page.waitForTimeout(1200); // exceeds useDeckSession's 800ms debounce — let meeting.updateState actually land before completing
+await notesPage.locator(`.q-block:has-text("${KEPT_SERVICE_Q_LABEL}") input[type="text"]`).fill(KEPT_SERVICE_ANSWER);
+await notesPage.waitForTimeout(1200); // exceeds useNotesWindowSession's 800ms debounce — let meeting.updateState actually land before completing
+await notesPage.close();
 
 const saveBtn = page.locator(".icon-btn", { hasText: "Save Meeting Record" });
 check("player: Save Meeting Record button is visible for Admin", (await saveBtn.count()) === 1);

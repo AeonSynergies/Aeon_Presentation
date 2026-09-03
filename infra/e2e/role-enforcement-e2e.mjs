@@ -287,7 +287,7 @@ if (existingQaDeck.ok) {
 await uiLogin(QA_USERS.SALES_EXECUTIVE.email, QA_USERS.SALES_EXECUTIVE.password);
 check("SE: New Deck button shown on Home", (await page.$(".new-deck-btn")) !== null);
 await page.goto(`${BASE}/decks/${PRESENT_DECK_SLUG}`);
-await page.waitForSelector(".chip-grid");
+await page.waitForSelector(".notes-btn");
 await page.waitForTimeout(300);
 const salesButtons = await page.$$eval(".topbar-actions button, .topbar-actions a", (els) => els.map((e) => e.textContent.trim()));
 check("SE: Export button not shown", !salesButtons.some((t) => t.includes("Export")), salesButtons.join(" | "));
