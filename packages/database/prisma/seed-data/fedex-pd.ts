@@ -211,6 +211,7 @@ export const fedexPdDeck: DeckConfig = {
           illustrative: true,
           template: {
             kind: "particulars-table",
+            valueColumnLabel: "Count",
             rows: [
               { label: "Candidates Screened", value: "22", isCurrency: false },
               { label: "FADV Completed", value: "16", isCurrency: false },
