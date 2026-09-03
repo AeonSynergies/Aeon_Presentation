@@ -363,15 +363,20 @@ body {
   width: auto;
   display: block;
 }
-.wordmark .txt-logo {
+/* Unscoped (not .wordmark-only): the "text" logo type (a generated wordmark, e.g.
+   Meridian's) is also used standalone on Cover, Q&A, and About's brand-lockup — none of
+   which are inside .wordmark, so these rules must apply everywhere .txt-logo appears, not
+   just the topbar. */
+.txt-logo {
   font-family: var(--disp);
   font-weight: 700;
   font-size: 18px;
   display: flex;
   align-items: center;
   gap: 8px;
+  color: inherit;
 }
-.wordmark .txt-logo .sq {
+.txt-logo .sq {
   width: 26px;
   height: 26px;
   border-radius: 6px;
@@ -380,6 +385,13 @@ body {
   justify-content: center;
   font-size: 12px;
   color: var(--ink);
+  flex-shrink: 0;
+}
+.logo-sub {
+  color: var(--fog);
+  font-weight: 400;
+  font-size: 0.55em;
+  margin-left: 6px;
 }
 .wordmark .sub {
   color: var(--fog);
@@ -864,56 +876,6 @@ h1.slide-title .accent {
   border-bottom: none;
 }
 
-.panel-card {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 18px 20px;
-  box-shadow:
-    0 1px 3px rgba(21, 40, 45, 0.08),
-    0 1px 2px rgba(21, 40, 45, 0.04);
-}
-.panel-card h3 {
-  font-family: var(--disp);
-  font-size: 14px;
-  font-weight: 600;
-  margin: 0 0 10px;
-  color: var(--paper);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.panel-card h3 .tag {
-  font-family: var(--mono);
-  font-size: 9px;
-  color: var(--ink);
-  background: var(--teal);
-  padding: 2px 6px;
-  border-radius: 4px;
-  letter-spacing: 0.04em;
-}
-.panel-card ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.panel-card li {
-  font-size: 12px;
-  color: var(--fog);
-  padding: 5.5px 0;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  gap: 8px;
-  line-height: 1.4;
-}
-.panel-card li:last-child {
-  border-bottom: none;
-}
-.panel-card li::before {
-  content: "—";
-  color: var(--amber);
-  flex-shrink: 0;
-}
 .stat-row {
   display: flex;
   gap: 10px;
@@ -1139,6 +1101,31 @@ h1.slide-title .accent {
 .dark-slide .lede {
   color: rgba(255, 255, 255, 0.65);
 }
+.dark-slide .stepline .stitle {
+  color: #fff;
+}
+.dark-slide .stepline .sdesc {
+  color: rgba(255, 255, 255, 0.65);
+}
+.dark-slide .stepline .step:not(:last-child)::after {
+  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.18) 0 5px, transparent 5px 10px);
+}
+/* Per-service intro slide (Templates redesign): same dark-gradient card as Challenges/
+   Benefits, but content is a single short "chapter title" (name + framing line) with no
+   grid below it, so it reads best centered rather than left-aligned. */
+.dark-slide-center {
+  align-items: center;
+  text-align: center;
+}
+.dark-slide-center .eyebrow {
+  justify-content: center;
+}
+.dark-slide-center .slide-title {
+  font-size: 40px;
+}
+.dark-slide-center .lede {
+  max-width: 560px;
+}
 .grid-numbered {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1178,6 +1165,9 @@ h1.slide-title .accent {
   color: var(--fog);
   font-family: var(--mono);
 }
+/* Title slide (redesigned): dark-gradient card, same convention/gradient as .dark-slide —
+   kept as its own class rather than reused because the layout (watermark, route-anim) is
+   bespoke to Cover. */
 .cover-wrap {
   display: flex;
   flex-direction: column;
@@ -1185,6 +1175,12 @@ h1.slide-title .accent {
   align-items: flex-start;
   height: 100%;
   position: relative;
+  background: linear-gradient(155deg, var(--paper) 0%, #0d1f24 100%);
+  border-radius: 16px;
+  padding: 40px 48px;
+  box-sizing: border-box;
+  color: #fff;
+  overflow: hidden;
 }
 .cover-mark {
   position: absolute;
@@ -1202,7 +1198,7 @@ h1.slide-title .accent {
 }
 .cover-eyebrow {
   font-family: var(--mono);
-  color: var(--teal);
+  color: var(--amber);
   font-size: 11.5px;
   letter-spacing: 0.16em;
   margin-bottom: 16px;
@@ -1221,7 +1217,7 @@ h1.slide-title .accent {
 }
 .cover-sub {
   font-size: 16px;
-  color: var(--fog);
+  color: rgba(255, 255, 255, 0.65);
   max-width: 640px;
   line-height: 1.5;
   margin-bottom: 22px;
@@ -1229,7 +1225,7 @@ h1.slide-title .accent {
 .route-anim {
   position: relative;
   height: 2px;
-  background-image: linear-gradient(to right, var(--line) 0 8px, transparent 8px 16px);
+  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.18) 0 8px, transparent 8px 16px);
   background-size: 16px 2px;
   background-repeat: repeat-x;
   width: 100%;
@@ -1287,7 +1283,8 @@ h1.slide-title .accent {
 .about-split.single {
   grid-template-columns: 1fr;
 }
-.about-split-left {
+.about-split-left,
+.split-panel-light {
   background: var(--panel2);
   padding: 40px 44px;
   display: flex;
@@ -1309,13 +1306,112 @@ h1.slide-title .accent {
 .about-split-left b.accent {
   color: var(--teal);
 }
-.about-split-right {
+.about-split-right,
+.split-panel-dark {
   background: linear-gradient(155deg, var(--paper) 0%, #0d1f24 100%);
   padding: 40px 36px;
   display: flex;
   flex-direction: column;
   justify-content: center;
   min-width: 0;
+  /* Ambient fallback for anything nested here without its own explicit color (e.g. a
+     "text"-type DeckLogo's plain wordmark) — every element this panel already styles sets
+     its own color, so this only ever helps, never overrides. */
+  color: #fff;
+}
+.split-panel-dark .logo-sub,
+.dark-slide .logo-sub,
+.cover-wrap .logo-sub {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* Reusable "on a dark panel" content treatments — used by the per-service detail slide's
+   right-hand panel (About-split convention reused for a non-About split) and Thank You's
+   dark side. Bare content directly on the gradient, same convention as About's focus-grid,
+   never a nested light card. */
+.split-heading {
+  font-family: var(--disp);
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 10px;
+  color: var(--paper);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.split-heading .tag {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--ink);
+  background: var(--teal);
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+}
+.about-split-right .split-heading,
+.split-panel-dark .split-heading {
+  color: #fff;
+}
+.plain-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.plain-list li {
+  font-size: 12px;
+  color: var(--fog);
+  padding: 5.5px 0;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 8px;
+  line-height: 1.4;
+}
+.plain-list li:last-child {
+  border-bottom: none;
+}
+.plain-list li::before {
+  content: "—";
+  color: var(--amber);
+  flex-shrink: 0;
+}
+.about-split-right .plain-list li,
+.split-panel-dark .plain-list li {
+  color: rgba(255, 255, 255, 0.72);
+  border-bottom-color: rgba(255, 255, 255, 0.12);
+}
+.about-split-right .stat-chip,
+.split-panel-dark .stat-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+.about-split-right .stat-chip .slabel,
+.split-panel-dark .stat-chip .slabel {
+  color: rgba(255, 255, 255, 0.55);
+}
+.about-split-right .illustrative-note,
+.split-panel-dark .illustrative-note {
+  color: rgba(255, 255, 255, 0.45);
+}
+.svc-invest-row {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.svc-invest-row .inv-label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.04em;
+}
+.svc-invest-row .inv-pending {
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.6);
+  font-family: var(--body);
+  font-weight: 400;
 }
 .focus-label {
   font-family: var(--mono);
@@ -1402,45 +1498,39 @@ h1.slide-title .accent {
   color: var(--fog);
   text-align: center;
 }
-.qa-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  text-align: center;
-}
-.qa-wrap .cover-logo {
+/* Thank You / Q&A (redesigned): split-panel dark statement + light contact card — see
+   QASlide.tsx. .split-panel-dark already centers its content vertically; the inline
+   align-items/text-align on that div in QASlide.tsx centers it horizontally too. */
+.split-panel-dark .cover-logo {
   margin-bottom: 22px;
 }
 .qa-title {
   font-family: var(--disp);
-  font-size: 48px;
+  font-size: 38px;
   font-weight: 700;
-  margin: 0 0 14px;
+  margin: 0 0 12px;
   letter-spacing: -0.02em;
+  color: #fff;
 }
 .qa-sub {
-  font-size: 15px;
-  color: var(--fog);
-  max-width: 520px;
-  margin: 0 0 30px;
+  font-size: 14.5px;
+  color: rgba(255, 255, 255, 0.65);
+  max-width: 420px;
   line-height: 1.55;
 }
-.qa-contact-row {
+.qa-contact-col {
   display: flex;
-  gap: 28px;
-  flex-wrap: wrap;
-  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 4px;
 }
 .qa-contact-item {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--paper);
   display: flex;
   flex-direction: column;
   gap: 4px;
-  align-items: center;
 }
 .qa-contact-item .qlabel {
   font-size: 9.5px;

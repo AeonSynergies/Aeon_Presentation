@@ -17,14 +17,19 @@ export function DeckLogo({
   logo,
   className,
   colors,
+  onDark,
 }: {
   logo: LogoConfig | undefined;
   className?: string;
   colors?: DeckColors;
+  // Overrides the deck-wide luminance check (isLightBg) for a single slide that renders
+  // this logo on a dark-gradient card while the rest of the deck stays light — e.g. the
+  // Cover slide or a per-service intro slide.
+  onDark?: boolean;
 }) {
   if (!logo) return null;
   if (logo.type === "imagePair") {
-    const light = isLightBg(colors?.ink);
+    const light = onDark ? false : isLightBg(colors?.ink);
     const src = light ? logo.srcLight : logo.srcDark;
     return <img className={className} src={src} alt="" />;
   }
@@ -38,7 +43,7 @@ export function DeckLogo({
         {initials}
       </span>
       {logo.wordmark}
-      {logo.sub && <span style={{ color: "var(--fog)", fontWeight: 400, fontSize: "0.55em", marginLeft: 6 }}>{logo.sub}</span>}
+      {logo.sub && <span className="logo-sub">{logo.sub}</span>}
     </div>
   );
 }

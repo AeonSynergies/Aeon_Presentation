@@ -174,6 +174,27 @@ jobs:
           path: infra/e2e/e2e-artifacts/report-screenshots/
           if-no-files-found: ignore
 
+      # Slide visual-system consistency audit: Cover, How We Work, the per-service
+      # intro+detail pair, and Q&A were left on an older, flatter treatment after the
+      # About/Challenges/Benefits redesign — this checks each now matches its intended
+      # pattern (dark-gradient / light / split light+dark), structurally AND with real
+      # screenshots for visual review, across all three seeded decks.
+      - name: Run live slide-system E2E against the deployment
+        id: slide-system
+        continue-on-error: true
+        working-directory: infra/e2e
+        run: node slide-system-screenshots.mjs
+        env:
+          BASE_URL: ${{ needs.deploy.outputs.web_url }}
+
+      - name: Upload live slide-system screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-slide-system-screenshots
+          path: infra/e2e/e2e-artifacts/slide-system-screenshots/
+          if-no-files-found: ignore
+
       # Present-mode Discovery Notes popout window (safety fix): confirms Discovery Notes
       # is genuinely absent from the DOM while presenting (not just CSS-hidden), that the
       # popout control opens a real separate window, and that edits made there reach the
@@ -304,6 +325,7 @@ jobs:
             [wizard]="${{ steps.wizard.outcome }}"
             [redesign-content]="${{ steps.redesign-content.outcome }}"
             [report-template-screenshots]="${{ steps.report-template-screenshots.outcome }}"
+            [slide-system]="${{ steps.slide-system.outcome }}"
             [notes-window]="${{ steps.notes-window.outcome }}"
             [send-to-client-pdf]="${{ steps.send-to-client-pdf.outcome }}"
             [role-enforcement]="${{ steps.role-enforcement.outcome }}"
