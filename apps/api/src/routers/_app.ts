@@ -4,6 +4,7 @@ import { archiveRouter } from "./archive.js";
 import { authRouter } from "./auth.js";
 import { deckRouter } from "./deck.js";
 import { meetingRouter } from "./meeting.js";
+import { reportAssetsRouter } from "./reportAssets.js";
 import { userRouter } from "./user.js";
 
 export const appRouter = router({
@@ -12,6 +13,7 @@ export const appRouter = router({
   auth: authRouter,
   deck: deckRouter,
   meeting: meetingRouter,
+  reportAssets: reportAssetsRouter,
   user: userRouter,
 });
 

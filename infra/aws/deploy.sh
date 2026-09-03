@@ -8,11 +8,12 @@
 # CLI v2. Run from the repo root.
 #
 # What this does, in order: ECR repos -> default VPC/subnets -> security groups ->
-# DB + cache subnet groups -> RDS Postgres -> ElastiCache Redis -> IAM roles for App
-# Runner -> SSM SecureString params for secrets -> App Runner VPC connector -> build/push
-# the api image -> create-or-redeploy the api App Runner service -> build/push the web
-# image (baking in the api service's URL) -> create-or-redeploy the web App Runner
-# service -> point the api service's WEB_ORIGIN at the web service's URL.
+# DB + cache subnet groups -> RDS Postgres -> ElastiCache Redis -> S3 bucket for uploaded
+# report images -> IAM roles for App Runner -> SSM SecureString params for secrets ->
+# App Runner VPC connector -> build/push the api image -> create-or-redeploy the api App
+# Runner service -> build/push the web image (baking in the api service's URL) ->
+# create-or-redeploy the web App Runner service -> point the api service's WEB_ORIGIN at
+# the web service's URL.
 
 set -euo pipefail
 
@@ -508,6 +509,49 @@ AZURE_TENANT_ID_PARAM_ARN="arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter${AZURE_
 AZURE_CLIENT_SECRET_PARAM_ARN="arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter${AZURE_CLIENT_SECRET_PARAM_NAME}"
 
 # ============================================================
+# S3 bucket for uploaded report images (Deck Builder wizard, Services step — "Report &
+# Sample slides"). Bucket names are globally unique across ALL AWS accounts, not just this
+# one, so the account id is suffixed on rather than a bare "${PROJECT}-reports", which could
+# collide with an unrelated AWS customer's bucket anywhere in the world.
+#
+# Objects under reports/* are served over a public-read bucket POLICY (not presigned GETs,
+# and not object ACLs) — the same trust model this app already gives every other deck image
+# (logos/watermark: plain public URLs baked into the web image's own /brand/* static
+# assets). Object keys are random UUIDs, so this is "unlisted," not indexable — and the
+# WRITE side is what's actually access-controlled: only a createDeck-permitted, authenticated
+# api request can mint a presigned PUT URL at all (apps/api/src/lib/s3.ts). Block Public
+# Access is left at its (safer) default for ACLs — only the two POLICY-related settings are
+# relaxed, since a bucket policy (not an ACL) is how read access is actually granted here.
+# ============================================================
+REPORTS_BUCKET="${PROJECT}-reports-${ACCOUNT_ID}"
+if aws_ s3api head-bucket --bucket "$REPORTS_BUCKET" >/dev/null 2>&1; then
+  log "S3 bucket $REPORTS_BUCKET already exists"
+else
+  log "Creating S3 bucket $REPORTS_BUCKET"
+  if [ "$REGION" = "us-east-1" ]; then
+    aws_ s3api create-bucket --bucket "$REPORTS_BUCKET" >/dev/null
+  else
+    aws_ s3api create-bucket --bucket "$REPORTS_BUCKET" --create-bucket-configuration "LocationConstraint=${REGION}" >/dev/null
+  fi
+fi
+aws_ s3api put-public-access-block --bucket "$REPORTS_BUCKET" --public-access-block-configuration \
+  BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=false,RestrictPublicBuckets=false >/dev/null
+REPORTS_BUCKET_POLICY=$(cat <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Sid": "PublicReadReports",
+    "Effect": "Allow",
+    "Principal": "*",
+    "Action": "s3:GetObject",
+    "Resource": "arn:aws:s3:::${REPORTS_BUCKET}/reports/*"
+  }]
+}
+EOF
+)
+aws_ s3api put-bucket-policy --bucket "$REPORTS_BUCKET" --policy "$REPORTS_BUCKET_POLICY" >/dev/null
+
+# ============================================================
 # IAM roles for App Runner
 # ============================================================
 ensure_role() {
@@ -612,6 +656,24 @@ EOF
 )
 aws iam put-role-policy --role-name "${PROJECT}-apprunner-instance" \
   --policy-name "${PROJECT}-send-email" --policy-document "$SES_POLICY_DOC" >/dev/null
+
+# Lets the api service write uploaded report images (apps/api/src/lib/s3.ts) — scoped to
+# only the reports/ prefix of this one bucket, not "*", so this role can never touch any
+# other bucket or object in the account. No s3:GetObject here: reads go through the
+# bucket's own public-read policy above, not this role.
+REPORTS_S3_POLICY_DOC=$(cat <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": "s3:PutObject",
+    "Resource": "arn:aws:s3:::${REPORTS_BUCKET}/reports/*"
+  }]
+}
+EOF
+)
+aws iam put-role-policy --role-name "${PROJECT}-apprunner-instance" \
+  --policy-name "${PROJECT}-write-reports" --policy-document "$REPORTS_S3_POLICY_DOC" >/dev/null
 
 # IAM changes can take a few seconds to propagate before App Runner can assume the role.
 sleep 10
@@ -720,7 +782,7 @@ if [ -z "$API_SERVICE_ARN" ]; then
     "ImageRepositoryType": "ECR",
     "ImageConfiguration": {
       "Port": "4000",
-      "RuntimeEnvironmentVariables": {"NODE_ENV": "production", "SES_FROM_ADDRESS": "no-reply@aeonsynergies.com"},
+      "RuntimeEnvironmentVariables": {"NODE_ENV": "production", "SES_FROM_ADDRESS": "no-reply@aeonsynergies.com", "S3_REPORTS_BUCKET": "${REPORTS_BUCKET}"},
       "RuntimeEnvironmentSecrets": {${API_SECRETS_JSON}}
     }
   },
@@ -823,7 +885,7 @@ if [ "$CURRENT_WEB_ORIGIN" != "$WEB_URL" ] || [ "$CURRENT_API_ORIGIN" != "$API_U
       \"ImageRepositoryType\": \"ECR\",
       \"ImageConfiguration\": {
         \"Port\": \"4000\",
-        \"RuntimeEnvironmentVariables\": {\"NODE_ENV\": \"production\", \"WEB_ORIGIN\": \"${WEB_URL}\", \"API_ORIGIN\": \"${API_URL}\", \"SES_FROM_ADDRESS\": \"no-reply@aeonsynergies.com\"},
+        \"RuntimeEnvironmentVariables\": {\"NODE_ENV\": \"production\", \"WEB_ORIGIN\": \"${WEB_URL}\", \"API_ORIGIN\": \"${API_URL}\", \"SES_FROM_ADDRESS\": \"no-reply@aeonsynergies.com\", \"S3_REPORTS_BUCKET\": \"${REPORTS_BUCKET}\"},
         \"RuntimeEnvironmentSecrets\": {${API_SECRETS_JSON}}
       }
     },

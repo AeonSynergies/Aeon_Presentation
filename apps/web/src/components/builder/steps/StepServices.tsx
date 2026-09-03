@@ -1,7 +1,163 @@
-import type { DeckConfig, DeckService } from "@aeon/types";
+import type { DeckConfig, DeckService, ReportSlide } from "@aeon/types";
+import * as React from "react";
+import { trpc } from "~/lib/trpc";
 import { allIdsInUse, blankService, idFromName } from "../draft";
-import { Field, MiniBtn, Row, StringListEditor, TextField } from "../fields";
+import { Field, MiniBtn, Row, StringListEditor, TextAreaField, TextField } from "../fields";
 import type { UpdateDraft } from "./StepBasics";
+
+const REPORT_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+const REPORT_DESCRIPTION_MIN_LEN = 10;
+
+function readImageDimensions(file: File): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Couldn't read that image."));
+    };
+    img.src = url;
+  });
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(",")[1] || "");
+    reader.onerror = () => reject(new Error("Couldn't read that file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+// The two new ways to add a report (Upload / Create with AI), plus the existing list with
+// Remove — sits inside ServiceEditor below. Upload goes straight to S3 via a presigned URL
+// (apps/api/src/routers/reportAssets.ts); this component never sees the api service handle
+// the image bytes. Create with AI calls ai.draftReport (apps/api/src/routers/ai.ts), which
+// returns freeform HTML/CSS rendered in a sandboxed iframe — see ReportTemplate.tsx.
+// Neither persists anything by itself: like every other wizard field, the new reportSlide
+// only becomes part of the deck when the human clicks Save.
+function ReportSlidesEditor({ svc, svcIdx, update }: { svc: DeckService; svcIdx: number; update: UpdateDraft }) {
+  const reports = svc.reportSlides ?? [];
+  const getUploadUrl = trpc.reportAssets.getUploadUrl.useMutation();
+  const [uploading, setUploading] = React.useState(false);
+  const [uploadError, setUploadError] = React.useState<string | null>(null);
+
+  const draftReport = trpc.ai.draftReport.useMutation();
+  const [aiOpen, setAiOpen] = React.useState(false);
+  const [aiTitle, setAiTitle] = React.useState("");
+  const [aiDescription, setAiDescription] = React.useState("");
+  const [aiRefImage, setAiRefImage] = React.useState<File | null>(null);
+  const [aiError, setAiError] = React.useState<string | null>(null);
+
+  const addReport = (report: ReportSlide) =>
+    update((d) => {
+      const s = d.services[svcIdx];
+      (s.reportSlides ??= []).push(report);
+    });
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploadError(null);
+    if (file.size > REPORT_IMAGE_MAX_BYTES) {
+      setUploadError("That image is too large — max 8MB.");
+      return;
+    }
+    setUploading(true);
+    try {
+      const [{ width, height }, { uploadUrl, publicUrl }] = await Promise.all([readImageDimensions(file), getUploadUrl.mutateAsync({ contentType: file.type })]);
+      const res = await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+      if (!res.ok) throw new Error("Upload failed — please try again.");
+      addReport({
+        title: file.name.replace(/\.[^./]+$/, ""),
+        illustrative: false,
+        template: { kind: "uploaded-image", src: publicUrl, width, height, alt: file.name },
+      });
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleGenerate() {
+    setAiError(null);
+    try {
+      const referenceImageBase64 = aiRefImage ? await fileToBase64(aiRefImage) : undefined;
+      const referenceImageMediaType = aiRefImage ? (aiRefImage.type as "image/png" | "image/jpeg" | "image/webp") : undefined;
+      const result = await draftReport.mutateAsync({ description: aiDescription, referenceImageBase64, referenceImageMediaType });
+      addReport({ title: aiTitle.trim() || "Custom Report", illustrative: true, template: { kind: "custom-html", ...result } });
+      setAiOpen(false);
+      setAiTitle("");
+      setAiDescription("");
+      setAiRefImage(null);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "Report generation failed.");
+    }
+  }
+
+  return (
+    <Field label="Report & Sample slides" hint="Uploaded images and AI-generated reports auto-size to fit alongside a service's other reports — a service with a lot of reports spills onto an additional slide rather than cropping anything.">
+      {reports.map((report, ri) => (
+        <div className="builder-list-row" key={ri}>
+          <span className="builder-report-note">
+            "{report.title}" — {report.template.kind}
+          </span>
+          <MiniBtn danger onClick={() => update((d) => void d.services[svcIdx].reportSlides!.splice(ri, 1))}>
+            Remove sample slide
+          </MiniBtn>
+        </div>
+      ))}
+      <Row>
+        <label className="mini-btn" style={{ cursor: uploading ? "wait" : "pointer", textAlign: "center" }}>
+          {uploading ? "Uploading…" : "⬆ Upload image"}
+          <input type="file" accept="image/png,image/jpeg,image/webp" hidden disabled={uploading} onChange={(e) => void handleUpload(e)} />
+        </label>
+        <MiniBtn onClick={() => setAiOpen((o) => !o)}>✨ Create with AI</MiniBtn>
+      </Row>
+      {uploadError && <div className="builder-ai-error">{uploadError}</div>}
+      {aiOpen && (
+        <div className="builder-subcard">
+          <TextField label="Report title" value={aiTitle} onChange={setAiTitle} placeholder="e.g. Weekly Incident Summary" />
+          <TextAreaField
+            label="Describe the report"
+            value={aiDescription}
+            onChange={setAiDescription}
+            placeholder="e.g. A weekly incident summary: counts by incident type, plus a short trend note"
+            hint="Optionally attach a reference image below (a real report export) instead of — or alongside — a description."
+          />
+          <Field label="Reference image (optional)">
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(e) => setAiRefImage(e.target.files?.[0] ?? null)}
+              disabled={draftReport.isPending}
+            />
+          </Field>
+          {aiError && <div className="builder-ai-error">{aiError}</div>}
+          <div className="builder-ai-actions">
+            <button type="button" className="mini-btn" onClick={() => setAiOpen(false)} disabled={draftReport.isPending}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="new-deck-btn"
+              onClick={() => void handleGenerate()}
+              disabled={draftReport.isPending || aiDescription.trim().length < REPORT_DESCRIPTION_MIN_LEN}
+            >
+              {draftReport.isPending ? "Generating…" : "Generate report"}
+            </button>
+          </div>
+        </div>
+      )}
+    </Field>
+  );
+}
 
 // Services step. Two things here go beyond plain fields:
 // - The surcharge editor manages a PAIR atomically: the service's surcharge config and
@@ -368,18 +524,7 @@ function ServiceEditor({
 
       <SurchargeEditor deck={deck} svcIdx={svcIdx} update={update} />
 
-      {svc.reportSlides && svc.reportSlides.length > 0 ? (
-        <Field label="Report & Sample slides" hint="Carried over from the cloned deck. Editing report slides in the builder comes in a later phase.">
-          {svc.reportSlides.map((report, ri) => (
-            <div className="builder-list-row" key={ri}>
-              <span className="builder-report-note">“{report.title}” — {report.template.kind}</span>
-              <MiniBtn danger onClick={() => update((d) => void d.services[svcIdx].reportSlides!.splice(ri, 1))}>
-                Remove sample slide
-              </MiniBtn>
-            </div>
-          ))}
-        </Field>
-      ) : null}
+      <ReportSlidesEditor svc={svc} svcIdx={svcIdx} update={update} />
 
       <div style={{ marginTop: 14 }}>
         <MiniBtn danger onClick={onRemove}>

@@ -52,7 +52,9 @@ const reportTableRowSchema = z.object({
   sectionHeader: z.boolean().optional(),
 });
 
-const reportTemplateSchema = z.discriminatedUnion("kind", [
+// Exported so ai.ts's draftReport mutation can validate an AI-generated custom-html
+// report against the exact same per-kind gate a human-authored one goes through here.
+export const reportTemplateSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("bar-highlights"),
     chartTitle: z.string().min(1),
@@ -86,6 +88,18 @@ const reportTemplateSchema = z.discriminatedUnion("kind", [
           .min(1),
       })
       .optional(),
+  }),
+  z.object({
+    kind: z.literal("uploaded-image"),
+    src: z.string().min(1),
+    width: z.number().positive(),
+    height: z.number().positive(),
+    alt: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal("custom-html"),
+    html: z.string().min(1).max(20_000),
+    sizeHint: z.enum(["compact", "wide"]),
   }),
 ]);
 

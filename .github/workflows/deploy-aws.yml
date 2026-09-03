@@ -315,6 +315,32 @@ jobs:
           API_URL: ${{ needs.deploy.outputs.api_url }}
           E2E_TEST_SECRET: ${{ env.E2E_TEST_SECRET }}
 
+      # Custom report authoring (Services step — "Report & Sample slides"): uploads a real
+      # image straight to S3 via a presigned URL and confirms it renders at its real aspect
+      # ratio, generates a real custom report from a plain-English description via
+      # ai.draftReport and confirms it renders as genuinely custom HTML/CSS inside a
+      # sandboxed iframe (not any of Templates A/B/C's own markup), confirms a service with
+      # 5 reports correctly paginates onto a second slide instead of cropping, and confirms
+      # Remove still works. Gated the same as ai-drafting above — the AI-generate half of
+      # this suite needs the same configured ANTHROPIC_API_KEY.
+      - name: Run live report-authoring E2E against the deployment
+        id: report-authoring
+        continue-on-error: true
+        if: needs.deploy.outputs.ai_configured == 'true'
+        working-directory: infra/e2e
+        run: node report-authoring-e2e.mjs
+        env:
+          BASE_URL: ${{ needs.deploy.outputs.web_url }}
+          API_URL: ${{ needs.deploy.outputs.api_url }}
+
+      - name: Upload live report-authoring screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-report-authoring-screenshots
+          path: infra/e2e/e2e-artifacts/report-authoring/
+          if-no-files-found: ignore
+
       # Reads back every suite's outcome above (each ran regardless of its siblings'
       # results, via continue-on-error) and fails the JOB if any suite failed or crashed —
       # this is what keeps continue-on-error from silently turning the whole gate green.
@@ -334,6 +360,7 @@ jobs:
             [meeting-records]="${{ steps.meeting-records.outcome }}"
             [archive]="${{ steps.archive.outcome }}"
             [ai-drafting]="${{ steps.ai-drafting.outcome }}"
+            [report-authoring]="${{ steps.report-authoring.outcome }}"
           )
           failed=0
           for name in "${!OUTCOMES[@]}"; do
