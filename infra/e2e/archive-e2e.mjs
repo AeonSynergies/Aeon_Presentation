@@ -213,8 +213,14 @@ await page.waitForTimeout(400);
 let recordRows = await page.$$eval("table.team-table tbody tr td:first-child", (els) => els.map((el) => el.textContent));
 check("records: saved record appears before deletion", recordRows.includes(CLIENT_NAME), recordRows.join(", "));
 
-await page.locator("table.team-table tbody tr", { hasText: CLIENT_NAME }).locator(".mini-btn", { hasText: "Delete" }).click();
-await page.waitForTimeout(500);
+await Promise.all([
+  page.waitForResponse((r) => r.url().includes("meeting.archive")),
+  page.locator("table.team-table tbody tr", { hasText: CLIENT_NAME }).locator(".mini-btn", { hasText: "Delete" }).click(),
+]);
+// onDelete awaits utils.meeting.listRecords.invalidate() before clearing pendingId, but that only
+// schedules the refetch — wait for the refetch's own response too, not a fixed timeout, since a
+// blind wait that's fine against a local dev server can race the real network round-trip here.
+await page.waitForResponse((r) => r.url().includes("meeting.listRecords"));
 recordRows = await page.$$eval("table.team-table tbody tr td:first-child", (els) => els.map((el) => el.textContent));
 check("records: deleted record disappears from Meeting Records", !recordRows.includes(CLIENT_NAME), recordRows.join(", "));
 
