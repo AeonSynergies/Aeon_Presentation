@@ -4,7 +4,7 @@ export function HowWeWorkSlide({ deck }: { deck: DeckConfig }) {
   const steps = deck.staticContent.how.steps;
   const nums = ["01", "02", "03"];
   return (
-    <>
+    <div className="dark-slide">
       <div className="eyebrow">
         <span>HOW WE WORK WITH YOUR BUSINESS</span>
       </div>
@@ -21,6 +21,6 @@ export function HowWeWorkSlide({ deck }: { deck: DeckConfig }) {
           </div>
         ))}
       </div>
-    </>
+    </div>
   );
 }

@@ -6,7 +6,7 @@ export function CoverSlide({ deck }: { deck: DeckConfig }) {
   return (
     <div className="cover-wrap">
       <Watermark watermark={deck.watermark} />
-      <DeckLogo logo={deck.logo} className="cover-logo" colors={deck.colors} />
+      <DeckLogo logo={deck.logo} className="cover-logo" colors={deck.colors} onDark />
       <div className="cover-eyebrow">{deck.tagline ? deck.tagline.split(".")[0] : "Expert Back-Office Operations"}</div>
       <h1 className="cover-title">
         <span>{c.title1}</span>

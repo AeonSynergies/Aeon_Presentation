@@ -7,6 +7,7 @@ import { HowWeWorkSlide } from "./slides/HowWeWorkSlide";
 import { PortfolioSlide } from "./slides/PortfolioSlide";
 import { PricingSlide } from "./slides/PricingSlide";
 import { QASlide } from "./slides/QASlide";
+import { ServiceIntroSlide } from "./slides/ServiceIntroSlide";
 import { ServiceReportSlide } from "./slides/ServiceReportSlide";
 import { ServiceSlide } from "./slides/ServiceSlide";
 import { TeamSlide } from "./slides/TeamSlide";
@@ -35,8 +36,13 @@ export function getSlides(deck: DeckConfig, state: SessionState): SlideEntry[] {
     .filter((s) => state.selected.includes(s.id))
     .forEach((s) => {
       svcSlides.push({
-        id: "svc-" + s.id,
+        id: "svc-intro-" + s.id,
         label: s.name.split(" ").slice(0, 2).join(" "),
+        render: () => <ServiceIntroSlide svc={s} />,
+      });
+      svcSlides.push({
+        id: "svc-" + s.id,
+        label: s.name.split(" ").slice(0, 2).join(" ") + " Details",
         render: () => <ServiceSlide deck={deck} svc={s} state={state} />,
       });
       // One nav slide per report — a service can carry several (e.g. Route Performance
