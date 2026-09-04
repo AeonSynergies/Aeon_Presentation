@@ -865,6 +865,8 @@ CURRENT_AZURE_SECRET="$(aws_ apprunner describe-service --service-arn "$API_SERV
   --query 'Service.SourceConfiguration.ImageRepository.ImageConfiguration.RuntimeEnvironmentSecrets.AZURE_CLIENT_SECRET' --output text)"
 CURRENT_E2E_SECRET="$(aws_ apprunner describe-service --service-arn "$API_SERVICE_ARN" \
   --query 'Service.SourceConfiguration.ImageRepository.ImageConfiguration.RuntimeEnvironmentSecrets.E2E_TEST_SECRET' --output text)"
+CURRENT_S3_BUCKET="$(aws_ apprunner describe-service --service-arn "$API_SERVICE_ARN" \
+  --query 'Service.SourceConfiguration.ImageRepository.ImageConfiguration.RuntimeEnvironmentVariables.S3_REPORTS_BUCKET' --output text)"
 NEEDS_ANTHROPIC_UPDATE=false
 if [ "$ANTHROPIC_CONFIGURED" = true ] && { [ "$CURRENT_ANTHROPIC_SECRET" = "None" ] || [ -z "$CURRENT_ANTHROPIC_SECRET" ]; }; then
   NEEDS_ANTHROPIC_UPDATE=true
@@ -880,8 +882,17 @@ NEEDS_E2E_SECRET_UPDATE=false
 if [ "$CURRENT_E2E_SECRET" = "None" ] || [ -z "$CURRENT_E2E_SECRET" ]; then
   NEEDS_E2E_SECRET_UPDATE=true
 fi
-if [ "$CURRENT_WEB_ORIGIN" != "$WEB_URL" ] || [ "$CURRENT_API_ORIGIN" != "$API_URL" ] || [ "$NEEDS_ANTHROPIC_UPDATE" = true ] || [ "$NEEDS_AZURE_UPDATE" = true ] || [ "$NEEDS_E2E_SECRET_UPDATE" = true ]; then
-  log "Updating api service (WEB_ORIGIN/API_ORIGIN and/or newly-added ANTHROPIC_API_KEY/AZURE_*/E2E_TEST_SECRET secrets) and redeploying"
+# Catches an api service that already existed before S3_REPORTS_BUCKET was introduced (or
+# whose bucket name otherwise changed) — without this, a service on an older RuntimeEnvironmentVariables
+# set with WEB_ORIGIN/API_ORIGIN already correct and no new secrets would never take the
+# update-service path below at all, silently leaving S3_REPORTS_BUCKET unset at runtime
+# despite the JSON in this script being correct.
+NEEDS_S3_UPDATE=false
+if [ "$CURRENT_S3_BUCKET" != "$REPORTS_BUCKET" ]; then
+  NEEDS_S3_UPDATE=true
+fi
+if [ "$CURRENT_WEB_ORIGIN" != "$WEB_URL" ] || [ "$CURRENT_API_ORIGIN" != "$API_URL" ] || [ "$NEEDS_ANTHROPIC_UPDATE" = true ] || [ "$NEEDS_AZURE_UPDATE" = true ] || [ "$NEEDS_E2E_SECRET_UPDATE" = true ] || [ "$NEEDS_S3_UPDATE" = true ]; then
+  log "Updating api service (WEB_ORIGIN/API_ORIGIN, S3_REPORTS_BUCKET, and/or newly-added ANTHROPIC_API_KEY/AZURE_*/E2E_TEST_SECRET secrets) and redeploying"
   aws_ apprunner update-service --service-arn "$API_SERVICE_ARN" --source-configuration "{
     \"ImageRepository\": {
       \"ImageIdentifier\": \"${ECR_API_URI}:latest\",
