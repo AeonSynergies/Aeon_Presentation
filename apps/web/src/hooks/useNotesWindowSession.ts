@@ -68,7 +68,7 @@ export function useNotesWindowSession(meetingId: string) {
           patch: {
             selected: state.selected,
             toggles: state.toggles,
-            answers: state.answers as Record<string, string | number | boolean | null>,
+            answers: state.answers as Record<string, string | number | boolean | string[] | null>,
             discount: state.discount,
             clientName: clientName || null,
           },

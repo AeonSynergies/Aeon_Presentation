@@ -21,7 +21,8 @@ export interface MeetingOutcome {
 }
 
 export interface DiscoveryAnswers {
-  [questionId: string]: string | number | boolean | undefined;
+  // string[] backs "multiselect" answers only — every other answer type stores a scalar.
+  [questionId: string]: string | number | boolean | string[] | undefined;
 }
 
 export interface DiscoveryToggles {

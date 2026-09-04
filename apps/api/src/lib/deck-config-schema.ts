@@ -182,7 +182,7 @@ const discoveryQuestionSchema = z.object({
   section: z.enum(["general", "surcharge"]),
   relatedService: z.string().optional(),
   label: z.string().min(1),
-  type: z.enum(["text", "number", "textarea", "select", "toggle", "time"]),
+  type: z.enum(["text", "number", "textarea", "select", "multiselect", "toggle", "date", "email", "phone", "time"]),
   options: z.array(z.string().min(1)).optional(),
   placeholder: z.string().optional(),
   surchargeFor: z.string().optional(),
@@ -310,17 +310,17 @@ export const deckConfigSchema = z
     }
 
     for (const [i, q] of deck.discoveryQuestions.entries()) {
-      if (q.type === "toggle" && (!q.options || q.options.length !== 2)) {
+      if (q.type === "toggle" && (!q.options || q.options.length < 2)) {
         ctx.addIssue({
           code: "custom",
-          message: `Question "${q.label}": toggles need exactly two options (off / on)`,
+          message: `Question "${q.label}": toggles need at least two options`,
           path: ["discoveryQuestions", i, "options"],
         });
       }
-      if (q.type === "select" && (!q.options || q.options.length < 1)) {
+      if ((q.type === "select" || q.type === "multiselect") && (!q.options || q.options.length < 1)) {
         ctx.addIssue({
           code: "custom",
-          message: `Question "${q.label}": selects need at least one option`,
+          message: `Question "${q.label}": ${q.type === "select" ? "selects" : "multi-selects"} need at least one option`,
           path: ["discoveryQuestions", i, "options"],
         });
       }

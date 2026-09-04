@@ -35,7 +35,7 @@ interface MeetingDTO {
   clientName: string | null;
   selected: string[];
   toggles: Record<string, boolean>;
-  answers: Record<string, string | number | boolean | null>;
+  answers: Record<string, string | number | boolean | string[] | null>;
   discount: DiscountConfig;
   meetingOutcome: MeetingOutcome | null;
   completedAt: Date | null;
@@ -76,7 +76,7 @@ function toMeetingDTO(m: {
     clientName: m.clientName,
     selected: m.selected as string[],
     toggles: m.toggles as Record<string, boolean>,
-    answers: m.answers as Record<string, string | number | boolean | null>,
+    answers: m.answers as Record<string, string | number | boolean | string[] | null>,
     discount: m.discount as DiscountConfig,
     meetingOutcome: (m.meetingOutcome as MeetingOutcome | null) ?? null,
     completedAt: m.completedAt,
@@ -118,7 +118,7 @@ function csvCell(v: string): string {
 const stateInput = z.object({
   selected: z.array(z.string()).optional(),
   toggles: z.record(z.string(), z.boolean()).optional(),
-  answers: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()]).nullable()).optional(),
+  answers: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]).nullable()).optional(),
   discount: discountSchema.optional(),
   clientName: z.string().nullable().optional(),
 });
@@ -242,10 +242,15 @@ interface DiscoverySnapshot {
 
 function formatAnswerText(q: DiscoveryQuestion, state: SessionState): string {
   if (q.type === "toggle") {
+    // Prefer the captured option label (QuestionField.tsx sets both) — falls back to the
+    // boolean-derived index for a meeting saved before toggle answers were captured this way.
+    const answerVal = state.answers[q.id];
+    if (typeof answerVal === "string" && answerVal !== "") return answerVal;
     const value = !!state.toggles[q.id];
     return q.options?.[value ? 1 : 0] ?? (value ? "Yes" : "No");
   }
   const raw = state.answers[q.id];
+  if (Array.isArray(raw)) return raw.length ? raw.join(", ") : "(not answered)";
   return raw === undefined || raw === null || raw === "" ? "(not answered)" : String(raw);
 }
 

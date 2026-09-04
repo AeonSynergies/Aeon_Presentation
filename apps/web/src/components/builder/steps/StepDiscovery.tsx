@@ -19,13 +19,16 @@ const TYPE_OPTIONS: Array<{ value: DiscoveryQuestion["type"]; label: string }> =
   { value: "number", label: "Number" },
   { value: "textarea", label: "Long text" },
   { value: "select", label: "Select (dropdown)" },
-  { value: "toggle", label: "Toggle (two options)" },
+  { value: "multiselect", label: "Multiple select (choose several)" },
+  { value: "toggle", label: "Toggle (choose one)" },
+  { value: "date", label: "Date" },
+  { value: "email", label: "Email" },
+  { value: "phone", label: "Phone" },
   { value: "time", label: "Time" },
 ];
 
 function QuestionEditor({ deck, qIdx, update }: { deck: DeckConfig; qIdx: number; update: UpdateDraft }) {
   const q = deck.discoveryQuestions[qIdx];
-  const needsOptions = q.type === "select" || q.type === "toggle";
 
   return (
     <div className="builder-subcard">
@@ -47,8 +50,9 @@ function QuestionEditor({ deck, qIdx, update }: { deck: DeckConfig; qIdx: number
               update((d) => {
                 const question = d.discoveryQuestions[qIdx];
                 question.type = e.target.value as DiscoveryQuestion["type"];
-                if (question.type === "toggle") question.options = ["No", "Yes"];
-                else if (question.type === "select") question.options = question.options?.length ? question.options : ["Option 1"];
+                if (question.type === "toggle") question.options = question.options?.length ? question.options : ["No", "Yes"];
+                else if (question.type === "select" || question.type === "multiselect")
+                  question.options = question.options?.length ? question.options : ["Option 1"];
                 else delete question.options;
               })
             }
@@ -80,25 +84,12 @@ function QuestionEditor({ deck, qIdx, update }: { deck: DeckConfig; qIdx: number
           </select>
         </Field>
       </Row>
-      {q.type === "toggle" && (
-        <Row>
-          <TextField
-            label="“Off” option"
-            value={q.options?.[0] || ""}
-            onChange={(v) => update((d) => void (d.discoveryQuestions[qIdx].options![0] = v))}
-          />
-          <TextField
-            label="“On” option"
-            value={q.options?.[1] || ""}
-            onChange={(v) => update((d) => void (d.discoveryQuestions[qIdx].options![1] = v))}
-          />
-        </Row>
-      )}
-      {q.type === "select" && (
+      {(q.type === "toggle" || q.type === "select" || q.type === "multiselect") && (
         <StringListEditor
           label="Options"
           items={q.options || []}
           addLabel="Add option"
+          hint={q.type === "toggle" ? "Shown as a row of buttons in Discovery Notes — the client picks one." : undefined}
           onChange={(items) => update((d) => void (d.discoveryQuestions[qIdx].options = items))}
         />
       )}

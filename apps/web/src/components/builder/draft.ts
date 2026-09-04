@@ -126,10 +126,10 @@ export function validateDraft(deck: DeckConfig): string[] {
   if (!sc.cover.title1.trim() || !sc.cover.title2.trim()) issues.push("Content: cover needs both title lines.");
   for (const q of deck.discoveryQuestions) {
     if (!q.label.trim()) issues.push("Discovery: a question is missing its label.");
-    if (q.type === "toggle" && (q.options?.filter((o) => o.trim()).length ?? 0) !== 2)
-      issues.push(`Discovery: toggle "${q.label || q.id}" needs exactly two options.`);
-    if (q.type === "select" && (q.options?.filter((o) => o.trim()).length ?? 0) < 1)
-      issues.push(`Discovery: select "${q.label || q.id}" needs at least one option.`);
+    if (q.type === "toggle" && (q.options?.filter((o) => o.trim()).length ?? 0) < 2)
+      issues.push(`Discovery: toggle "${q.label || q.id}" needs at least two options.`);
+    if ((q.type === "select" || q.type === "multiselect") && (q.options?.filter((o) => o.trim()).length ?? 0) < 1)
+      issues.push(`Discovery: ${q.type === "select" ? "select" : "multi-select"} "${q.label || q.id}" needs at least one option.`);
   }
   return issues;
 }

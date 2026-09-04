@@ -386,7 +386,11 @@ export type DiscoveryQuestionType =
   | "number"
   | "textarea"
   | "select"
+  | "multiselect"
   | "toggle"
+  | "date"
+  | "email"
+  | "phone"
   | "time";
 
 export type DiscoveryQuestionSection = "general" | "surcharge";

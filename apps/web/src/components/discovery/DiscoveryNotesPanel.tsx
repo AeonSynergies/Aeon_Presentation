@@ -18,7 +18,7 @@ interface Props {
 export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClientName }: Props) {
   const questions = deck.discoveryQuestions;
 
-  const setAnswer = (id: string, value: string | number | null) => {
+  const setAnswer = (id: string, value: string | number | string[] | null) => {
     setState((prev) => ({ ...prev, answers: { ...prev.answers, [id]: value ?? undefined } }));
   };
   const setToggle = (id: string, value: boolean) => {
