@@ -1,5 +1,5 @@
 import type { DeckConfig } from "@aeon/types";
-import { allIdsInUse, blankPricingModel, idFromName } from "../draft";
+import { allIdsInUse, blankBundleTier, blankCategoryDiscount, blankPricingModel, idFromName } from "../draft";
 import { Field, MiniBtn, Row, TextField } from "../fields";
 import type { UpdateDraft } from "./StepBasics";
 
@@ -40,6 +40,25 @@ export function StepPricingModel({
     });
 
   const usedByCount = (id: string) => deck.services.filter((s) => s.pricingModelId === id).length;
+
+  const categoryDiscounts = deck.discountRules?.categoryDiscounts ?? [];
+  const bundleTiers = deck.discountRules?.bundleTiers ?? [];
+
+  const addCategoryDiscount = () => {
+    const id = idFromName("category discount", categoryDiscounts.map((c) => c.id), `category${categoryDiscounts.length + 1}`);
+    update((d) => {
+      (d.discountRules ??= { categoryDiscounts: [], bundleTiers: [] }).categoryDiscounts.push(blankCategoryDiscount(id));
+    });
+  };
+  const removeCategoryDiscount = (id: string) =>
+    update((d) => void (d.discountRules && (d.discountRules.categoryDiscounts = d.discountRules.categoryDiscounts.filter((c) => c.id !== id))));
+
+  const addBundleTier = () =>
+    update((d) => {
+      (d.discountRules ??= { categoryDiscounts: [], bundleTiers: [] }).bundleTiers.push(blankBundleTier());
+    });
+  const removeBundleTier = (idx: number) =>
+    update((d) => void (d.discountRules && d.discountRules.bundleTiers.splice(idx, 1)));
 
   return (
     <>
@@ -107,6 +126,94 @@ export function StepPricingModel({
         );
       })}
       <MiniBtn onClick={addModel}>＋ Add pricing model</MiniBtn>
+
+      <div className="tier-heading" style={{ marginTop: 22 }}>
+        DISCOUNT RULES (optional)
+      </div>
+      <p className="builder-step-intro">
+        Pre-decided, so a presenter never has to guess a number live on a call. A category discount is marked applicable by the presenter
+        during a call; a bundle tier applies automatically based on how many services are currently selected — the highest tier the count
+        still qualifies for wins. Either just pre-fills the discount control in Discovery Notes — the presenter can still turn it off or
+        adjust it manually at any point.
+      </p>
+
+      <div className="builder-subcard-head">
+        <span>CATEGORY DISCOUNTS</span>
+      </div>
+      {categoryDiscounts.map((c, ci) => (
+        <div className="builder-subcard" key={c.id}>
+          <div className="builder-subcard-head">
+            <span>
+              CATEGORY DISCOUNT <span className="builder-svc-id">· {c.id}</span>
+            </span>
+            <MiniBtn danger onClick={() => removeCategoryDiscount(c.id)}>
+              ✕ Remove
+            </MiniBtn>
+          </div>
+          <Row>
+            <TextField
+              label="Label"
+              value={c.label}
+              placeholder="e.g. Women-owned DSPs"
+              onChange={(v) => update((d) => void (d.discountRules!.categoryDiscounts[ci].label = v))}
+            />
+            <Field label="Type">
+              <select value={c.type} onChange={(e) => update((d) => void (d.discountRules!.categoryDiscounts[ci].type = e.target.value as "percent" | "flat"))}>
+                <option value="percent">Percent off</option>
+                <option value="flat">Flat $ off</option>
+              </select>
+            </Field>
+            <Field label={c.type === "percent" ? "Percent" : "Amount ($)"}>
+              <input
+                type="number"
+                min={0}
+                value={c.value}
+                onChange={(e) => update((d) => void (d.discountRules!.categoryDiscounts[ci].value = Number(e.target.value) || 0))}
+              />
+            </Field>
+          </Row>
+        </div>
+      ))}
+      <MiniBtn onClick={addCategoryDiscount}>＋ Add category discount</MiniBtn>
+
+      <div className="builder-subcard-head" style={{ marginTop: 18 }}>
+        <span>BUNDLE TIERS</span>
+      </div>
+      {bundleTiers.map((t, ti) => (
+        <div className="builder-subcard" key={ti}>
+          <div className="builder-subcard-head">
+            <span>BUNDLE TIER</span>
+            <MiniBtn danger onClick={() => removeBundleTier(ti)}>
+              ✕ Remove
+            </MiniBtn>
+          </div>
+          <Row>
+            <Field label="Services selected (at least)">
+              <input
+                type="number"
+                min={1}
+                value={t.minServices}
+                onChange={(e) => update((d) => void (d.discountRules!.bundleTiers[ti].minServices = Number(e.target.value) || 1))}
+              />
+            </Field>
+            <Field label="Type">
+              <select value={t.type} onChange={(e) => update((d) => void (d.discountRules!.bundleTiers[ti].type = e.target.value as "percent" | "flat"))}>
+                <option value="percent">Percent off</option>
+                <option value="flat">Flat $ off</option>
+              </select>
+            </Field>
+            <Field label={t.type === "percent" ? "Percent" : "Amount ($)"}>
+              <input
+                type="number"
+                min={0}
+                value={t.value}
+                onChange={(e) => update((d) => void (d.discountRules!.bundleTiers[ti].value = Number(e.target.value) || 0))}
+              />
+            </Field>
+          </Row>
+        </div>
+      ))}
+      <MiniBtn onClick={addBundleTier}>＋ Add bundle tier</MiniBtn>
     </>
   );
 }

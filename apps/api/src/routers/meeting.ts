@@ -91,6 +91,11 @@ const discountSchema = z.object({
   services: z.array(z.string()),
   type: z.enum(["percent", "flat"]),
   value: z.number(),
+  // Whether this still reflects an untouched pre-decided-rule suggestion (computeAutoDiscount,
+  // @aeon/types) rather than a manual edit, and which category rules are currently marked
+  // applicable — see DiscountConfig (packages/types/src/session.ts).
+  auto: z.boolean(),
+  appliedCategoryDiscounts: z.array(z.string()),
 });
 
 // Rebuilds the pricing engine's SessionState shape from a persisted Meeting row — the

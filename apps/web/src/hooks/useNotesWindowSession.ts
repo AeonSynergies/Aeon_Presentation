@@ -14,7 +14,7 @@ const EMPTY_STATE: SessionState = {
   selected: [],
   toggles: {},
   answers: {},
-  discount: { enabled: false, scope: "all", services: [], type: "percent", value: 0 },
+  discount: { enabled: false, scope: "all", services: [], type: "percent", value: 0, auto: true, appliedCategoryDiscounts: [] },
 };
 
 /** The popped-out Discovery Notes window's session (see DeckPlayer's Present-mode

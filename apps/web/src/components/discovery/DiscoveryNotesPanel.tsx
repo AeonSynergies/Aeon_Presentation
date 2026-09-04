@@ -1,5 +1,5 @@
-import type { DeckConfig, SessionState } from "@aeon/types";
-import { groupQuestionsByService, visibleGeneralQuestions, visibleServiceQuestions } from "@aeon/types";
+import type { DeckConfig, DiscountConfig, SessionState } from "@aeon/types";
+import { computeAutoDiscount, groupQuestionsByService, visibleGeneralQuestions, visibleServiceQuestions } from "@aeon/types";
 import * as React from "react";
 import { QuestionField } from "./QuestionField";
 
@@ -25,13 +25,63 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
     setState((prev) => ({ ...prev, toggles: { ...prev.toggles, [id]: value } }));
   };
   const toggleService = (id: string) => {
-    setState((prev) => ({
-      ...prev,
-      selected: prev.selected.includes(id) ? prev.selected.filter((s) => s !== id) : [...prev.selected, id],
-    }));
+    setState((prev) => {
+      const selected = prev.selected.includes(id) ? prev.selected.filter((s) => s !== id) : [...prev.selected, id];
+      return {
+        ...prev,
+        selected,
+        discount: prev.discount.auto
+          ? computeAutoDiscount(deck.services, deck.discountRules, selected, prev.discount.appliedCategoryDiscounts)
+          : prev.discount,
+      };
+    });
   };
   const setModelValue = (modelId: string, v: string) => {
     setState((prev) => ({ ...prev, answers: { ...prev.answers, [modelId]: v === "" ? undefined : v } }));
+  };
+
+  // Manual discount editing: any direct field edit sets auto:false, freezing the value
+  // until the presenter re-triggers a rule (checks a category box) or hits "use recommended".
+  const setDiscount = (patch: Partial<DiscountConfig>) => {
+    setState((prev) => ({ ...prev, discount: { ...prev.discount, ...patch, auto: false } }));
+  };
+  const setScope = (scope: DiscountConfig["scope"]) => {
+    setState((prev) => ({
+      ...prev,
+      discount: {
+        ...prev.discount,
+        scope,
+        services: scope === "all" ? [] : prev.discount.services,
+        auto: false,
+      },
+    }));
+  };
+  const toggleDiscountService = (id: string) => {
+    setState((prev) => {
+      const services = prev.discount.services.includes(id)
+        ? prev.discount.services.filter((s) => s !== id)
+        : [...prev.discount.services, id];
+      return { ...prev, discount: { ...prev.discount, services, auto: false } };
+    });
+  };
+  const toggleCategoryDiscount = (id: string) => {
+    setState((prev) => {
+      const appliedCategoryDiscounts = prev.discount.appliedCategoryDiscounts.includes(id)
+        ? prev.discount.appliedCategoryDiscounts.filter((c) => c !== id)
+        : [...prev.discount.appliedCategoryDiscounts, id];
+      return {
+        ...prev,
+        discount: {
+          ...computeAutoDiscount(deck.services, deck.discountRules, prev.selected, appliedCategoryDiscounts),
+        },
+      };
+    });
+  };
+  const useRecommendedDiscount = () => {
+    setState((prev) => ({
+      ...prev,
+      discount: computeAutoDiscount(deck.services, deck.discountRules, prev.selected, prev.discount.appliedCategoryDiscounts),
+    }));
   };
 
   const generalQs = visibleGeneralQuestions(questions, state);
@@ -96,6 +146,112 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
               );
             })}
           </div>
+        </div>
+
+        {deck.discountRules && (deck.discountRules.categoryDiscounts.length > 0 || deck.discountRules.bundleTiers.length > 0) && (
+          <div className="q-block">
+            <span className="q-num">PRE-DECIDED DISCOUNTS</span>
+            <div className="q-label">Mark a category discount as applicable, or let the bundle tier apply automatically</div>
+            {deck.discountRules.categoryDiscounts.length > 0 && (
+              <div className="chip-grid">
+                {deck.discountRules.categoryDiscounts.map((c) => {
+                  const applied = state.discount.appliedCategoryDiscounts.includes(c.id);
+                  return (
+                    <label className={`chip ${applied ? "selected" : ""}`} key={c.id}>
+                      <input type="checkbox" checked={applied} onChange={() => toggleCategoryDiscount(c.id)} />
+                      {c.label} ({c.type === "percent" ? `${c.value}%` : `$${c.value}`})
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            {deck.discountRules.bundleTiers.length > 0 && (
+              <div className="q-hint">
+                Bundle tiers:{" "}
+                {[...deck.discountRules.bundleTiers]
+                  .sort((a, b) => a.minServices - b.minServices)
+                  .map((t) => `${t.minServices}+ services = ${t.type === "percent" ? `${t.value}%` : `$${t.value}`}`)
+                  .join(" · ")}
+                . Currently {state.selected.length} selected.
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="q-block">
+          <span className="q-num">MANUAL · IN-CALL OVERRIDE</span>
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={state.discount.enabled}
+              onChange={(e) => setDiscount({ enabled: e.target.checked })}
+            />
+            Apply a discount
+          </label>
+          {state.discount.enabled && (
+            <>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <div>
+                  <div className="q-label">Scope</div>
+                  <select value={state.discount.scope} onChange={(e) => setScope(e.target.value as DiscountConfig["scope"])}>
+                    <option value="all">All services</option>
+                    <option value="multiple">Multiple services</option>
+                    <option value="single">Single service</option>
+                  </select>
+                </div>
+                <div>
+                  <div className="q-label">Type</div>
+                  <select value={state.discount.type} onChange={(e) => setDiscount({ type: e.target.value as DiscountConfig["type"] })}>
+                    <option value="percent">Percent off</option>
+                    <option value="flat">Flat $ off</option>
+                  </select>
+                </div>
+                <div>
+                  <div className="q-label">{state.discount.type === "percent" ? "Percent" : "Amount ($)"}</div>
+                  <input
+                    type="number"
+                    min={0}
+                    value={state.discount.value}
+                    onChange={(e) => setDiscount({ value: Number(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+              {state.discount.scope === "single" && (
+                <select
+                  value={state.discount.services[0] ?? ""}
+                  onChange={(e) => setDiscount({ services: e.target.value ? [e.target.value] : [] })}
+                >
+                  <option value="">— choose a service —</option>
+                  {deck.services.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {state.discount.scope === "multiple" && (
+                <div className="chip-grid">
+                  {deck.services.map((s) => {
+                    const on = state.discount.services.includes(s.id);
+                    return (
+                      <label className={`chip ${on ? "selected" : ""}`} key={s.id}>
+                        <input type="checkbox" checked={on} onChange={() => toggleDiscountService(s.id)} />
+                        {s.name}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+          {!state.discount.auto && deck.discountRules && (
+            <div className="q-hint">
+              Manually overridden.{" "}
+              <button type="button" className="mini-btn" onClick={useRecommendedDiscount}>
+                Use recommended
+              </button>
+            </div>
+          )}
         </div>
 
         <hr className="section-divider" />

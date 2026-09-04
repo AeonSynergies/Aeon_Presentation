@@ -18,6 +18,8 @@ export function StepReview({
   const tier2 = deck.discoveryQuestions.filter((q) => !q.relatedService && !q.surchargeFor).length;
   const tier3 = deck.discoveryQuestions.length - tier2;
   const surcharges = deck.services.filter((s) => s.surcharge).length;
+  const categoryDiscounts = deck.discountRules?.categoryDiscounts.length ?? 0;
+  const bundleTiers = deck.discountRules?.bundleTiers.length ?? 0;
 
   return (
     <>
@@ -48,6 +50,12 @@ export function StepReview({
           <li>
             Discovery: {tier2} general question{tier2 === 1 ? "" : "s"}, {tier3} service-mapped
           </li>
+          {(categoryDiscounts > 0 || bundleTiers > 0) && (
+            <li>
+              Discount rules: {categoryDiscounts} category discount{categoryDiscounts === 1 ? "" : "s"}, {bundleTiers} bundle tier
+              {bundleTiers === 1 ? "" : "s"}
+            </li>
+          )}
         </ul>
       </div>
 
