@@ -527,12 +527,29 @@ REPORTS_BUCKET="${PROJECT}-reports-${ACCOUNT_ID}"
 if aws_ s3api head-bucket --bucket "$REPORTS_BUCKET" >/dev/null 2>&1; then
   log "S3 bucket $REPORTS_BUCKET already exists"
 else
-  log "Creating S3 bucket $REPORTS_BUCKET"
+  # head-bucket can fail with AccessDenied even for a bucket this account already owns: S3
+  # authorizes HeadBucket against the s3:ListBucket permission, not s3:HeadBucket, so a
+  # policy granting exactly "HeadBucket" (as this account's deploy policy does) 403s here
+  # every run after the first. Don't trust that as "doesn't exist" — fall through to
+  # create-bucket and treat its own BucketAlreadyOwnedByYou as the real idempotency check.
+  log "Creating S3 bucket $REPORTS_BUCKET (or confirming we already own it, if head-bucket was denied)"
+  CREATE_BUCKET_ERR="$(mktemp)"
+  CREATE_BUCKET_OK=true
   if [ "$REGION" = "us-east-1" ]; then
-    aws_ s3api create-bucket --bucket "$REPORTS_BUCKET" >/dev/null
+    aws_ s3api create-bucket --bucket "$REPORTS_BUCKET" >/dev/null 2>"$CREATE_BUCKET_ERR" || CREATE_BUCKET_OK=false
   else
-    aws_ s3api create-bucket --bucket "$REPORTS_BUCKET" --create-bucket-configuration "LocationConstraint=${REGION}" >/dev/null
+    aws_ s3api create-bucket --bucket "$REPORTS_BUCKET" --create-bucket-configuration "LocationConstraint=${REGION}" >/dev/null 2>"$CREATE_BUCKET_ERR" || CREATE_BUCKET_OK=false
   fi
+  if [ "$CREATE_BUCKET_OK" = false ]; then
+    if grep -q "BucketAlreadyOwnedByYou" "$CREATE_BUCKET_ERR"; then
+      log "S3 bucket $REPORTS_BUCKET already exists (head-bucket just couldn't confirm it)"
+    else
+      cat "$CREATE_BUCKET_ERR" >&2
+      rm -f "$CREATE_BUCKET_ERR"
+      exit 1
+    fi
+  fi
+  rm -f "$CREATE_BUCKET_ERR"
 fi
 aws_ s3api put-public-access-block --bucket "$REPORTS_BUCKET" --public-access-block-configuration \
   BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=false,RestrictPublicBuckets=false >/dev/null
