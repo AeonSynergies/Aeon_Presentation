@@ -293,8 +293,13 @@ await section("live deck: open QA Authoring Service's Sample slide", async () =>
   check("live deck: AI-generated report rendered as a sandboxed iframe", (await iframe.count()) === 1);
   const sandboxAttr = await iframe.getAttribute("sandbox");
   check("live deck: iframe has NO allow-scripts (defense against injected script)", sandboxAttr !== null && !sandboxAttr.includes("allow-scripts"), String(sandboxAttr));
-  const iframeHtmlLength = await iframe.evaluate((el) => el.contentDocument?.body?.innerHTML?.length ?? 0);
-  check("live deck: iframe actually contains real generated markup (not empty)", iframeHtmlLength > 40, String(iframeHtmlLength));
+  // sandbox="" (no allow-same-origin) deliberately makes the iframe an opaque cross-origin
+  // frame, so el.contentDocument is null from in-page JS no matter how much real content is
+  // inside — that's the browser enforcing the sandbox, not evidence of an empty iframe.
+  // frameLocator drives the browser engine directly (like the rest of Playwright), so it can
+  // still see inside a sandboxed frame without needing allow-same-origin.
+  const iframeBodyHtml = await page.frameLocator("iframe.report-custom-html").locator("body").innerHTML().catch(() => "");
+  check("live deck: iframe actually contains real generated markup (not empty)", iframeBodyHtml.length > 40, String(iframeBodyHtml.length));
   // The direct "not template-constrained" check: none of Templates A/B/C's own markup
   // appears anywhere on this slide outside the sandboxed iframe — the AI report is
   // genuinely its own thing, not a relabeled bar-highlights/particulars/operational table.
@@ -350,7 +355,12 @@ await section("remove: deleting one of the newly-added reports actually removes 
   await page.goto(`${BASE}/decks/${deckSlug}`, { waitUntil: "networkidle" });
   await page.waitForSelector(".routebar .stop", { timeout: 15000 });
   const labels = await page.$$eval(".routebar .stop", (els) => els.map((el) => el.getAttribute("aria-label")));
-  const label = labels.find((l) => l && l.startsWith("Sample: QA Authoring"));
+  // With only the uploaded-image report left, getSlides.tsx titles a single-report Sample
+  // slide after that report's own title ("Sample: qa-report") rather than the service name
+  // ("Sample: QA Authoring...") — that naming only kicks in once a service has 2+ reports.
+  // Match either so this doesn't silently fail to find (and click) the slide.
+  const label = labels.find((l) => l && l.startsWith("Sample:") && !l.startsWith("Sample: QA Overflow"));
+  check("remove: a Sample slide still exists for the kept report", !!label, JSON.stringify(labels));
   await clickLabel(label);
   check("remove: the removed AI report no longer renders live", (await page.locator("iframe.report-custom-html").count()) === 0);
   check("remove: the kept uploaded image still renders live", (await page.locator(".report-uploaded-image img").count()) === 1);
