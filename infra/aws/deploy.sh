@@ -568,6 +568,28 @@ EOF
 )
 aws_ s3api put-bucket-policy --bucket "$REPORTS_BUCKET" --policy "$REPORTS_BUCKET_POLICY" >/dev/null
 
+# The browser uploads straight to this bucket via a presigned PUT (apps/web's
+# StepServices.tsx), cross-origin from whichever App Runner URL the web service is
+# running at. A PUT with a Content-Type header isn't a CORS "simple request," so without a
+# CORS configuration the browser's preflight OPTIONS never gets an allow response and the
+# PUT never leaves the browser — surfacing as a bare "Failed to fetch" with no HTTP status
+# at all, not a permissions error. Wildcard origin is fine here: unlike the bucket policy
+# above (which grants public GET to anyone), authority to WRITE still comes entirely from
+# possessing a real, short-lived presigned URL — CORS only decides which pages' JS may
+# make the request, not whether S3 accepts it.
+REPORTS_BUCKET_CORS=$(cat <<EOF
+{
+  "CORSRules": [{
+    "AllowedOrigins": ["*"],
+    "AllowedMethods": ["PUT", "GET", "HEAD"],
+    "AllowedHeaders": ["*"],
+    "MaxAgeSeconds": 3000
+  }]
+}
+EOF
+)
+aws_ s3api put-bucket-cors --bucket "$REPORTS_BUCKET" --cors-configuration "$REPORTS_BUCKET_CORS" >/dev/null
+
 # ============================================================
 # IAM roles for App Runner
 # ============================================================

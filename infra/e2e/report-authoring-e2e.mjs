@@ -160,6 +160,20 @@ const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePa
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
 page.on("pageerror", (e) => console.log("PAGE ERROR:", e.message));
 
+// The presigned S3 upload is a cross-origin PUT the browser can reject entirely (a CORS
+// preflight failure, a blocked mixed-content request, ...) without ever producing an HTTP
+// status code — fetch() surfaces that as a bare "Failed to fetch" with no other detail. A
+// plain thrown-error message from a timed-out waitForSelector doesn't distinguish that from
+// any other kind of failure, so capture the browser's own console/network signal directly
+// (see "wizard: upload a real image straight to S3" below) rather than guessing from a
+// wrapped exception.
+const consoleErrors = [];
+page.on("console", (msg) => {
+  if (msg.type() === "error") consoleErrors.push(msg.text());
+});
+const failedRequests = [];
+page.on("requestfailed", (req) => failedRequests.push(`${req.method()} ${req.url()} -> ${req.failure()?.errorText ?? "unknown"}`));
+
 async function login() {
   await page.goto(`${BASE}/login`, { waitUntil: "networkidle" });
   await page.fill('input[type="email"]', EMAIL);
@@ -207,9 +221,20 @@ const svcCard = () => form().locator(".builder-svc-card", { hasText: "QA Authori
 const TEST_PNG = makeSolidPng(300, 150, [12, 123, 130]);
 
 await section("wizard: upload a real image straight to S3", async () => {
+  const consoleBefore = consoleErrors.length;
+  const failedBefore = failedRequests.length;
   const fileInput = svcCard().locator('input[type="file"][accept*="image/png"]').first();
   await fileInput.setInputFiles({ name: "qa-report.png", mimeType: "image/png", buffer: TEST_PNG });
-  await page.waitForSelector('.builder-report-note:has-text("uploaded-image")', { timeout: 20000 });
+  try {
+    await page.waitForSelector('.builder-report-note:has-text("uploaded-image")', { timeout: 20000 });
+  } catch {
+    // Surface what the browser itself saw for the S3 request (a CORS preflight rejection,
+    // a blocked mixed-content request, ...) instead of just "waitForSelector timed out" —
+    // see the console/requestfailed listeners set up above.
+    const diagnostics = [...failedRequests.slice(failedBefore), ...consoleErrors.slice(consoleBefore)].filter((m) => /amazonaws\.com|cors/i.test(m));
+    const errText = await svcCard().locator(".builder-ai-error").innerText().catch(() => "");
+    throw new Error(diagnostics.length ? diagnostics.join(" | ") : errText || "upload never completed and no diagnostic was captured");
+  }
   check("wizard: uploaded image appears in the report list", (await svcCard().locator(".builder-report-note", { hasText: "uploaded-image" }).count()) === 1);
   const errText = await svcCard().locator(".builder-ai-error").innerText().catch(() => "");
   check("wizard: upload produced no error banner", errText === "", errText);
@@ -225,7 +250,10 @@ await section("wizard: generate a real custom report from a description", async 
   ]);
   await page.waitForSelector('.builder-report-note:has-text("custom-html")', { timeout: 5000 });
   check("wizard: AI-generated report appears in the report list", (await svcCard().locator(".builder-report-note", { hasText: "custom-html" }).count()) === 1);
-  const errText = await svcCard().locator(".builder-ai-error").innerText().catch(() => "");
+  // Scoped to the AI panel specifically (.builder-subcard) — the upload button above has its
+  // own, unrelated .builder-ai-error banner (uploadError vs aiError, StepServices.tsx), and a
+  // leftover upload failure from the check above must not get misattributed to AI generation.
+  const errText = await svcCard().locator(".builder-subcard .builder-ai-error").innerText().catch(() => "");
   check("wizard: AI generation produced no error banner", errText === "", errText);
 });
 
