@@ -190,6 +190,28 @@ const discoveryQuestionSchema = z.object({
   dependsOn: z.object({ questionId: z.string().min(1), value: z.union([z.boolean(), z.string()]) }).optional(),
 });
 
+// Pre-decided discounts (Pricing Model step) — these only ever suggest/pre-populate a live
+// session's DiscountConfig (see computeAutoDiscount, @aeon/types); cross-field checks
+// (duplicate ids, bad thresholds) live in the top-level superRefine below, alongside every
+// other id/reference check.
+const categoryDiscountRuleSchema = z.object({
+  id: z.string().regex(idPattern, "Category discount ids must start with a letter and use only letters, digits, - or _"),
+  label: z.string().min(1),
+  type: z.enum(["percent", "flat"]),
+  value: z.number().positive(),
+});
+
+const bundleDiscountTierSchema = z.object({
+  minServices: z.number().int().positive(),
+  type: z.enum(["percent", "flat"]),
+  value: z.number().positive(),
+});
+
+const discountRulesSchema = z.object({
+  categoryDiscounts: z.array(categoryDiscountRuleSchema),
+  bundleTiers: z.array(bundleDiscountTierSchema),
+});
+
 export const deckConfigSchema = z
   .object({
     // id is assigned server-side from the generated slug; anything the client sends here
@@ -207,6 +229,7 @@ export const deckConfigSchema = z
     team: z.array(teamMemberSchema).min(1, "A deck needs at least one team member"),
     staticContent: staticContentSchema,
     discoveryQuestions: z.array(discoveryQuestionSchema),
+    discountRules: discountRulesSchema.optional(),
   })
   .superRefine((deck, ctx) => {
     const modelIds = new Set<string>();
@@ -353,6 +376,41 @@ export const deckConfigSchema = z
           message: `Question "${q.label}": dependsOn references question "${q.dependsOn.questionId}" which doesn't exist`,
           path: ["discoveryQuestions", i, "dependsOn"],
         });
+      }
+    }
+
+    if (deck.discountRules) {
+      const categoryIds = new Set<string>();
+      for (const [i, c] of deck.discountRules.categoryDiscounts.entries()) {
+        if (categoryIds.has(c.id)) {
+          ctx.addIssue({ code: "custom", message: `Duplicate category discount id "${c.id}"`, path: ["discountRules", "categoryDiscounts", i] });
+        }
+        categoryIds.add(c.id);
+        if (c.type === "percent" && c.value > 100) {
+          ctx.addIssue({
+            code: "custom",
+            message: `Category discount "${c.label}": a percent discount can't exceed 100`,
+            path: ["discountRules", "categoryDiscounts", i, "value"],
+          });
+        }
+      }
+      const seenThresholds = new Set<number>();
+      for (const [i, t] of deck.discountRules.bundleTiers.entries()) {
+        if (seenThresholds.has(t.minServices)) {
+          ctx.addIssue({
+            code: "custom",
+            message: `Duplicate bundle tier threshold "${t.minServices} services"`,
+            path: ["discountRules", "bundleTiers", i],
+          });
+        }
+        seenThresholds.add(t.minServices);
+        if (t.type === "percent" && t.value > 100) {
+          ctx.addIssue({
+            code: "custom",
+            message: `Bundle tier at ${t.minServices} services: a percent discount can't exceed 100`,
+            path: ["discountRules", "bundleTiers", i, "value"],
+          });
+        }
       }
     }
   });

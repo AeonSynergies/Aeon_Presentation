@@ -1,4 +1,5 @@
 import type { DeckConfig, SessionState } from "@aeon/types";
+import { computeAutoDiscount } from "@aeon/types";
 import * as React from "react";
 import { deckColorVars } from "~/components/deck/deckColors";
 import { getSlides } from "~/components/deck/getSlides";
@@ -21,7 +22,7 @@ function initialPreviewState(deck: DeckConfig): SessionState {
     selected: deck.services.map((s) => s.id),
     toggles: {},
     answers,
-    discount: { enabled: false, scope: "all", services: deck.services.map((s) => s.id), type: "percent", value: 0 },
+    discount: computeAutoDiscount(deck.services, deck.discountRules, deck.services.map((s) => s.id), []),
   };
 }
 
@@ -53,7 +54,13 @@ export function WizardPreview({
       for (const m of deck.pricingModels) {
         if (answers[m.id] === undefined || answers[m.id] === null) answers[m.id] = 20;
       }
-      return { ...prev, selected, answers };
+      // Recompute only while still on the (untouched) auto suggestion — this also keeps the
+      // preview reacting live to discountRules being edited on the Pricing Model step, not
+      // just to services being added/removed.
+      const discount = prev.discount.auto
+        ? computeAutoDiscount(deck.services, deck.discountRules, selected, prev.discount.appliedCategoryDiscounts)
+        : prev.discount;
+      return { ...prev, selected, answers, discount };
     });
     knownSvcIds.current = current;
   }, [deck]);

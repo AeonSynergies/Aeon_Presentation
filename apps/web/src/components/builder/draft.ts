@@ -1,4 +1,4 @@
-import type { DeckConfig, DeckService, DiscoveryQuestion, PricingModel } from "@aeon/types";
+import type { BundleDiscountTier, CategoryDiscountRule, DeckConfig, DeckService, DiscoveryQuestion, PricingModel } from "@aeon/types";
 
 // Blank-slate template for the Deck Builder. Field defaults mirror the prototype's
 // newBuilderDraft() (colors #E3A147/#3FBFB0, "The Expert Team Behind" cover, the
@@ -87,6 +87,14 @@ export function blankQuestion(id: string): DiscoveryQuestion {
   return { id, section: "general", label: "", type: "text" };
 }
 
+export function blankCategoryDiscount(id: string): CategoryDiscountRule {
+  return { id, label: "", type: "percent", value: 10 };
+}
+
+export function blankBundleTier(): BundleDiscountTier {
+  return { minServices: 2, type: "percent", value: 5 };
+}
+
 /** Client-side mirror of the server's key deck.create checks, so the Review step can
  * point at problems before the round trip. The server re-validates regardless. */
 export function validateDraft(deck: DeckConfig): string[] {
@@ -130,6 +138,23 @@ export function validateDraft(deck: DeckConfig): string[] {
       issues.push(`Discovery: toggle "${q.label || q.id}" needs at least two options.`);
     if ((q.type === "select" || q.type === "multiselect") && (q.options?.filter((o) => o.trim()).length ?? 0) < 1)
       issues.push(`Discovery: ${q.type === "select" ? "select" : "multi-select"} "${q.label || q.id}" needs at least one option.`);
+  }
+  if (deck.discountRules) {
+    const categoryIds = new Set<string>();
+    for (const c of deck.discountRules.categoryDiscounts) {
+      if (!c.label.trim()) issues.push("Discount rules: a category discount is missing its label.");
+      if (categoryIds.has(c.id)) issues.push(`Discount rules: duplicate category discount id "${c.id}".`);
+      categoryIds.add(c.id);
+      if (c.type === "percent" && c.value > 100) issues.push(`Discount rules: category discount "${c.label || c.id}" can't exceed 100%.`);
+      if (c.value <= 0) issues.push(`Discount rules: category discount "${c.label || c.id}" needs a value greater than 0.`);
+    }
+    const thresholds = new Set<number>();
+    for (const t of deck.discountRules.bundleTiers) {
+      if (thresholds.has(t.minServices)) issues.push(`Discount rules: duplicate bundle tier threshold (${t.minServices} services).`);
+      thresholds.add(t.minServices);
+      if (t.type === "percent" && t.value > 100) issues.push(`Discount rules: bundle tier at ${t.minServices} services can't exceed 100%.`);
+      if (t.value <= 0) issues.push(`Discount rules: bundle tier at ${t.minServices} services needs a value greater than 0.`);
+    }
   }
   return issues;
 }

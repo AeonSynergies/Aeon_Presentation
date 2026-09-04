@@ -1,8 +1,8 @@
 // Pricing engine — ported EXACTLY from Presentation_Platform.html (lines ~1253-1274,
 // ~1609-1613). Do not "improve" or re-derive this logic; it already survived many rounds
 // of bug fixes (tiered bands, alt pricing drivers, surcharges — see CLAUDE.md).
-import type { DeckService, PriceBand } from "./deck.js";
-import type { SessionState } from "./session.js";
+import type { DeckService, DiscountRules, PriceBand } from "./deck.js";
+import type { DiscountConfig, SessionState } from "./session.js";
 
 /**
  * undefined = driver value not yet answered (pending in Discovery Notes)
@@ -27,6 +27,34 @@ export function basePriceFor(svc: DeckService, st: SessionState): number | null 
   if (p === undefined || p === null) return p;
   if (svc.surcharge && st.toggles[svc.surcharge.questionId]) return p + svc.surcharge.amount;
   return p;
+}
+
+/** The discount a deck's pre-decided rules (DeckConfig.discountRules) produce for the
+ * current service-selection state, with no manual customization. A category discount (an
+ * explicit presenter action for this specific client) takes precedence over the passive,
+ * selection-count-driven bundle tier; if several category discounts are marked applicable
+ * at once, the first one configured (not first marked) wins, for a deterministic result.
+ * Returns a disabled discount when no rule currently qualifies, including when the deck has
+ * no discountRules at all. */
+export function computeAutoDiscount(
+  services: { id: string }[],
+  discountRules: DiscountRules | undefined,
+  selected: string[],
+  appliedCategoryDiscounts: string[]
+): DiscountConfig {
+  const allServiceIds = services.map((s) => s.id);
+  const shared = { auto: true as const, appliedCategoryDiscounts };
+  if (discountRules) {
+    const appliedCategory = discountRules.categoryDiscounts.find((c) => appliedCategoryDiscounts.includes(c.id));
+    if (appliedCategory) {
+      return { ...shared, enabled: true, scope: "all", services: allServiceIds, type: appliedCategory.type, value: appliedCategory.value };
+    }
+    const qualifying = [...discountRules.bundleTiers].sort((a, b) => b.minServices - a.minServices).find((t) => selected.length >= t.minServices);
+    if (qualifying) {
+      return { ...shared, enabled: true, scope: "all", services: allServiceIds, type: qualifying.type, value: qualifying.value };
+    }
+  }
+  return { ...shared, enabled: false, scope: "all", services: [], type: "percent", value: 0 };
 }
 
 export function discountApplies(svcId: string, st: SessionState): boolean {

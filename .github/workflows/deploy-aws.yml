@@ -279,6 +279,32 @@ jobs:
           BASE_URL: ${{ needs.deploy.outputs.web_url }}
           API_URL: ${{ needs.deploy.outputs.api_url }}
 
+      # Discount Rules: Discovery Notes' manual "Apply a discount" control, plus Edit
+      # Deck's pre-decided category discounts and bundle tiers (Pricing Model step). Creates
+      # its own dedicated 4-service fixture deck via a raw API call, configures one category
+      # discount and three bundle tiers through the real wizard UI, then in a live session
+      # confirms the bundle tier auto-applies and recomputes as services are toggled, a
+      # category discount marked applicable overrides it, a manual override in Discovery
+      # Notes takes precedence and freezes until "Use recommended" is clicked, and the
+      # resulting discount is correctly reflected in the real Pricing slide, a downloaded
+      # Send to Client PDF, and a saved Meeting Record's frozen snapshot.
+      - name: Run live discount-rules E2E against the deployment
+        id: discount-rules
+        continue-on-error: true
+        working-directory: infra/e2e
+        run: node discount-rules-e2e.mjs
+        env:
+          BASE_URL: ${{ needs.deploy.outputs.web_url }}
+          API_URL: ${{ needs.deploy.outputs.api_url }}
+
+      - name: Upload live discount-rules screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-discount-rules-screenshots
+          path: infra/e2e/e2e-artifacts/discount-rules/
+          if-no-files-found: ignore
+
       # Meeting Records (Phase 5a). Creates its own dedicated fixture deck via a raw API
       # call, saves a real Discovery Notes session as a Meeting Record, confirms the
       # list/search/filters on /meeting-records, downloads the text summary + regenerated
@@ -373,6 +399,7 @@ jobs:
             [role-enforcement]="${{ steps.role-enforcement.outcome }}"
             [password-reset]="${{ steps.password-reset.outcome }}"
             [pricing-edit]="${{ steps.pricing-edit.outcome }}"
+            [discount-rules]="${{ steps.discount-rules.outcome }}"
             [meeting-records]="${{ steps.meeting-records.outcome }}"
             [archive]="${{ steps.archive.outcome }}"
             [ai-drafting]="${{ steps.ai-drafting.outcome }}"

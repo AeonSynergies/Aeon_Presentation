@@ -1,6 +1,8 @@
 // Live discovery-call session state — mirrors the prototype's `state` object
 // (freshState()/initStateForDeck() in Presentation_Platform.html) so the pricing
 // engine and Discovery Notes visibility rules translate directly.
+import type { DiscountRules } from "./deck.js";
+import { computeAutoDiscount } from "./pricing.js";
 
 export interface DiscountConfig {
   enabled: boolean;
@@ -8,6 +10,17 @@ export interface DiscountConfig {
   services: string[];
   type: "percent" | "flat";
   value: number;
+  // DeckConfig.discountRules (deck-build-time pre-decided discounts) only ever
+  // suggest/pre-populate these fields — auto marks that they still reflect an untouched
+  // suggestion (a bundle tier the live selected-service count qualifies for, or a category
+  // discount the presenter marked applicable) rather than a manual edit, and
+  // appliedCategoryDiscounts remembers which category rules are currently marked so the
+  // suggestion recomputes correctly as selection changes (see computeAutoDiscount,
+  // pricing.ts). A manual edit in Discovery Notes always takes precedence: it sets
+  // auto=false, and nothing here touches the discount again until the presenter marks a
+  // category discount applicable or explicitly asks to use the recommendation again.
+  auto: boolean;
+  appliedCategoryDiscounts: string[];
 }
 
 export interface MeetingOutcome {
@@ -42,7 +55,7 @@ export function freshSessionState(): SessionState {
     selected: [],
     toggles: {},
     answers: {},
-    discount: { enabled: false, scope: "all", services: [], type: "percent", value: 0 },
+    discount: { enabled: false, scope: "all", services: [], type: "percent", value: 0, auto: true, appliedCategoryDiscounts: [] },
   };
 }
 
@@ -52,7 +65,15 @@ export function freshSessionState(): SessionState {
 // backend round trip) and the server (meeting.create, so a freshly-created Meeting row
 // reflects this deck's actual starting state immediately — never a gap where the row only
 // has bare column defaults that a later client save has to catch up on).
-export function initialSessionStateForDeck(deck: { services: { id: string }[]; discoveryQuestions: { id: string; type: string }[] }): SessionState {
+//
+// Also seeds the discount itself from discountRules if the deck has any — every service
+// starts opted-in, so a bundle tier can already qualify before a presenter touches
+// anything.
+export function initialSessionStateForDeck(deck: {
+  services: { id: string }[];
+  discoveryQuestions: { id: string; type: string }[];
+  discountRules?: DiscountRules;
+}): SessionState {
   const allServiceIds = deck.services.map((s) => s.id);
   const toggles: DiscoveryToggles = {};
   for (const q of deck.discoveryQuestions) {
@@ -62,6 +83,6 @@ export function initialSessionStateForDeck(deck: { services: { id: string }[]; d
     selected: allServiceIds,
     toggles,
     answers: {},
-    discount: { enabled: false, scope: "all", services: allServiceIds, type: "percent", value: 0 },
+    discount: computeAutoDiscount(deck.services, deck.discountRules, allServiceIds, []),
   };
 }
