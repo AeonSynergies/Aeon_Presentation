@@ -138,6 +138,21 @@ jobs:
         env:
           BASE_URL: ${{ needs.deploy.outputs.web_url }}
 
+      # Discovery Questions: Toggle generalized from exactly-two hardcoded options to the
+      # same add/remove option-list UI Select already had, plus four new answer types
+      # (Multiple Select, Date, Email, Phone — Number turned out to already exist end to
+      # end). Adds one question of each in the wizard, then actually answers every one of
+      # them in the real popped-out Discovery Notes window and confirms the answers
+      # persisted correctly via a raw meeting.get call — not just that the DOM looked right.
+      - name: Run live discovery-questions E2E against the deployment
+        id: discovery-questions
+        continue-on-error: true
+        working-directory: infra/e2e
+        run: node discovery-questions-e2e.mjs
+        env:
+          BASE_URL: ${{ needs.deploy.outputs.web_url }}
+          API_URL: ${{ needs.deploy.outputs.api_url }}
+
       # About/Challenges/Benefits redesign + per-service Services-slide tagline. Reads
       # only the seeded Amazon DSP, Meridian, and FedEx P&D decks (never mutates them), so
       # it's safe to run standalone against every deploy — confirms each deck's own real
@@ -349,6 +364,7 @@ jobs:
         run: |
           declare -A OUTCOMES=(
             [wizard]="${{ steps.wizard.outcome }}"
+            [discovery-questions]="${{ steps.discovery-questions.outcome }}"
             [redesign-content]="${{ steps.redesign-content.outcome }}"
             [report-template-screenshots]="${{ steps.report-template-screenshots.outcome }}"
             [slide-system]="${{ steps.slide-system.outcome }}"

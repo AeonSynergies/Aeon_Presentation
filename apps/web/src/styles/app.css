@@ -1752,6 +1752,7 @@ input[type="number"],
 input[type="date"],
 input[type="time"],
 input[type="email"],
+input[type="tel"],
 input[type="password"],
 textarea,
 select {
@@ -1784,10 +1785,11 @@ select:focus {
 }
 .toggle-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .toggle-opt {
-  flex: 1;
+  flex: 1 1 90px;
   text-align: center;
   padding: 9px 10px;
   border-radius: 6px;
@@ -1801,6 +1803,12 @@ select:focus {
   border-color: var(--amber);
   color: var(--paper);
   background: rgba(22, 166, 206, 0.08);
+}
+.q-error {
+  font-size: 11px;
+  color: var(--danger, #c0504d);
+  margin-top: 6px;
+  line-height: 1.4;
 }
 .chip-grid {
   display: flex;
