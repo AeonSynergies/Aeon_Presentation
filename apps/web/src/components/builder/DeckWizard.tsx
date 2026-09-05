@@ -3,7 +3,8 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 import { trpc } from "~/lib/trpc";
 import { WizardPreview } from "./WizardPreview";
-import { allIdsInUse, blankDeck, blankPricingModel, idFromName, templateAsDraft } from "./draft";
+import { allIdsInUse, blankDeck, blankPricingModel, idFromName, templateAsDraft, validateDraft } from "./draft";
+import { MiniBtn } from "./fields";
 import { StepBasics, type UpdateDraft } from "./steps/StepBasics";
 import { StepContent } from "./steps/StepContent";
 import { StepDiscovery } from "./steps/StepDiscovery";
@@ -35,6 +36,12 @@ type StepKey = (typeof STEPS)[number]["key"];
 
 const PRICING_STEP_IDX = STEPS.findIndex((s) => s.key === "pricing");
 const SERVICES_STEP_IDX = STEPS.findIndex((s) => s.key === "services");
+
+// Steps with an add/remove list pattern (pricing models + discount rules, services, team,
+// content's focus-areas/challenges/benefits, discovery questions) each get their own
+// explicit Save control — see the save bar below builder-form-body. Basics has no such
+// list, and Review already has its own final Save/Create action, so neither needs one.
+const SAVE_STEP_KEYS: StepKey[] = ["pricing", "services", "team", "content", "discovery"];
 
 // Which slide the preview should follow for each step (services/content refine this
 // per-selection via onFocusSlide). Discovery switches the preview to the real
@@ -192,6 +199,56 @@ function StartScreen({
   );
 }
 
+// Shown when Discard is clicked while there are unsaved changes — never shown otherwise
+// (an immediate, frictionless discard when there's nothing to lose).
+function DiscardConfirmDialog({
+  onCancel,
+  onDiscard,
+  onSave,
+  saving,
+  saveDisabled,
+  serverError,
+}: {
+  onCancel: () => void;
+  onDiscard: () => void;
+  onSave: () => void;
+  saving: boolean;
+  saveDisabled: boolean;
+  serverError: string | null;
+}) {
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h2>Unsaved changes</h2>
+          <button type="button" className="icon-btn" onClick={onCancel}>
+            ✕
+          </button>
+        </div>
+        <p>You have unsaved changes. Discard them, or save first?</p>
+        {serverError && <div className="auth-error">{serverError}</div>}
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
+          <button type="button" className="mini-btn" onClick={onCancel} disabled={saving}>
+            Cancel
+          </button>
+          <MiniBtn danger onClick={onDiscard} disabled={saving}>
+            Discard changes
+          </MiniBtn>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={onSave}
+            disabled={saving || saveDisabled}
+            title={saveDisabled ? "Fix the issues listed in Review before saving" : undefined}
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // editingSlug + initialDraft turn the same wizard into an editor for an existing deck:
 // the start screen is skipped, Review calls deck.update instead of deck.create, and
 // "Discard" returns to the deck itself rather than Home. One component, one code path —
@@ -218,6 +275,12 @@ export function DeckWizard({ editingSlug, initialDraft }: { editingSlug?: string
   // a subtle "AI-suggested" badge in the Services step until a human edits that band, at
   // which point its key is removed. Purely a display hint; it never affects what's saved.
   const [aiFields, setAiFields] = React.useState<Set<string>>(new Set());
+  // Set by every real edit (via `update` below), cleared by a successful save — the single
+  // source of truth Discard checks before showing its confirmation dialog. Deliberately not
+  // tracked per-step: the builder only ever saves the whole draft in one round trip (there's
+  // no partial-config save endpoint), so "unsaved changes" is a whole-editor concept.
+  const [dirty, setDirty] = React.useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = React.useState(false);
 
   const createDeck = trpc.deck.create.useMutation();
   const updateDeck = trpc.deck.update.useMutation();
@@ -230,6 +293,7 @@ export function DeckWizard({ editingSlug, initialDraft }: { editingSlug?: string
       mutate(copy);
       return copy;
     });
+    setDirty(true);
   }, []);
 
   const markAiFieldReviewed = React.useCallback((key: string) => {
@@ -256,10 +320,22 @@ export function DeckWizard({ editingSlug, initialDraft }: { editingSlug?: string
 
   const step = STEPS[stepIdx];
   const targetSlide = focusSlide ?? STEP_SLIDE[step.key] ?? null;
+  const issues = validateDraft(draft);
 
   const discard = () => {
     if (editing && editingSlug) navigate({ to: "/decks/$slug", params: { slug: editingSlug } });
     else navigate({ to: "/" });
+  };
+
+  // Frictionless when there's nothing to lose; otherwise routes through the confirmation
+  // dialog below rather than discarding immediately.
+  const requestDiscard = () => {
+    if (!dirty) {
+      discard();
+      return;
+    }
+    setServerError(null);
+    setShowDiscardConfirm(true);
   };
 
   const goTo = (idx: number) => {
@@ -289,21 +365,25 @@ export function DeckWizard({ editingSlug, initialDraft }: { editingSlug?: string
   const effectiveOpenServiceId = openServiceId === undefined ? draft.services[0]?.id ?? null : openServiceId;
   const returningToServiceName = returningToService ? draft.services.find((s) => s.id === returningToService)?.name || returningToService : null;
 
-  const onSave = async () => {
+  const saveDraft = async (navigateToPlayer: boolean) => {
     setServerError(null);
     try {
       if (editing && editingSlug) {
         await updateDeck.mutateAsync({ slug: editingSlug, config: draft });
         await utils.deck.getBySlug.invalidate({ slug: editingSlug });
         await utils.deck.list.invalidate();
-        navigate({ to: "/decks/$slug", params: { slug: editingSlug } });
+        setDirty(false);
+        if (navigateToPlayer) navigate({ to: "/decks/$slug", params: { slug: editingSlug } });
       } else {
         const result = (await createDeck.mutateAsync({ config: draft })) as { slug: string };
         await utils.deck.list.invalidate();
-        navigate({ to: "/decks/$slug", params: { slug: result.slug } });
+        setDirty(false);
+        if (navigateToPlayer) navigate({ to: "/decks/$slug", params: { slug: result.slug } });
+        else navigate({ to: "/decks/$slug/edit", params: { slug: result.slug } });
       }
     } catch (err) {
       setServerError(err instanceof Error ? err.message : `${editing ? "Saving" : "Creating"} the deck failed.`);
+      throw err;
     }
   };
 
@@ -314,7 +394,7 @@ export function DeckWizard({ editingSlug, initialDraft }: { editingSlug?: string
           <div className="builder-form-title">
             {editing ? "Edit deck" : "New deck"}
             {draft.companyName ? `: ${draft.companyName}` : ""}
-            <button type="button" className="back-home-btn" style={{ marginLeft: "auto" }} onClick={discard}>
+            <button type="button" className="back-home-btn" style={{ marginLeft: "auto" }} onClick={requestDiscard}>
               ✕ Discard
             </button>
           </div>
@@ -353,9 +433,25 @@ export function DeckWizard({ editingSlug, initialDraft }: { editingSlug?: string
           {step.key === "content" && <StepContent deck={draft} update={update} onFocusSlide={setFocusSlide} />}
           {step.key === "discovery" && <StepDiscovery deck={draft} update={update} />}
           {step.key === "review" && (
-            <StepReview deck={draft} onCreate={() => void onSave()} creating={saving} serverError={serverError} editing={editing} />
+            <StepReview deck={draft} onCreate={() => void saveDraft(true)} creating={saving} serverError={serverError} editing={editing} />
           )}
         </div>
+
+        {SAVE_STEP_KEYS.includes(step.key) && (
+          <div className="builder-form-save-bar">
+            <hr className="section-divider" />
+            {serverError && <div className="auth-error">{serverError}</div>}
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={!dirty || saving || issues.length > 0}
+              title={issues.length > 0 ? "Fix the issues listed in Review before saving" : undefined}
+              onClick={() => void saveDraft(false)}
+            >
+              {saving ? "Saving…" : dirty ? "💾 Save changes" : "✓ Saved"}
+            </button>
+          </div>
+        )}
 
         <div className="builder-footer">
           <button type="button" className="mini-btn" disabled={stepIdx === 0} onClick={() => goTo(stepIdx - 1)}>
@@ -371,6 +467,24 @@ export function DeckWizard({ editingSlug, initialDraft }: { editingSlug?: string
       </div>
 
       <WizardPreview deck={draft} targetSlideId={targetSlide} mode={step.key === "discovery" ? "notes" : "slides"} />
+
+      {showDiscardConfirm && (
+        <DiscardConfirmDialog
+          onCancel={() => setShowDiscardConfirm(false)}
+          onDiscard={() => {
+            setShowDiscardConfirm(false);
+            discard();
+          }}
+          onSave={() => {
+            void saveDraft(true).catch(() => {
+              // serverError is already set inside saveDraft; keep the dialog open so the user sees it.
+            });
+          }}
+          saving={saving}
+          saveDisabled={issues.length > 0}
+          serverError={serverError}
+        />
+      )}
     </div>
   );
 }

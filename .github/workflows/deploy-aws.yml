@@ -305,6 +305,20 @@ jobs:
           path: infra/e2e/e2e-artifacts/discount-rules/
           if-no-files-found: ignore
 
+      # Explicit Save + Discard confirmation in Edit Deck. Every add/remove-list step
+      # (Team here, the simplest one) gets its own Save button gated on a real dirty-state
+      # flag, and Discard shows a confirmation dialog only when there are unsaved changes —
+      # never when there's nothing to lose. Creates its own dedicated fixture deck via a raw
+      # API call, reused idempotently across runs the same way discount-rules-e2e.mjs's is.
+      - name: Run live explicit-save E2E against the deployment
+        id: explicit-save
+        continue-on-error: true
+        working-directory: infra/e2e
+        run: node explicit-save-e2e.mjs
+        env:
+          BASE_URL: ${{ needs.deploy.outputs.web_url }}
+          API_URL: ${{ needs.deploy.outputs.api_url }}
+
       # Meeting Records (Phase 5a). Creates its own dedicated fixture deck via a raw API
       # call, saves a real Discovery Notes session as a Meeting Record, confirms the
       # list/search/filters on /meeting-records, downloads the text summary + regenerated
@@ -400,6 +414,7 @@ jobs:
             [password-reset]="${{ steps.password-reset.outcome }}"
             [pricing-edit]="${{ steps.pricing-edit.outcome }}"
             [discount-rules]="${{ steps.discount-rules.outcome }}"
+            [explicit-save]="${{ steps.explicit-save.outcome }}"
             [meeting-records]="${{ steps.meeting-records.outcome }}"
             [archive]="${{ steps.archive.outcome }}"
             [ai-drafting]="${{ steps.ai-drafting.outcome }}"
