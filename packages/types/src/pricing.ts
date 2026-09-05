@@ -59,6 +59,11 @@ export function computeAutoDiscount(
 
 export function discountApplies(svcId: string, st: SessionState): boolean {
   if (!st.discount.enabled) return false;
+  // scope "all" must apply regardless of what `services` holds — it's only meaningful for
+  // "single"/"multiple", and a manually-enabled "all" discount (the default scope, so a
+  // presenter who never touches the scope dropdown gets it) would otherwise sit on an empty
+  // `services` list and silently discount nothing.
+  if (st.discount.scope === "all") return true;
   return st.discount.services.includes(svcId);
 }
 

@@ -51,7 +51,10 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
       discount: {
         ...prev.discount,
         scope,
-        services: scope === "all" ? [] : prev.discount.services,
+        // "all" is universal regardless of this list (see discountApplies), but keep it
+        // populated for consistency with computeAutoDiscount's shape rather than clearing
+        // it to an empty, easily-misread list.
+        services: scope === "all" ? deck.services.map((s) => s.id) : prev.discount.services,
         auto: false,
       },
     }));
