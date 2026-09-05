@@ -190,10 +190,12 @@ const discoveryQuestionSchema = z.object({
   dependsOn: z.object({ questionId: z.string().min(1), value: z.union([z.boolean(), z.string()]) }).optional(),
 });
 
-// Pre-decided discounts (Pricing Model step) — these only ever suggest/pre-populate a live
-// session's DiscountConfig (see computeAutoDiscount, @aeon/types); cross-field checks
-// (duplicate ids, bad thresholds) live in the top-level superRefine below, alongside every
-// other id/reference check.
+// Pre-decided discounts (Pricing Model step) — a bundle tier applies automatically based on
+// the live selected-service count, and a category discount is checked by the presenter;
+// both add into the live additive discount stack alongside any manual override (see
+// discountItemsForService/computeDiscountBreakdown, @aeon/types) rather than replacing one
+// another. Cross-field checks (duplicate ids, bad thresholds) live in the top-level
+// superRefine below, alongside every other id/reference check.
 const categoryDiscountRuleSchema = z.object({
   id: z.string().regex(idPattern, "Category discount ids must start with a letter and use only letters, digits, - or _"),
   label: z.string().min(1),

@@ -9,7 +9,7 @@ export function PricingSlide({ deck, state }: { deck: DeckConfig; state: Session
   let hasPending = false;
 
   const cards = chosen.map((s) => {
-    const { base, final, discounted } = finalPriceFor(s, state);
+    const { base, final, discounted } = finalPriceFor(s, deck.discountRules, state);
     if (final === undefined) {
       hasPending = true;
       const label = deck.pricingModels.find((m) => m.id === s.pricingModelId)?.label || "value";

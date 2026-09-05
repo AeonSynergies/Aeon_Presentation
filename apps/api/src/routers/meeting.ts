@@ -8,10 +8,11 @@ import {
   fmtMoney,
   groupQuestionsByService,
   initialSessionStateForDeck,
+  normalizeDiscountState,
   visibleGeneralQuestions,
   visibleServiceQuestions,
   type DeckConfig,
-  type DiscountConfig,
+  type DiscountState,
   type DiscoveryQuestion,
   type LogoConfig,
   type MeetingOutcome,
@@ -36,7 +37,7 @@ interface MeetingDTO {
   selected: string[];
   toggles: Record<string, boolean>;
   answers: Record<string, string | number | boolean | string[] | null>;
-  discount: DiscountConfig;
+  discount: DiscountState;
   meetingOutcome: MeetingOutcome | null;
   completedAt: Date | null;
   createdAt: Date;
@@ -77,7 +78,7 @@ function toMeetingDTO(m: {
     selected: m.selected as string[],
     toggles: m.toggles as Record<string, boolean>,
     answers: m.answers as Record<string, string | number | boolean | string[] | null>,
-    discount: m.discount as DiscountConfig,
+    discount: normalizeDiscountState(m.discount),
     meetingOutcome: (m.meetingOutcome as MeetingOutcome | null) ?? null,
     completedAt: m.completedAt,
     createdAt: m.createdAt,
@@ -85,16 +86,22 @@ function toMeetingDTO(m: {
   };
 }
 
-const discountSchema = z.object({
+const manualDiscountSchema = z.object({
   enabled: z.boolean(),
   scope: z.enum(["all", "multiple", "single"]),
   services: z.array(z.string()),
   type: z.enum(["percent", "flat"]),
   value: z.number(),
-  // Whether this still reflects an untouched pre-decided-rule suggestion (computeAutoDiscount,
-  // @aeon/types) rather than a manual edit, and which category rules are currently marked
-  // applicable — see DiscountConfig (packages/types/src/session.ts).
-  auto: z.boolean(),
+});
+
+// The additive discount stack's live state — see DiscountState (packages/types/src/
+// session.ts). `manual` is the presenter's own "additional discount" control, always
+// additive; `appliedCategoryDiscounts` are the category discount ids the presenter has
+// checked (any number, none auto-selected). The bundle tier itself is never persisted —
+// it's computed live from the deck's discountRules plus the current selection count (see
+// activeBundleTier, @aeon/types).
+const discountSchema = z.object({
+  manual: manualDiscountSchema,
   appliedCategoryDiscounts: z.array(z.string()),
 });
 
@@ -112,7 +119,7 @@ function meetingToSessionState(m: {
     selected: m.selected as string[],
     toggles: m.toggles as Record<string, boolean>,
     answers: m.answers as SessionState["answers"],
-    discount: m.discount as DiscountConfig,
+    discount: normalizeDiscountState(m.discount),
   };
 }
 
@@ -168,7 +175,7 @@ function buildQuoteSnapshot(config: DeckConfig, state: SessionState, clientName:
   const rows: QuoteSnapshotRow[] = chosen.map((svc) => {
     const model = config.pricingModels.find((m) => m.id === svc.pricingModelId);
     const driverVal = state.answers[svc.pricingModelId];
-    const { base, final, discounted } = finalPriceFor(svc, state);
+    const { base, final, discounted } = finalPriceFor(svc, config.discountRules, state);
     const surchargeActive = !!(svc.surcharge && state.toggles[svc.surcharge.questionId]);
     return {
       service: svc.name,
@@ -183,7 +190,7 @@ function buildQuoteSnapshot(config: DeckConfig, state: SessionState, clientName:
       promoNote: svc.promoNote ?? null,
     };
   });
-  const summary = computePricingSummary(config.services, state);
+  const summary = computePricingSummary(config.services, config.discountRules, state);
   const totalLabel = fmtMoney(summary.total) + (summary.hasCustom || summary.hasPending ? " +" : "");
   return {
     companyName: config.companyName,
@@ -684,7 +691,7 @@ export const meetingRouter = router({
 
       const config = meeting.deck.config as unknown as DeckConfig;
       const state = meetingToSessionState(meeting);
-      const summary = computePricingSummary(config.services, state);
+      const summary = computePricingSummary(config.services, config.discountRules, state);
       const clientLabel = meeting.clientName || "your organization";
 
       const subject = input.subject?.trim() || `${config.companyName} Proposal — ${clientLabel}`;

@@ -1,8 +1,10 @@
-// Pricing engine — ported EXACTLY from Presentation_Platform.html (lines ~1253-1274,
-// ~1609-1613). Do not "improve" or re-derive this logic; it already survived many rounds
-// of bug fixes (tiered bands, alt pricing drivers, surcharges — see CLAUDE.md).
-import type { DeckService, DiscountRules, PriceBand } from "./deck.js";
-import type { DiscountConfig, SessionState } from "./session.js";
+// Pricing engine — base pricing ported EXACTLY from Presentation_Platform.html (lines
+// ~1253-1274, ~1609-1613). Do not "improve" or re-derive that logic; it already survived
+// many rounds of bug fixes (tiered bands, alt pricing drivers, surcharges — see CLAUDE.md).
+// Discount stacking (bundle tier + category discounts + manual override, all additive) is
+// a newer addition — see computeDiscountBreakdown/discountItemsForService below.
+import type { BundleDiscountTier, CategoryDiscountRule, DeckService, DiscountRules, PriceBand } from "./deck.js";
+import type { ManualDiscount, SessionState } from "./session.js";
 
 /**
  * undefined = driver value not yet answered (pending in Discovery Notes)
@@ -29,42 +31,78 @@ export function basePriceFor(svc: DeckService, st: SessionState): number | null 
   return p;
 }
 
-/** The discount a deck's pre-decided rules (DeckConfig.discountRules) produce for the
- * current service-selection state, with no manual customization. A category discount (an
- * explicit presenter action for this specific client) takes precedence over the passive,
- * selection-count-driven bundle tier; if several category discounts are marked applicable
- * at once, the first one configured (not first marked) wins, for a deterministic result.
- * Returns a disabled discount when no rule currently qualifies, including when the deck has
- * no discountRules at all. */
-export function computeAutoDiscount(
-  services: { id: string }[],
-  discountRules: DiscountRules | undefined,
-  selected: string[],
-  appliedCategoryDiscounts: string[]
-): DiscountConfig {
-  const allServiceIds = services.map((s) => s.id);
-  const shared = { auto: true as const, appliedCategoryDiscounts };
-  if (discountRules) {
-    const appliedCategory = discountRules.categoryDiscounts.find((c) => appliedCategoryDiscounts.includes(c.id));
-    if (appliedCategory) {
-      return { ...shared, enabled: true, scope: "all", services: allServiceIds, type: appliedCategory.type, value: appliedCategory.value };
-    }
-    const qualifying = [...discountRules.bundleTiers].sort((a, b) => b.minServices - a.minServices).find((t) => selected.length >= t.minServices);
-    if (qualifying) {
-      return { ...shared, enabled: true, scope: "all", services: allServiceIds, type: qualifying.type, value: qualifying.value };
-    }
-  }
-  return { ...shared, enabled: false, scope: "all", services: [], type: "percent", value: 0 };
+/** The highest bundle tier the current selected-service count qualifies for — only one
+ * applies at a time, the highest threshold met — or undefined if none does (including when
+ * the deck has no discountRules at all). Purely a function of the live selection count,
+ * never stored in session state, so it recomputes automatically as services are toggled. */
+export function activeBundleTier(discountRules: DiscountRules | undefined, selectedCount: number): BundleDiscountTier | undefined {
+  if (!discountRules) return undefined;
+  return [...discountRules.bundleTiers].sort((a, b) => b.minServices - a.minServices).find((t) => selectedCount >= t.minServices);
 }
 
-export function discountApplies(svcId: string, st: SessionState): boolean {
-  if (!st.discount.enabled) return false;
-  // scope "all" must apply regardless of what `services` holds — it's only meaningful for
-  // "single"/"multiple", and a manually-enabled "all" discount (the default scope, so a
-  // presenter who never touches the scope dropdown gets it) would otherwise sit on an empty
-  // `services` list and silently discount nothing.
-  if (st.discount.scope === "all") return true;
-  return st.discount.services.includes(svcId);
+/** One contributing source in the additive discount stack. */
+export interface DiscountBreakdownItem {
+  source: "bundleTier" | "category" | "manual";
+  label: string;
+  type: "percent" | "flat";
+  value: number;
+}
+
+function manualAppliesToService(svcId: string, manual: ManualDiscount): boolean {
+  if (!manual.enabled) return false;
+  if (manual.scope === "all") return true;
+  return manual.services.includes(svcId);
+}
+
+/** Every discount source currently active for ONE specific service: the bundle tier (if
+ * any threshold is met — applies to every selected service, not just this one), every
+ * category discount the presenter has checked (any number, all independently additive —
+ * see DiscoveryNotesPanel's category checkboxes; never auto-selected), and the manual
+ * "additional discount" override if it's enabled and its own scope covers this service. All
+ * three stack — none replaces another. */
+export function discountItemsForService(svcId: string, discountRules: DiscountRules | undefined, st: SessionState): DiscountBreakdownItem[] {
+  const items: DiscountBreakdownItem[] = [];
+  const tier = activeBundleTier(discountRules, st.selected.length);
+  if (tier) items.push({ source: "bundleTier", label: `Bundle tier (${tier.minServices}+ services)`, type: tier.type, value: tier.value });
+  for (const cat of discountRules?.categoryDiscounts ?? []) {
+    if (st.discount.appliedCategoryDiscounts.includes(cat.id)) {
+      items.push({ source: "category", label: cat.label, type: cat.type, value: cat.value });
+    }
+  }
+  if (manualAppliesToService(svcId, st.discount.manual)) {
+    items.push({ source: "manual", label: "Additional discount", type: st.discount.manual.type, value: st.discount.manual.value });
+  }
+  return items;
+}
+
+/** Deck-wide summary of the additive discount stack, for the presenter's own breakdown
+ * display (DiscoveryNotesPanel) — not tied to any one service, since the bundle tier and
+ * every category discount apply uniformly to all selected services regardless (only the
+ * manual override can be scoped narrower, e.g. to a single service). totalPercent/
+ * totalFlat sum every active item's own value, matching how discountItemsForService/
+ * finalPriceFor combine them per service. */
+export interface DiscountBreakdown {
+  bundleTier: BundleDiscountTier | undefined;
+  categories: CategoryDiscountRule[];
+  manual: ManualDiscount | null;
+  totalPercent: number;
+  totalFlat: number;
+}
+
+export function computeDiscountBreakdown(discountRules: DiscountRules | undefined, st: SessionState): DiscountBreakdown {
+  const bundleTier = activeBundleTier(discountRules, st.selected.length);
+  const categories = (discountRules?.categoryDiscounts ?? []).filter((c) => st.discount.appliedCategoryDiscounts.includes(c.id));
+  const manual = st.discount.manual.enabled ? st.discount.manual : null;
+  let totalPercent = 0;
+  let totalFlat = 0;
+  const add = (type: "percent" | "flat", value: number) => {
+    if (type === "percent") totalPercent += value;
+    else totalFlat += value;
+  };
+  if (bundleTier) add(bundleTier.type, bundleTier.value);
+  for (const c of categories) add(c.type, c.value);
+  if (manual) add(manual.type, manual.value);
+  return { bundleTier, categories, manual, totalPercent, totalFlat };
 }
 
 export interface FinalPrice {
@@ -73,12 +111,14 @@ export interface FinalPrice {
   discounted: boolean;
 }
 
-export function finalPriceFor(svc: DeckService, st: SessionState): FinalPrice {
+export function finalPriceFor(svc: DeckService, discountRules: DiscountRules | undefined, st: SessionState): FinalPrice {
   const base = basePriceFor(svc, st);
   if (base === undefined || base === null) return { base, final: base, discounted: false };
-  if (!discountApplies(svc.id, st)) return { base, final: base, discounted: false };
-  let final =
-    st.discount.type === "percent" ? base * (1 - st.discount.value / 100) : base - st.discount.value;
+  const items = discountItemsForService(svc.id, discountRules, st);
+  if (items.length === 0) return { base, final: base, discounted: false };
+  const percentOff = items.filter((i) => i.type === "percent").reduce((sum, i) => sum + i.value, 0);
+  const flatOff = items.filter((i) => i.type === "flat").reduce((sum, i) => sum + i.value, 0);
+  let final = base * (1 - percentOff / 100) - flatOff;
   final = Math.max(0, Math.round(final));
   return { base, final, discounted: true };
 }
@@ -105,14 +145,14 @@ export interface PricingSummary {
 
 /** Aggregate total across every currently-selected service — mirrors slidePricing()'s
  * total/savedTotal/hasCustom/hasPending accumulation in the prototype. */
-export function computePricingSummary(services: DeckService[], st: SessionState): PricingSummary {
+export function computePricingSummary(services: DeckService[], discountRules: DiscountRules | undefined, st: SessionState): PricingSummary {
   const chosen = services.filter((s) => st.selected.includes(s.id));
   let total = 0;
   let savedTotal = 0;
   let hasCustom = false;
   let hasPending = false;
   for (const s of chosen) {
-    const { base, final, discounted } = finalPriceFor(s, st);
+    const { base, final, discounted } = finalPriceFor(s, discountRules, st);
     if (final === undefined) {
       hasPending = true;
       continue;

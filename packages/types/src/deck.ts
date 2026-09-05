@@ -416,12 +416,13 @@ export interface DiscoveryQuestion {
 }
 
 // Pre-decided discounts, configured at deck-build time so a presenter never has to guess a
-// number live on a call. Neither type sets SessionState.discount directly — they only ever
-// suggest/pre-populate it (see computeAutoDiscount in pricing.ts); the presenter's own
-// manual control in Discovery Notes can always override or turn either off.
+// number live on a call. Both feed the live additive discount stack alongside the
+// presenter's own manual override in Discovery Notes — all three combine, none replaces
+// another (see discountItemsForService/computeDiscountBreakdown in pricing.ts).
 export interface CategoryDiscountRule {
   id: string;
-  /** e.g. "Women-owned DSPs" — shown as a checkbox a presenter marks applicable on a call. */
+  /** e.g. "Women-owned DSPs" — shown as a checkbox a presenter checks as applicable on a
+   * call; any number can be checked at once, each contributing its own value. */
   label: string;
   type: "percent" | "flat";
   value: number;
@@ -429,7 +430,9 @@ export interface CategoryDiscountRule {
 
 export interface BundleDiscountTier {
   /** Selected-service count required to qualify — the highest tier the live count still
-   * satisfies wins (see computeAutoDiscount), so tiers need not be contiguous. */
+   * satisfies wins (see activeBundleTier in pricing.ts), so tiers need not be contiguous.
+   * Only one bundle tier applies at a time, but it stacks with any checked category
+   * discounts and the manual override. */
   minServices: number;
   type: "percent" | "flat";
   value: number;
