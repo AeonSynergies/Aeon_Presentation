@@ -431,8 +431,10 @@ export interface CategoryDiscountRule {
 export interface BundleDiscountTier {
   /** Selected-service count required to qualify — the highest tier the live count still
    * satisfies wins (see activeBundleTier in pricing.ts), so tiers need not be contiguous.
-   * Only one bundle tier applies at a time, but it stacks with any checked category
-   * discounts and the manual override. */
+   * Qualifying only makes a tier checkable in Discovery Notes — like a category discount,
+   * it applies only once the presenter has actually checked it (DiscountState.bundleTierEnabled
+   * in session.ts; see appliedBundleTier in pricing.ts). Only one bundle tier can ever apply
+   * at a time, but it stacks with any checked category discounts and the manual override. */
   minServices: number;
   type: "percent" | "flat";
   value: number;

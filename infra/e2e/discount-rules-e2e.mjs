@@ -10,11 +10,12 @@
 //      service picker, type, value) — the in-call override path.
 //   2. Edit Deck's Pricing Model step: Discount Rules — category discounts (named,
 //      presenter-checked) and bundle tiers (a table of thresholds keyed to the live
-//      selected-service count, applied automatically).
-//   3. All three ADD TOGETHER into one live discount stack: the active bundle tier, EVERY
+//      selected-service count, presenter-checked — see Regression #3 below).
+//   3. All three ADD TOGETHER into one live discount stack: the checked bundle tier, EVERY
 //      category discount the presenter has checked (any number, none auto-selected), and
 //      the manual override, all combine additively — see computeDiscountBreakdown/
-//      discountItemsForService (packages/types/src/pricing.ts). None replaces another.
+//      discountItemsForService (packages/types/src/pricing.ts). None replaces another, and
+//      none of the three is ever auto-applied without the presenter checking a box for it.
 //
 // Regression note #1: an earlier version of this suite passed while a real deployed user
 // saw a manually-enabled discount do nothing to any total. Root cause: discountApplies()
@@ -36,6 +37,18 @@
 // Fixed by replacing the single-scalar model with the additive stack this suite now tests:
 // bundle tier + every checked category discount + the manual override, summed.
 //
+// Regression note #3: the bundle tier originally applied AUTOMATICALLY once the live
+// selected-service count met a threshold — the one thing in this system that could change a
+// client's price with no presenter action at all. Fixed by making it presenter-checked, the
+// same mechanism category discounts already use (DiscountState.bundleTierEnabled in
+// session.ts; appliedBundleTier in pricing.ts): only the ONE tier the live count currently
+// qualifies for is checkable (see activeBundleTier), every other configured tier renders
+// disabled so the presenter can still see the whole ladder, and once checked it stays
+// checked as the qualifying tier changes with the live count (updating its own percentage
+// automatically — no re-confirmation needed, same as the rest of this system's live
+// updates) but unchecks itself the moment the count drops below every configured threshold,
+// since there's no longer a valid tier to apply.
+//
 // What it does, through the actual UI + real API calls, against a 4-service fixture deck
 // priced at $100/$200/$300/$400 (so every discount below lands on a distinctive, checkable
 // total):
@@ -43,12 +56,18 @@
 //      Model step (Edit Deck) adds TWO category discounts ("Women-owned DSPs" 10%, "Local
 //      Business" 5%) and three bundle tiers (2 services=5%, 3=10%, 4=15%) — the real
 //      add/edit UI, not a direct API payload. Saves the deck.
-//   2. Opens a real live session (the popped-out Discovery Notes window). Confirms neither
-//      category discount is ever pre-checked, and that the bundle tier (4 services start
-//      opted in) is already active automatically — same as before this change.
-//   3. Deselects one service (3 selected) and confirms the bundle tier recomputes to 10%
-//      automatically, unchanged behavior.
-//   4. Checks ONE category discount and confirms it ADDS to the active bundle tier (not
+//   2. Opens a real live session (the popped-out Discovery Notes window). Confirms NEITHER
+//      category discount NOR the bundle tier is ever pre-checked — even though the 4
+//      starting services already qualify for the top 15% bundle tier — and that the total
+//      stays fully undiscounted until something is actually checked.
+//   3. Confirms only the ONE tier the live count currently qualifies for is checkable; every
+//      other configured tier is visible (so the presenter sees the whole ladder) but
+//      disabled. Checks the qualifying tier and confirms it applies. Deselects services one
+//      at a time and confirms: a still-qualifying-for-a-different-tier count keeps the
+//      checkbox checked and live-updates which tier/percentage applies with no
+//      re-confirmation; dropping below every configured threshold unchecks it automatically.
+//      Restores the selection and re-checks it to continue.
+//   4. Checks ONE category discount and confirms it ADDS to the checked bundle tier (not
 //      replaces it) — 10% + 10% = 20% off. Checks the SECOND category discount and confirms
 //      it adds again — 10% + 10% + 5% = 25% off — the core regression check: both
 //      contribute independently, neither silently overrides the other. Unchecks one to
@@ -57,7 +76,8 @@
 //      above and confirms it adds again — 10% + 10% + 5% + 5% = 30% off — confirming the
 //      manual control genuinely stacks rather than replacing the pre-decided discounts.
 //   6. Confirms the Discovery Notes "discount breakdown" block lists every active
-//      contributing source with its own value at each step, not just a final number.
+//      contributing source with its own value at each step, not just a final number — and
+//      only sources the presenter actually checked, never the bundle tier while unchecked.
 //   7. Confirms the resulting $420 total (3 services, 30% off $600) is correctly reflected
 //      on the real Pricing slide (total + per-card discounted price), in a downloaded Send
 //      to Client PDF (via the real pdfjs-dist text extraction other e2e suites use), and in
@@ -290,13 +310,9 @@ await section("wizard preview: both category discounts + bundle tier ladder rend
   await page.waitForTimeout(150);
   check("wizard preview: category A renders as a checkbox in Pre-decided discounts", (await preview().locator(".chip-grid .chip", { hasText: CATEGORY_A }).count()) === 1);
   check("wizard preview: category B renders as a checkbox in Pre-decided discounts", (await preview().locator(".chip-grid .chip", { hasText: CATEGORY_B }).count()) === 1);
-  const hint = preview().locator(".q-hint", { hasText: "Bundle tiers:" });
-  const hintText = (await hint.count()) ? await hint.first().textContent() : "";
-  check(
-    "wizard preview: bundle tier ladder lists all three thresholds",
-    /2\+ services = 5%/.test(hintText || "") && /3\+ services = 10%/.test(hintText || "") && /4\+ services = 15%/.test(hintText || ""),
-    hintText ?? ""
-  );
+  check("wizard preview: bundle tier 2+ services=5% renders as its own checkbox", (await preview().locator(".chip-grid .chip", { hasText: "2+ services = 5%" }).count()) === 1);
+  check("wizard preview: bundle tier 3+ services=10% renders as its own checkbox", (await preview().locator(".chip-grid .chip", { hasText: "3+ services = 10%" }).count()) === 1);
+  check("wizard preview: bundle tier 4+ services=15% renders as its own checkbox", (await preview().locator(".chip-grid .chip", { hasText: "4+ services = 15%" }).count()) === 1);
 });
 
 await section("wizard: save the deck", async () => {
@@ -304,8 +320,8 @@ await section("wizard: save the deck", async () => {
   await Promise.all([page.waitForResponse((r) => r.url().includes("deck.update")), page.locator(".btn-primary", { hasText: "Save changes" }).click()]);
 });
 
-// ========== Live session: none of the pre-decided discounts ever auto-select ==========
-console.log("\n=== Live session: category discounts never auto-select, bundle tier is still automatic ===");
+// ========== Live session: nothing in the discount system ever auto-selects ==========
+console.log("\n=== Live session: category discounts AND the bundle tier never auto-select — everything requires an explicit checkbox ===");
 await page.goto(`${BASE}/decks/${deckSlug}`, { waitUntil: "networkidle" });
 await page.waitForSelector(".notes-btn", { timeout: 15000 });
 const [notesPage] = await Promise.all([context.waitForEvent("page"), page.locator(".notes-btn").click()]);
@@ -321,9 +337,14 @@ const svcChip = (name) => notesPage.locator(".q-block", { hasText: "Which servic
 // otherwise case-insensitively match a plain hasText:"PRE-DECIDED DISCOUNTS" filter on
 // .q-block too.
 const preDecidedBlock = () => notesPage.locator(".q-block").filter({ has: notesPage.locator(".q-num", { hasText: "PRE-DECIDED DISCOUNTS" }) });
-const categoryChip = (label) => preDecidedBlock().locator(".chip-grid .chip", { hasText: label });
+const categoryChip = (label) => preDecidedBlock().locator(".chip-grid").nth(0).locator(".chip", { hasText: label });
+// Bundle tiers render as their own chip-grid, right after the category discounts' one —
+// each labeled "<minServices>+ services = <value>%", matching the wizard's own ladder copy.
+const bundleTierChip = (minServices) => preDecidedBlock().locator(".chip-grid").nth(1).locator(".chip", { hasText: `${minServices}+ services` });
 const manualBlock = () => notesPage.locator(".q-block").filter({ has: notesPage.locator(".q-num", { hasText: "ADDITIONAL DISCOUNT" }) });
 const breakdownBlock = () => notesPage.locator(".discount-breakdown");
+const isChipSelected = async (chip) => (await chip.getAttribute("class"))?.includes("selected") ?? false;
+const isChipCheckable = async (chip) => !(await chip.locator('input[type="checkbox"]').isDisabled());
 
 async function pricingTotalOnNotesPopupParent() {
   await notesPage.waitForTimeout(1800); // clear the notes-window save debounce + main window's poll cycle
@@ -332,22 +353,70 @@ async function pricingTotalOnNotesPopupParent() {
   return (await page.locator(".total-row .tval").textContent())?.trim();
 }
 
-await section("live: neither category discount is pre-checked, bundle tier(4)=15% is already active automatically", async () => {
+await section("live: neither category discount nor the bundle tier is pre-checked, even though 4 selected already qualifies for the 15% tier", async () => {
   const selectedCount = await notesPage.locator(".q-block", { hasText: "Which services is the client opting into?" }).locator(".chip.selected").count();
   check("live: all 4 services start selected", selectedCount === 4, String(selectedCount));
-  check("live: category A is NOT pre-checked", !(await categoryChip(CATEGORY_A).getAttribute("class")).includes("selected"));
-  check("live: category B is NOT pre-checked", !(await categoryChip(CATEGORY_B).getAttribute("class")).includes("selected"));
-  check("live: bundle tier hint shows the 15% tier active (4 selected)", /15% tier active/.test((await preDecidedBlock().textContent()) || ""));
+  check("live: category A is NOT pre-checked", !(await isChipSelected(categoryChip(CATEGORY_A))));
+  check("live: category B is NOT pre-checked", !(await isChipSelected(categoryChip(CATEGORY_B))));
+  check("live: the qualifying 15% bundle tier is NOT pre-checked", !(await isChipSelected(bundleTierChip(4))));
+  check("live: breakdown block is absent (nothing checked yet, nothing to break down)", (await breakdownBlock().count()) === 0);
+  const total = await pricingTotalOnNotesPopupParent();
+  check("live: Pricing slide total is undiscounted $1,000 (4 services, nothing checked)", total === "$1,000", total ?? "");
+});
+
+await section("live: only the currently-qualifying bundle tier (15%, since 4 selected) is checkable — the 5% and 10% tiers are disabled", async () => {
+  check("live: 5% (2+) tier is disabled (doesn't qualify — only the highest-qualifying tier is ever checkable)", !(await isChipCheckable(bundleTierChip(2))));
+  check("live: 10% (3+) tier is disabled for the same reason", !(await isChipCheckable(bundleTierChip(3))));
+  check("live: 15% (4+) tier — the one that actually qualifies at 4 selected — is checkable", await isChipCheckable(bundleTierChip(4)));
+});
+
+await section("live: checking the qualifying bundle tier applies it — 15% off, nothing else active", async () => {
+  await bundleTierChip(4).locator('input[type="checkbox"]').click();
+  await notesPage.waitForTimeout(300);
+  check("live: 15% tier chip now shows as checked", await isChipSelected(bundleTierChip(4)));
+  check("live: breakdown lists only the bundle tier", /Bundle tier \(4\+ services\): 15%/.test((await breakdownBlock().textContent()) || ""));
   const total = await pricingTotalOnNotesPopupParent();
   check("live: Pricing slide total is $850 (4 services, 15% off $1,000, bundle tier only)", total === "$850", total ?? "");
 });
 
-await section("live: deselecting one service recomputes the bundle tier to 10% automatically (unchanged behavior)", async () => {
+await section("live: deselecting a service to a still-qualifying count (3) keeps the tier checked and live-updates its percentage to 10% automatically", async () => {
   await svcChip("Service D").click();
   await notesPage.waitForTimeout(300);
-  check("live: bundle tier hint shows the 10% tier active (3 selected)", /10% tier active/.test((await preDecidedBlock().textContent()) || ""));
+  check("live: 15% (4+) tier is now disabled and unchecked (no longer qualifies at 3 selected)", !(await isChipCheckable(bundleTierChip(4))) && !(await isChipSelected(bundleTierChip(4))));
+  check("live: 10% (3+) tier is now the checkable one, and shows as checked — no re-confirmation needed", (await isChipCheckable(bundleTierChip(3))) && (await isChipSelected(bundleTierChip(3))));
+  check("live: breakdown now shows the 10% tier value", /Bundle tier \(3\+ services\): 10%/.test((await breakdownBlock().textContent()) || ""));
   const total = await pricingTotalOnNotesPopupParent();
   check("live: Pricing slide total is $540 (3 services A+B+C=$600, 10% off, bundle tier only)", total === "$540", total ?? "");
+});
+
+await section("live: deselecting again to another still-qualifying count (2) again keeps it checked and updates to 5%", async () => {
+  await svcChip("Service C").click();
+  await notesPage.waitForTimeout(300);
+  check("live: 10% (3+) tier is now disabled and unchecked", !(await isChipCheckable(bundleTierChip(3))) && !(await isChipSelected(bundleTierChip(3))));
+  check("live: 5% (2+) tier is now the checkable one, and shows as checked", (await isChipCheckable(bundleTierChip(2))) && (await isChipSelected(bundleTierChip(2))));
+  const total = await pricingTotalOnNotesPopupParent();
+  check("live: Pricing slide total is $285 (2 services A+B=$300, 5% off, bundle tier only)", total === "$285", total ?? "");
+});
+
+await section("live: deselecting below every configured threshold (down to 1 service) unchecks the bundle tier automatically", async () => {
+  await svcChip("Service B").click();
+  await notesPage.waitForTimeout(300);
+  check("live: no tier is checkable at 1 selected (below the lowest 2+ threshold)", !(await isChipCheckable(bundleTierChip(2))) && !(await isChipCheckable(bundleTierChip(3))) && !(await isChipCheckable(bundleTierChip(4))));
+  check("live: 5% (2+) tier is no longer checked — auto-unchecked, not stuck on", !(await isChipSelected(bundleTierChip(2))));
+  check("live: breakdown block is absent again (nothing active — the tier unchecked itself, nothing else was ever checked)", (await breakdownBlock().count()) === 0);
+  const total = await pricingTotalOnNotesPopupParent();
+  check("live: Pricing slide total reverts to undiscounted $100 (1 service, no discount active)", total === "$100", total ?? "");
+});
+
+await section("live: restoring the selection to 3 services and re-checking the bundle tier resumes normal stacking", async () => {
+  await svcChip("Service B").click();
+  await svcChip("Service C").click();
+  await notesPage.waitForTimeout(300);
+  await bundleTierChip(3).locator('input[type="checkbox"]').click();
+  await notesPage.waitForTimeout(300);
+  check("live: 10% (3+) tier is checked again after re-selecting 3 services and re-checking it", await isChipSelected(bundleTierChip(3)));
+  const total = await pricingTotalOnNotesPopupParent();
+  check("live: Pricing slide total is $540 again (3 services A+B+C=$600, 10% off, bundle tier only)", total === "$540", total ?? "");
 });
 
 // ========== Live session: category discounts stack additively on top of the bundle tier ==========

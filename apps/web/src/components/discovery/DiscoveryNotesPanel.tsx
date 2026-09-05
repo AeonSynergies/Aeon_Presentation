@@ -1,5 +1,5 @@
 import type { DeckConfig, ManualDiscount, SessionState } from "@aeon/types";
-import { activeBundleTier, computeDiscountBreakdown, groupQuestionsByService, visibleGeneralQuestions, visibleServiceQuestions } from "@aeon/types";
+import { activeBundleTier, appliedBundleTier, computeDiscountBreakdown, groupQuestionsByService, visibleGeneralQuestions, visibleServiceQuestions } from "@aeon/types";
 import * as React from "react";
 import { QuestionField } from "./QuestionField";
 
@@ -38,11 +38,12 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
     setState((prev) => ({ ...prev, answers: { ...prev.answers, [modelId]: v === "" ? undefined : v } }));
   };
 
-  // Category discounts (checkboxes below) and the bundle tier (derived live from the
-  // current selection count, see activeBundleTier) both feed the additive discount stack
-  // independently of the manual override — see computeDiscountBreakdown/
+  // Category discounts and the bundle tier (checkboxes below) both feed the additive
+  // discount stack independently of the manual override — see computeDiscountBreakdown/
   // discountItemsForService (@aeon/types). Checking one category never affects any other,
-  // and none of this is ever auto-selected.
+  // and none of this is ever auto-selected — including the bundle tier, which only becomes
+  // checkable once the live selection count qualifies for it (see activeBundleTier below)
+  // but still requires the presenter to actually check it.
   const toggleCategoryDiscount = (id: string) => {
     setState((prev) => ({
       ...prev,
@@ -53,6 +54,10 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
           : [...prev.discount.appliedCategoryDiscounts, id],
       },
     }));
+  };
+
+  const toggleBundleTier = () => {
+    setState((prev) => ({ ...prev, discount: { ...prev.discount, bundleTierEnabled: !prev.discount.bundleTierEnabled } }));
   };
 
   // The manual "additional discount" control — always adds on top of the bundle tier and
@@ -74,9 +79,24 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
   const serviceQs = visibleServiceQuestions(questions, state);
   const serviceGroups = groupQuestionsByService(serviceQs);
 
-  const bundleTier = activeBundleTier(deck.discountRules, state.selected.length);
+  // The tier the live selection count qualifies for right now — only this one is checkable
+  // below; it does NOT mean the bundle tier discount is applying (see appliedBundleTier via
+  // computeDiscountBreakdown below, which also requires bundleTierEnabled).
+  const qualifyingBundleTier = activeBundleTier(deck.discountRules, state.selected.length);
   const breakdown = computeDiscountBreakdown(deck.discountRules, state);
   const hasAnyDiscount = breakdown.totalPercent > 0 || breakdown.totalFlat > 0;
+
+  // If the presenter has the bundle tier checked but service selection changes such that no
+  // tier qualifies anymore, uncheck it automatically — there's no longer a valid tier to
+  // apply. (If a DIFFERENT tier now qualifies instead, this does nothing: the checkbox stays
+  // checked and computeDiscountBreakdown above already reflects the newly-qualifying tier's
+  // own percentage on every re-render, no extra state update needed.)
+  React.useEffect(() => {
+    if (state.discount.bundleTierEnabled && !qualifyingBundleTier) {
+      setState((prev) => ({ ...prev, discount: { ...prev.discount, bundleTierEnabled: false } }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qualifyingBundleTier, state.discount.bundleTierEnabled]);
 
   // Tier 1 is one question per "active" pricing model: the primary model always (it
   // drives the deck's own cover/lede copy), plus any other model actually assigned to a
@@ -142,8 +162,8 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
           <div className="q-block">
             <span className="q-num">PRE-DECIDED DISCOUNTS</span>
             <div className="q-label">
-              Check any category discounts that apply — any number at once, each adds its own value. The bundle tier below applies
-              automatically based on how many services are selected.
+              Check any category discounts that apply — any number at once, each adds its own value. The bundle tier is the same:
+              check it to apply it. Nothing here ever applies on its own.
             </div>
             {deck.discountRules.categoryDiscounts.length > 0 && (
               <div className="chip-grid">
@@ -159,15 +179,32 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
               </div>
             )}
             {deck.discountRules.bundleTiers.length > 0 && (
-              <div className="q-hint">
-                Bundle tiers:{" "}
-                {[...deck.discountRules.bundleTiers]
-                  .sort((a, b) => a.minServices - b.minServices)
-                  .map((t) => `${t.minServices}+ services = ${fmtDiscountValue(t)}`)
-                  .join(" · ")}
-                . Currently {state.selected.length} selected
-                {bundleTier ? ` — ✓ ${fmtDiscountValue(bundleTier)} tier active.` : " — no tier active yet."}
-              </div>
+              <>
+                <div className="chip-grid">
+                  {[...deck.discountRules.bundleTiers]
+                    .sort((a, b) => a.minServices - b.minServices)
+                    .map((t) => {
+                      // Only the tier the live selection count actually qualifies for is
+                      // checkable — every other tier is shown (so the presenter can see the
+                      // whole ladder) but disabled, since it doesn't apply right now.
+                      const qualifies = qualifyingBundleTier?.minServices === t.minServices;
+                      const checked = qualifies && state.discount.bundleTierEnabled;
+                      const chipClass = ["chip", checked && "selected", !qualifies && "chip-disabled"].filter(Boolean).join(" ");
+                      return (
+                        <label className={chipClass} key={t.minServices}>
+                          <input type="checkbox" checked={checked} disabled={!qualifies} onChange={toggleBundleTier} />
+                          {t.minServices}+ services = {fmtDiscountValue(t)}
+                        </label>
+                      );
+                    })}
+                </div>
+                <div className="q-hint">
+                  Currently {state.selected.length} selected
+                  {qualifyingBundleTier
+                    ? ` — the ${fmtDiscountValue(qualifyingBundleTier)} tier qualifies${state.discount.bundleTierEnabled ? " and is checked." : "; check it above to apply it."}`
+                    : " — no tier qualifies yet."}
+                </div>
+              </>
             )}
           </div>
         )}

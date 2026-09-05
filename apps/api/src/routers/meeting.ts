@@ -97,12 +97,16 @@ const manualDiscountSchema = z.object({
 // The additive discount stack's live state — see DiscountState (packages/types/src/
 // session.ts). `manual` is the presenter's own "additional discount" control, always
 // additive; `appliedCategoryDiscounts` are the category discount ids the presenter has
-// checked (any number, none auto-selected). The bundle tier itself is never persisted —
-// it's computed live from the deck's discountRules plus the current selection count (see
-// activeBundleTier, @aeon/types).
+// checked (any number, none auto-selected); `bundleTierEnabled` is whether the presenter has
+// checked "apply the bundle tier discount" — same opt-in mechanism, never auto-checked just
+// because the current selection count qualifies for a tier. Which specific tier's percentage
+// applies is still resolved live from the deck's discountRules plus the current selection
+// count while this stays true (see appliedBundleTier, @aeon/types) — only the gate itself is
+// persisted, not any particular tier.
 const discountSchema = z.object({
   manual: manualDiscountSchema,
   appliedCategoryDiscounts: z.array(z.string()),
+  bundleTierEnabled: z.boolean(),
 });
 
 // Rebuilds the pricing engine's SessionState shape from a persisted Meeting row — the
