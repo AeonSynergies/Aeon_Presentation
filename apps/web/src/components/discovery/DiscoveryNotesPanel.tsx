@@ -1,5 +1,5 @@
-import type { DeckConfig, DiscountConfig, SessionState } from "@aeon/types";
-import { computeAutoDiscount, groupQuestionsByService, visibleGeneralQuestions, visibleServiceQuestions } from "@aeon/types";
+import type { DeckConfig, ManualDiscount, SessionState } from "@aeon/types";
+import { activeBundleTier, computeDiscountBreakdown, groupQuestionsByService, visibleGeneralQuestions, visibleServiceQuestions } from "@aeon/types";
 import * as React from "react";
 import { QuestionField } from "./QuestionField";
 
@@ -9,6 +9,10 @@ interface Props {
   setState: React.Dispatch<React.SetStateAction<SessionState>>;
   clientName: string;
   setClientName: (v: string) => void;
+}
+
+function fmtDiscountValue(item: { type: "percent" | "flat"; value: number }): string {
+  return item.type === "percent" ? `${item.value}%` : `$${item.value}`;
 }
 
 // In-page Discovery Notes panel — Phase 1 scope per CLAUDE.md Section 2: no popup, since
@@ -25,71 +29,54 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
     setState((prev) => ({ ...prev, toggles: { ...prev.toggles, [id]: value } }));
   };
   const toggleService = (id: string) => {
-    setState((prev) => {
-      const selected = prev.selected.includes(id) ? prev.selected.filter((s) => s !== id) : [...prev.selected, id];
-      return {
-        ...prev,
-        selected,
-        discount: prev.discount.auto
-          ? computeAutoDiscount(deck.services, deck.discountRules, selected, prev.discount.appliedCategoryDiscounts)
-          : prev.discount,
-      };
-    });
+    setState((prev) => ({
+      ...prev,
+      selected: prev.selected.includes(id) ? prev.selected.filter((s) => s !== id) : [...prev.selected, id],
+    }));
   };
   const setModelValue = (modelId: string, v: string) => {
     setState((prev) => ({ ...prev, answers: { ...prev.answers, [modelId]: v === "" ? undefined : v } }));
   };
 
-  // Manual discount editing: any direct field edit sets auto:false, freezing the value
-  // until the presenter re-triggers a rule (checks a category box) or hits "use recommended".
-  const setDiscount = (patch: Partial<DiscountConfig>) => {
-    setState((prev) => ({ ...prev, discount: { ...prev.discount, ...patch, auto: false } }));
-  };
-  const setScope = (scope: DiscountConfig["scope"]) => {
+  // Category discounts (checkboxes below) and the bundle tier (derived live from the
+  // current selection count, see activeBundleTier) both feed the additive discount stack
+  // independently of the manual override — see computeDiscountBreakdown/
+  // discountItemsForService (@aeon/types). Checking one category never affects any other,
+  // and none of this is ever auto-selected.
+  const toggleCategoryDiscount = (id: string) => {
     setState((prev) => ({
       ...prev,
       discount: {
         ...prev.discount,
-        scope,
-        // "all" is universal regardless of this list (see discountApplies), but keep it
-        // populated for consistency with computeAutoDiscount's shape rather than clearing
-        // it to an empty, easily-misread list.
-        services: scope === "all" ? deck.services.map((s) => s.id) : prev.discount.services,
-        auto: false,
+        appliedCategoryDiscounts: prev.discount.appliedCategoryDiscounts.includes(id)
+          ? prev.discount.appliedCategoryDiscounts.filter((c) => c !== id)
+          : [...prev.discount.appliedCategoryDiscounts, id],
       },
     }));
   };
-  const toggleDiscountService = (id: string) => {
-    setState((prev) => {
-      const services = prev.discount.services.includes(id)
-        ? prev.discount.services.filter((s) => s !== id)
-        : [...prev.discount.services, id];
-      return { ...prev, discount: { ...prev.discount, services, auto: false } };
-    });
+
+  // The manual "additional discount" control — always adds on top of the bundle tier and
+  // any checked category discounts above; it never replaces them.
+  const setManualDiscount = (patch: Partial<ManualDiscount>) => {
+    setState((prev) => ({ ...prev, discount: { ...prev.discount, manual: { ...prev.discount.manual, ...patch } } }));
   };
-  const toggleCategoryDiscount = (id: string) => {
-    setState((prev) => {
-      const appliedCategoryDiscounts = prev.discount.appliedCategoryDiscounts.includes(id)
-        ? prev.discount.appliedCategoryDiscounts.filter((c) => c !== id)
-        : [...prev.discount.appliedCategoryDiscounts, id];
-      return {
-        ...prev,
-        discount: {
-          ...computeAutoDiscount(deck.services, deck.discountRules, prev.selected, appliedCategoryDiscounts),
-        },
-      };
-    });
+  const setManualScope = (scope: ManualDiscount["scope"]) => {
+    setManualDiscount({ scope, services: scope === "all" ? deck.services.map((s) => s.id) : state.discount.manual.services });
   };
-  const useRecommendedDiscount = () => {
-    setState((prev) => ({
-      ...prev,
-      discount: computeAutoDiscount(deck.services, deck.discountRules, prev.selected, prev.discount.appliedCategoryDiscounts),
-    }));
+  const toggleManualService = (id: string) => {
+    const services = state.discount.manual.services.includes(id)
+      ? state.discount.manual.services.filter((s) => s !== id)
+      : [...state.discount.manual.services, id];
+    setManualDiscount({ services });
   };
 
   const generalQs = visibleGeneralQuestions(questions, state);
   const serviceQs = visibleServiceQuestions(questions, state);
   const serviceGroups = groupQuestionsByService(serviceQs);
+
+  const bundleTier = activeBundleTier(deck.discountRules, state.selected.length);
+  const breakdown = computeDiscountBreakdown(deck.discountRules, state);
+  const hasAnyDiscount = breakdown.totalPercent > 0 || breakdown.totalFlat > 0;
 
   // Tier 1 is one question per "active" pricing model: the primary model always (it
   // drives the deck's own cover/lede copy), plus any other model actually assigned to a
@@ -154,7 +141,10 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
         {deck.discountRules && (deck.discountRules.categoryDiscounts.length > 0 || deck.discountRules.bundleTiers.length > 0) && (
           <div className="q-block">
             <span className="q-num">PRE-DECIDED DISCOUNTS</span>
-            <div className="q-label">Mark a category discount as applicable, or let the bundle tier apply automatically</div>
+            <div className="q-label">
+              Check any category discounts that apply — any number at once, each adds its own value. The bundle tier below applies
+              automatically based on how many services are selected.
+            </div>
             {deck.discountRules.categoryDiscounts.length > 0 && (
               <div className="chip-grid">
                 {deck.discountRules.categoryDiscounts.map((c) => {
@@ -162,7 +152,7 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
                   return (
                     <label className={`chip ${applied ? "selected" : ""}`} key={c.id}>
                       <input type="checkbox" checked={applied} onChange={() => toggleCategoryDiscount(c.id)} />
-                      {c.label} ({c.type === "percent" ? `${c.value}%` : `$${c.value}`})
+                      {c.label} ({fmtDiscountValue(c)})
                     </label>
                   );
                 })}
@@ -173,30 +163,31 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
                 Bundle tiers:{" "}
                 {[...deck.discountRules.bundleTiers]
                   .sort((a, b) => a.minServices - b.minServices)
-                  .map((t) => `${t.minServices}+ services = ${t.type === "percent" ? `${t.value}%` : `$${t.value}`}`)
+                  .map((t) => `${t.minServices}+ services = ${fmtDiscountValue(t)}`)
                   .join(" · ")}
-                . Currently {state.selected.length} selected.
+                . Currently {state.selected.length} selected
+                {bundleTier ? ` — ✓ ${fmtDiscountValue(bundleTier)} tier active.` : " — no tier active yet."}
               </div>
             )}
           </div>
         )}
 
         <div className="q-block">
-          <span className="q-num">MANUAL · IN-CALL OVERRIDE</span>
+          <span className="q-num">ADDITIONAL DISCOUNT · MANUAL OVERRIDE</span>
           <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <input
               type="checkbox"
-              checked={state.discount.enabled}
-              onChange={(e) => setDiscount({ enabled: e.target.checked })}
+              checked={state.discount.manual.enabled}
+              onChange={(e) => setManualDiscount({ enabled: e.target.checked })}
             />
-            Apply a discount
+            Add an additional discount (adds on top of any pre-decided discounts above — it never replaces them)
           </label>
-          {state.discount.enabled && (
+          {state.discount.manual.enabled && (
             <>
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                 <div>
                   <div className="q-label">Scope</div>
-                  <select value={state.discount.scope} onChange={(e) => setScope(e.target.value as DiscountConfig["scope"])}>
+                  <select value={state.discount.manual.scope} onChange={(e) => setManualScope(e.target.value as ManualDiscount["scope"])}>
                     <option value="all">All services</option>
                     <option value="multiple">Multiple services</option>
                     <option value="single">Single service</option>
@@ -204,25 +195,28 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
                 </div>
                 <div>
                   <div className="q-label">Type</div>
-                  <select value={state.discount.type} onChange={(e) => setDiscount({ type: e.target.value as DiscountConfig["type"] })}>
+                  <select
+                    value={state.discount.manual.type}
+                    onChange={(e) => setManualDiscount({ type: e.target.value as ManualDiscount["type"] })}
+                  >
                     <option value="percent">Percent off</option>
                     <option value="flat">Flat $ off</option>
                   </select>
                 </div>
                 <div>
-                  <div className="q-label">{state.discount.type === "percent" ? "Percent" : "Amount ($)"}</div>
+                  <div className="q-label">{state.discount.manual.type === "percent" ? "Percent" : "Amount ($)"}</div>
                   <input
                     type="number"
                     min={0}
-                    value={state.discount.value}
-                    onChange={(e) => setDiscount({ value: Number(e.target.value) || 0 })}
+                    value={state.discount.manual.value}
+                    onChange={(e) => setManualDiscount({ value: Number(e.target.value) || 0 })}
                   />
                 </div>
               </div>
-              {state.discount.scope === "single" && (
+              {state.discount.manual.scope === "single" && (
                 <select
-                  value={state.discount.services[0] ?? ""}
-                  onChange={(e) => setDiscount({ services: e.target.value ? [e.target.value] : [] })}
+                  value={state.discount.manual.services[0] ?? ""}
+                  onChange={(e) => setManualDiscount({ services: e.target.value ? [e.target.value] : [] })}
                 >
                   <option value="">— choose a service —</option>
                   {deck.services.map((s) => (
@@ -232,13 +226,13 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
                   ))}
                 </select>
               )}
-              {state.discount.scope === "multiple" && (
+              {state.discount.manual.scope === "multiple" && (
                 <div className="chip-grid">
                   {deck.services.map((s) => {
-                    const on = state.discount.services.includes(s.id);
+                    const on = state.discount.manual.services.includes(s.id);
                     return (
                       <label className={`chip ${on ? "selected" : ""}`} key={s.id}>
-                        <input type="checkbox" checked={on} onChange={() => toggleDiscountService(s.id)} />
+                        <input type="checkbox" checked={on} onChange={() => toggleManualService(s.id)} />
                         {s.name}
                       </label>
                     );
@@ -247,15 +241,42 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
               )}
             </>
           )}
-          {!state.discount.auto && deck.discountRules && (
-            <div className="q-hint">
-              Manually overridden.{" "}
-              <button type="button" className="mini-btn" onClick={useRecommendedDiscount}>
-                Use recommended
-              </button>
-            </div>
-          )}
         </div>
+
+        {hasAnyDiscount && (
+          <div className="q-block discount-breakdown">
+            <span className="q-num">DISCOUNT BREAKDOWN</span>
+            <ul className="plain-list">
+              {breakdown.bundleTier && (
+                <li>
+                  Bundle tier ({breakdown.bundleTier.minServices}+ services): {fmtDiscountValue(breakdown.bundleTier)}
+                </li>
+              )}
+              {breakdown.categories.map((c) => (
+                <li key={c.id}>
+                  {c.label}: {fmtDiscountValue(c)}
+                </li>
+              ))}
+              {breakdown.manual && (
+                <li>
+                  Additional discount (
+                  {breakdown.manual.scope === "all"
+                    ? "all services"
+                    : breakdown.manual.scope === "single"
+                      ? deck.services.find((s) => s.id === breakdown.manual!.services[0])?.name || "one service"
+                      : `${breakdown.manual.services.length} service${breakdown.manual.services.length === 1 ? "" : "s"}`}
+                  ): {fmtDiscountValue(breakdown.manual)}
+                </li>
+              )}
+            </ul>
+            <div className="q-hint">
+              Total stacked:{" "}
+              {[breakdown.totalPercent > 0 ? `${breakdown.totalPercent}% off` : null, breakdown.totalFlat > 0 ? `$${breakdown.totalFlat} off` : null]
+                .filter(Boolean)
+                .join(" + ")}
+            </div>
+          </div>
+        )}
 
         <hr className="section-divider" />
         <div className="tier-heading">

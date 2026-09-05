@@ -7,7 +7,7 @@ import { finalPriceFor, fmtMoney } from "@aeon/types";
 // slide rather than a bespoke layout, so every split-panel slide in the deck shares one
 // visual system.
 export function ServiceSlide({ deck, svc, state }: { deck: DeckConfig; svc: DeckService; state: SessionState }) {
-  const { final } = finalPriceFor(svc, state);
+  const { final } = finalPriceFor(svc, deck.discountRules, state);
   const priceDisplay = final === undefined ? undefined : fmtMoney(final);
   const model = deck.pricingModels.find((m) => m.id === svc.pricingModelId);
   const driverLabel = model?.label || "value";

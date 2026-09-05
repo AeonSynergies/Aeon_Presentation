@@ -1,4 +1,5 @@
 import type { SessionState } from "@aeon/types";
+import { freshDiscountState } from "@aeon/types";
 import * as React from "react";
 import { trpc } from "~/lib/trpc";
 
@@ -14,7 +15,7 @@ const EMPTY_STATE: SessionState = {
   selected: [],
   toggles: {},
   answers: {},
-  discount: { enabled: false, scope: "all", services: [], type: "percent", value: 0, auto: true, appliedCategoryDiscounts: [] },
+  discount: freshDiscountState(),
 };
 
 /** The popped-out Discovery Notes window's session (see DeckPlayer's Present-mode
