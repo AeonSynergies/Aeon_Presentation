@@ -346,11 +346,24 @@ const breakdownBlock = () => notesPage.locator(".discount-breakdown");
 const isChipSelected = async (chip) => (await chip.getAttribute("class"))?.includes("selected") ?? false;
 const isChipCheckable = async (chip) => !(await chip.locator('input[type="checkbox"]').isDisabled());
 
+// Retries with a growing wait: against a real deployed App Runner service (unlike a local
+// dev server) a single transient network/poll hiccup can occasionally leave the routebar
+// click or the total's own read stuck past the fixed wait below — this function is called
+// nine times in this suite, so one rare slow tick shouldn't fail the whole run when every
+// other call succeeds with the exact same fixed wait.
 async function pricingTotalOnNotesPopupParent() {
-  await notesPage.waitForTimeout(1800); // clear the notes-window save debounce + main window's poll cycle
-  await page.locator(".routebar .stop", { hasText: "Pricing" }).click();
-  await page.waitForTimeout(300);
-  return (await page.locator(".total-row .tval").textContent())?.trim();
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await notesPage.waitForTimeout(1800 + attempt * 1200); // clear the notes-window save debounce + main window's poll cycle
+      await page.locator(".routebar .stop", { hasText: "Pricing" }).click({ timeout: 10000 });
+      await page.waitForTimeout(300);
+      return (await page.locator(".total-row .tval").textContent({ timeout: 10000 }))?.trim();
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr;
 }
 
 await section("live: neither category discount nor the bundle tier is pre-checked, even though 4 selected already qualifies for the 15% tier", async () => {
