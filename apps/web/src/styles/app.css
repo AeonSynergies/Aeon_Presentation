@@ -1830,6 +1830,10 @@ select:focus {
   border-color: var(--teal);
   background: rgba(12, 123, 130, 0.08);
 }
+.chip-disabled {
+  cursor: default;
+  opacity: 0.45;
+}
 .chip input {
   width: auto;
   accent-color: var(--teal);

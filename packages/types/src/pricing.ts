@@ -31,13 +31,25 @@ export function basePriceFor(svc: DeckService, st: SessionState): number | null 
   return p;
 }
 
-/** The highest bundle tier the current selected-service count qualifies for — only one
- * applies at a time, the highest threshold met — or undefined if none does (including when
- * the deck has no discountRules at all). Purely a function of the live selection count,
- * never stored in session state, so it recomputes automatically as services are toggled. */
+/** The highest bundle tier the current selected-service count QUALIFIES for — only one
+ * ever qualifies at a time, the highest threshold met — or undefined if none does (including
+ * when the deck has no discountRules at all). Purely a function of the live selection count,
+ * never stored in session state, so it recomputes automatically as services are toggled.
+ * Qualifying is not the same as applying — see appliedBundleTier below, which also gates on
+ * the presenter having actually checked it; this is used for the UI (which tier's checkbox is
+ * checkable right now) and for that gating. */
 export function activeBundleTier(discountRules: DiscountRules | undefined, selectedCount: number): BundleDiscountTier | undefined {
   if (!discountRules) return undefined;
   return [...discountRules.bundleTiers].sort((a, b) => b.minServices - a.minServices).find((t) => selectedCount >= t.minServices);
+}
+
+/** The bundle tier actually contributing to the discount stack right now: the qualifying
+ * tier (activeBundleTier above), but ONLY if the presenter has checked "apply the bundle
+ * tier discount" (st.discount.bundleTierEnabled) — same presenter-opt-in mechanism as
+ * appliedCategoryDiscounts, never auto-applied just because the count qualifies. */
+export function appliedBundleTier(discountRules: DiscountRules | undefined, st: SessionState): BundleDiscountTier | undefined {
+  if (!st.discount.bundleTierEnabled) return undefined;
+  return activeBundleTier(discountRules, st.selected.length);
 }
 
 /** One contributing source in the additive discount stack. */
@@ -55,14 +67,15 @@ function manualAppliesToService(svcId: string, manual: ManualDiscount): boolean 
 }
 
 /** Every discount source currently active for ONE specific service: the bundle tier (if
- * any threshold is met — applies to every selected service, not just this one), every
- * category discount the presenter has checked (any number, all independently additive —
- * see DiscoveryNotesPanel's category checkboxes; never auto-selected), and the manual
- * "additional discount" override if it's enabled and its own scope covers this service. All
- * three stack — none replaces another. */
+ * checked AND its threshold is met — applies to every selected service, not just this one),
+ * every category discount the presenter has checked (any number, all independently additive
+ * — see DiscoveryNotesPanel's category checkboxes), and the manual "additional discount"
+ * override if it's enabled and its own scope covers this service. All three are
+ * presenter-selected and none is ever auto-applied; all three stack — none replaces
+ * another. */
 export function discountItemsForService(svcId: string, discountRules: DiscountRules | undefined, st: SessionState): DiscountBreakdownItem[] {
   const items: DiscountBreakdownItem[] = [];
-  const tier = activeBundleTier(discountRules, st.selected.length);
+  const tier = appliedBundleTier(discountRules, st);
   if (tier) items.push({ source: "bundleTier", label: `Bundle tier (${tier.minServices}+ services)`, type: tier.type, value: tier.value });
   for (const cat of discountRules?.categoryDiscounts ?? []) {
     if (st.discount.appliedCategoryDiscounts.includes(cat.id)) {
@@ -90,7 +103,7 @@ export interface DiscountBreakdown {
 }
 
 export function computeDiscountBreakdown(discountRules: DiscountRules | undefined, st: SessionState): DiscountBreakdown {
-  const bundleTier = activeBundleTier(discountRules, st.selected.length);
+  const bundleTier = appliedBundleTier(discountRules, st);
   const categories = (discountRules?.categoryDiscounts ?? []).filter((c) => st.discount.appliedCategoryDiscounts.includes(c.id));
   const manual = st.discount.manual.enabled ? st.discount.manual : null;
   let totalPercent = 0;

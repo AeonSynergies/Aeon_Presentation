@@ -20,15 +20,25 @@ export interface DiscountState {
   // Category discount ids (DeckConfig.discountRules.categoryDiscounts) the presenter has
   // explicitly checked as applicable to this client. Any number can be checked at once —
   // each contributes its own value independently (see discountItemsForService, pricing.ts)
-  // — and nothing here is ever auto-selected: a bundle tier reaching its threshold has no
-  // effect on this list, and checking one category discount has no effect on any other.
+  // — and nothing here is ever auto-selected: checking one category has no effect on any
+  // other, and none of this is ever auto-selected.
   appliedCategoryDiscounts: string[];
+  // Whether the presenter has checked "apply the bundle tier discount" — same
+  // presenter-opt-in mechanism as appliedCategoryDiscounts, never auto-checked just because
+  // the live selected-service count happens to qualify for a tier. Only one tier can ever
+  // be active at a time (the highest threshold the current count meets — see
+  // activeBundleTier, pricing.ts), so a single boolean is enough: which specific tier's
+  // percentage applies is still resolved live from the count while this stays checked, and
+  // it auto-unchecks the moment the count drops below every configured threshold (see the
+  // effect in DiscoveryNotesPanel).
+  bundleTierEnabled: boolean;
 }
 
 export function freshDiscountState(): DiscountState {
   return {
     manual: { enabled: false, scope: "all", services: [], type: "percent", value: 0 },
     appliedCategoryDiscounts: [],
+    bundleTierEnabled: false,
   };
 }
 
@@ -37,11 +47,14 @@ export function freshDiscountState(): DiscountState {
 // (`{enabled, scope, services, type, value, auto, appliedCategoryDiscounts}` at the top
 // level — no `manual` object) — this is a QA/demo app with no historic discount value
 // precious enough to hand-migrate, so those simply start fresh, keeping only
-// `appliedCategoryDiscounts` since that key's shape and meaning are unchanged.
+// `appliedCategoryDiscounts` since that key's shape and meaning are unchanged. A row saved
+// after the additive stack shipped but before the bundle tier became presenter-selected has
+// a `manual` object but no `bundleTierEnabled` — those default to false (unchecked), matching
+// "never auto-checked."
 export function normalizeDiscountState(raw: unknown): DiscountState {
   const r = raw as (Partial<DiscountState> & Record<string, unknown>) | null | undefined;
   if (r && typeof r === "object" && r.manual && typeof r.manual === "object") {
-    return r as DiscountState;
+    return { ...r, bundleTierEnabled: typeof r.bundleTierEnabled === "boolean" ? r.bundleTierEnabled : false } as DiscountState;
   }
   const appliedCategoryDiscounts = Array.isArray(r?.appliedCategoryDiscounts) ? (r.appliedCategoryDiscounts as string[]) : [];
   return { ...freshDiscountState(), appliedCategoryDiscounts };
@@ -89,10 +102,10 @@ export function freshSessionState(): SessionState {
 // this deck's actual starting state immediately — never a gap where the row only has bare
 // column defaults that a later client save has to catch up on).
 //
-// The discount itself always starts fresh here — a bundle tier or checked category
-// discount is computed live from the deck's discountRules plus the current selection/
-// appliedCategoryDiscounts (see activeBundleTier/discountItemsForService, pricing.ts), never
-// stored up front, so there's nothing to seed from discountRules at creation time.
+// The discount itself always starts fresh here — every category discount starts unchecked
+// and the bundle tier starts unchecked too, regardless of whether the starting selection
+// already qualifies for one (see discountItemsForService, pricing.ts) — never stored up
+// front, so there's nothing to seed from discountRules at creation time.
 export function initialSessionStateForDeck(deck: {
   services: { id: string }[];
   discoveryQuestions: { id: string; type: string }[];

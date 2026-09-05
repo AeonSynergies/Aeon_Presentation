@@ -131,10 +131,11 @@ export function StepPricingModel({
         DISCOUNT RULES (optional)
       </div>
       <p className="builder-step-intro">
-        Pre-decided, so a presenter never has to guess a number live on a call. A category discount is marked applicable by the presenter
-        during a call; a bundle tier applies automatically based on how many services are currently selected — the highest tier the count
-        still qualifies for wins. Either just pre-fills the discount control in Discovery Notes — the presenter can still turn it off or
-        adjust it manually at any point.
+        Pre-decided, so a presenter never has to guess a number live on a call — but nothing here ever applies on its own. A category
+        discount is checked by the presenter as applicable during a call; a bundle tier works the same way, except only the tier the
+        current service count actually qualifies for (the highest threshold met) is checkable — the presenter still has to check it for
+        it to apply, and it stays checked as the qualifying tier changes with the live selection, unchecking automatically only if none
+        qualifies anymore.
       </p>
 
       <div className="builder-subcard-head">

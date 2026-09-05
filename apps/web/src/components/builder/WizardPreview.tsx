@@ -43,11 +43,11 @@ export function WizardPreview({
   // start opted-in (matching initStateForDeck), removed services drop out of selection,
   // and every pricing model (deck default plus any per-service assignment) gets a sample
   // value so those prices render, including one just created via the wizard's "+ Create
-  // new model" round trip. The discount stack itself needs no recomputation here — the
-  // bundle tier and any checked category discounts are derived live from deck.discountRules
-  // + state at render/pricing time (see activeBundleTier/discountItemsForService,
-  // @aeon/types), so editing discountRules on the Pricing Model step is already reflected
-  // without touching state.discount at all.
+  // new model" round trip. The discount stack itself needs no recomputation here — every
+  // checked category discount and the bundle tier (if checked and its threshold is still
+  // met) are derived live from deck.discountRules + state at render/pricing time (see
+  // appliedBundleTier/discountItemsForService, @aeon/types), so editing discountRules on the
+  // Pricing Model step is already reflected without touching state.discount at all.
   const knownSvcIds = React.useRef<Set<string>>(new Set(deck.services.map((s) => s.id)));
   React.useEffect(() => {
     const current = new Set(deck.services.map((s) => s.id));
