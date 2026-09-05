@@ -17,6 +17,19 @@
 //      and freezes the value until the presenter re-triggers a rule or clicks "Use
 //      recommended". Category discounts outrank bundle tiers when both would apply.
 //
+// Regression note: an earlier version of this suite passed while a real deployed user saw
+// a manually-enabled discount do nothing to any total. Root cause: discountApplies()
+// (packages/types/src/pricing.ts) checked `discount.services.includes(svcId)` even for
+// scope "all" — but "all" is the DEFAULT scope, so a presenter who just checks "Apply a
+// discount" and sets a value (never touching the already-correct scope dropdown) left
+// `services` at its freshSessionState default of `[]`, and the discount silently applied to
+// nothing. This suite's own fixture deck never exercised that path because its manual-
+// override section only ran after an auto bundle-tier discount had already populated
+// `services` with every service id at scope "all" — so the very first "Regression" section
+// below uses a SECOND, separate deck with no discountRules configured at all, to hit the
+// same untouched-default-scope path a real user hits. Fixed by making discountApplies treat
+// scope "all" as universal regardless of `services`' contents.
+//
 // What it does, through the actual UI + real API calls, against a 4-service fixture deck
 // priced at $100/$200/$300/$400 (so every discount below lands on a distinctive, easy-to-
 // verify total):
@@ -167,9 +180,70 @@ const created = await callTrpc("mutation", "deck.create", token, { config: fixtu
 check("setup: fixture deck created", created.ok, created.message);
 const deckSlug = created.data?.slug;
 
+// A SEPARATE deck that never gets discountRules configured (never opened in the wizard's
+// Pricing Model step at all) — regression coverage for a real bug this suite's own fixture
+// deck couldn't have caught, because by the time the fixture's manual-override section ran,
+// discount.scope was already "all" with `services` already correctly populated by an auto
+// bundle tier. A deck with NO discountRules starts with discount.enabled:false, scope:"all",
+// services:[] (freshSessionState's literal default) — the scope a presenter never has a
+// reason to touch, since it's already the default. discountApplies used to check
+// `discount.services.includes(svcId)` even for scope "all", so a manual discount enabled
+// this way silently discounted nothing anywhere (Pricing slide, PDF, Meeting Record) despite
+// showing as "enabled" with a real value in Discovery Notes.
+const createdNoRules = await callTrpc("mutation", "deck.create", token, { config: fixtureConfig(`${RUN_TAG}-norules`) });
+check("setup: second fixture deck (no discountRules) created", createdNoRules.ok, createdNoRules.message);
+const noRulesDeckSlug = createdNoRules.data?.slug;
+
+// ========== Regression: manual discount at the untouched default scope ("all") on a deck with NO discountRules ==========
+console.log("\n=== Regression: manual 'all'-scope discount on a deck with no discountRules — the real bug's exact path ===");
+await login();
+await page.goto(`${BASE}/decks/${noRulesDeckSlug}`, { waitUntil: "networkidle" });
+await page.waitForSelector(".notes-btn", { timeout: 15000 });
+await page.locator(".routebar .stop", { hasText: "Pricing" }).click();
+await page.waitForTimeout(300);
+
+await section("regression: manual all-scope discount on a deck with no discountRules configured", async () => {
+  const [notesPageCheck] = await Promise.all([context.waitForEvent("page"), page.locator(".notes-btn").click()]);
+  await notesPageCheck.waitForLoadState("networkidle");
+  await notesPageCheck.waitForSelector(".chip-grid", { timeout: 15000 });
+  check(
+    "regression: 'Pre-decided discounts' section is absent on a deck with no discountRules",
+    (await notesPageCheck.locator(".q-num", { hasText: "PRE-DECIDED DISCOUNTS" }).count()) === 0
+  );
+
+  await notesPageCheck.locator('.q-block:has-text("REQUIRED · DRIVES PRICING") input[type="number"]').first().fill("1");
+  await notesPageCheck.waitForTimeout(300);
+
+  // The scope/type/value controls only render once the discount is enabled — the exact
+  // real-user action is just checking this box, so that's the first thing touched.
+  const noRulesDiscountBlock = notesPageCheck.locator(".q-block", { hasText: "MANUAL · IN-CALL OVERRIDE" });
+  await noRulesDiscountBlock.locator('input[type="checkbox"]').click();
+  await notesPageCheck.waitForTimeout(200);
+  check(
+    "regression: scope defaults to \"all\" once enabled, before the presenter ever touches the scope select",
+    (await noRulesDiscountBlock.locator("select").nth(0).inputValue()) === "all"
+  );
+
+  // Never touch the scope select — it's already showing the right thing.
+  await noRulesDiscountBlock.locator('input[type="number"]').fill("20");
+  await notesPageCheck.waitForTimeout(1500);
+  await notesPageCheck.close();
+  await page.waitForTimeout(2000); // main window's own poll cycle
+
+  const total = await page.locator(".total-row .tval").textContent();
+  check("regression: Pricing slide total reflects the untouched-scope manual discount ($1,000 - 20% = $800)", total?.trim() === "$800", total ?? "");
+  check(
+    "regression: at least one price card shows a discounted (strike-through) price",
+    (await page.locator(".price-card .kpi-price.strike").count()) > 0
+  );
+  check("regression: savings note is present", (await page.locator(".savings-note").count()) > 0);
+});
+
 // ========== Edit Deck: configure both rule types via the real wizard UI ==========
 console.log("\n=== Edit Deck: add a category discount + three bundle tiers ===");
-await login();
+// Already logged in from the regression section above — logging in again would navigate to
+// /login while an authenticated session is active, which redirects away before the form
+// ever renders, hanging the fill() calls.
 await page.goto(`${BASE}/decks/${deckSlug}/edit`, { waitUntil: "networkidle" });
 const form = page.locator(".builder-form-pane");
 await form.locator(".builder-step-chip", { hasText: "Pricing Model" }).click();
