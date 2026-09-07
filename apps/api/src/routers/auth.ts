@@ -48,6 +48,10 @@ export const authRouter = router({
       if (!user) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
       const valid = await bcrypt.compare(input.password, user.passwordHash);
       if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
+      // Checked after the password so a deactivated account doesn't leak "this email/
+      // password combo is actually correct" — same reason wrong-email and wrong-password
+      // share one message above.
+      if (user.deactivatedAt) throw new TRPCError({ code: "UNAUTHORIZED", message: "This account has been deactivated." });
       const accessToken = await issueSession(ctx.res, user);
       return { accessToken, user: { id: user.id, email: user.email, name: user.name, title: user.title, role: user.role } };
     }),
@@ -67,6 +71,12 @@ export const authRouter = router({
     }
     // Rotate: revoke the used token and issue a fresh pair.
     await prisma.refreshToken.update({ where: { id: record.id }, data: { revokedAt: new Date() } });
+    // Deactivating a user doesn't revoke their existing refresh-token cookie — without this
+    // check they'd keep silently minting fresh 15-minute access tokens off it forever, well
+    // past whatever access-token lifetime made deactivation feel effective.
+    if (record.user.deactivatedAt) {
+      throw new TRPCError({ code: "UNAUTHORIZED", message: "This account has been deactivated." });
+    }
     const accessToken = await issueSession(ctx.res, record.user);
     return {
       accessToken,

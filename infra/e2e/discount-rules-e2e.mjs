@@ -123,6 +123,18 @@ const CLIENT_NAME = `Discount QA Client ${RUN_TAG}`;
 const CATEGORY_A = "Women-owned DSPs";
 const CATEGORY_B = "Local Business";
 
+// Fixed fixture names/slugs, reused across runs (not randomized) — matching the idempotent
+// pattern pricing-edit-e2e.mjs / meeting-records-e2e.mjs already use. DECK_SLUG's config
+// gets edited THROUGH THE REAL WIZARD UI every run (category discounts + bundle tiers
+// added via "Add category discount"/"Add bundle tier"), so unlike a suite that only reads
+// its fixture, this one resets it back to the bare config below before each run — otherwise
+// re-running the wizard steps would keep appending more rules on top of the previous run's,
+// rather than reproducing the same end state every time.
+const DECK_NAME = "QA Discount Rules Fixture";
+const DECK_SLUG = "qa-discount-rules-fixture";
+const NORULES_DECK_NAME = "QA Discount Rules Fixture No Rules";
+const NORULES_DECK_SLUG = "qa-discount-rules-fixture-no-rules";
+
 const results = [];
 function check(name, ok, detail = "") {
   results.push({ name, ok });
@@ -153,7 +165,7 @@ async function callTrpc(kind, path, token, input) {
 
 // 4 flat-priced services on one pricing model, deliberately priced so every discount below
 // lands on a distinctive, checkable total.
-function fixtureConfig(suffix) {
+function fixtureConfig(companyName) {
   const svc = (id, name, price) => ({
     id,
     name,
@@ -168,8 +180,8 @@ function fixtureConfig(suffix) {
   });
   return {
     industry: "QA",
-    companyName: `QA Discount Rules ${suffix}`,
-    tagline: "Throwaway fixture for the live discount-rules E2E suite.",
+    companyName,
+    tagline: "Fixture for the live discount-rules E2E suite.",
     logo: { type: "text", wordmark: "QA" },
     colors: { amber: "#888888", teal: "#666666" },
     pricingModels: [{ id: "primary", label: "Units", unit: "units", questionText: "How many units?", isPrimary: true }],
@@ -205,17 +217,40 @@ const loginRes = await callTrpc("mutation", "auth.login", null, { email: EMAIL, 
 check("setup: admin API login succeeds", loginRes.ok);
 const token = loginRes.data?.accessToken;
 
-const created = await callTrpc("mutation", "deck.create", token, { config: fixtureConfig(RUN_TAG) });
-check("setup: fixture deck created", created.ok, created.message);
-const deckSlug = created.data?.slug;
+// Idempotent — same getBySlug-then-create idiom as every other fixture in this repo's live
+// E2E suites. This deck's config gets edited through the real wizard UI below (category
+// discounts + bundle tiers added on top of whatever's there), so an existing fixture is
+// explicitly RESET back to the bare config first — otherwise a second run would pile a
+// second copy of every rule on top of the first run's instead of reproducing the same end
+// state every time.
+const existingFixture = await callTrpc("query", "deck.getBySlug", token, { slug: DECK_SLUG });
+let deckSlug;
+if (existingFixture.ok) {
+  console.log(`"${DECK_NAME}" already exists (created on a previous run) — resetting it to the bare fixture config.`);
+  const reset = await callTrpc("mutation", "deck.update", token, { slug: DECK_SLUG, config: fixtureConfig(DECK_NAME) });
+  check("setup: fixture deck reset to bare config", reset.ok, reset.message);
+  deckSlug = DECK_SLUG;
+} else {
+  const created = await callTrpc("mutation", "deck.create", token, { config: fixtureConfig(DECK_NAME) });
+  check("setup: fixture deck created", created.ok && created.data?.slug === DECK_SLUG, created.message);
+  deckSlug = created.data?.slug;
+}
 
 // A SEPARATE deck that never gets discountRules configured at all — regression coverage
 // for Regression #1 above (see the file header): a deck with NO discountRules starts with
 // the manual override's scope already at its default "all", the scope a presenter never has
-// a reason to touch — the exact path that used to silently discount nothing.
-const createdNoRules = await callTrpc("mutation", "deck.create", token, { config: fixtureConfig(`${RUN_TAG}-norules`) });
-check("setup: second fixture deck (no discountRules) created", createdNoRules.ok, createdNoRules.message);
-const noRulesDeckSlug = createdNoRules.data?.slug;
+// a reason to touch — the exact path that used to silently discount nothing. Never edited
+// after creation, so a plain skip-if-exists (no reset needed) keeps it idempotent.
+const existingNoRulesFixture = await callTrpc("query", "deck.getBySlug", token, { slug: NORULES_DECK_SLUG });
+let noRulesDeckSlug;
+if (existingNoRulesFixture.ok) {
+  console.log(`"${NORULES_DECK_NAME}" already exists (created on a previous run) — skipping creation.`);
+  noRulesDeckSlug = NORULES_DECK_SLUG;
+} else {
+  const createdNoRules = await callTrpc("mutation", "deck.create", token, { config: fixtureConfig(NORULES_DECK_NAME) });
+  check("setup: second fixture deck (no discountRules) created", createdNoRules.ok && createdNoRules.data?.slug === NORULES_DECK_SLUG, createdNoRules.message);
+  noRulesDeckSlug = createdNoRules.data?.slug;
+}
 
 // ========== Regression #1: manual discount at the untouched default scope ("all") on a deck with NO discountRules ==========
 console.log("\n=== Regression #1: manual 'all'-scope discount on a deck with no discountRules ===");

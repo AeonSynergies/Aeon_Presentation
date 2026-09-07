@@ -50,6 +50,15 @@ mkdirSync(OUT, { recursive: true });
 
 const RUN_TAG = Date.now().toString(36);
 
+// Fixed fixture name/slug, reused across runs (not randomized) — matching the idempotent
+// pattern pricing-edit-e2e.mjs / meeting-records-e2e.mjs already use. This deck's config
+// gets edited THROUGH THE REAL WIZARD UI below (one question of each type appended via "Add
+// general question", with no existence check), so an existing fixture is explicitly RESET
+// back to the bare config before each run — otherwise re-running the wizard steps would
+// append a second copy of every question on top of the first run's.
+const DECK_NAME = "QA Discovery Questions Fixture";
+const DECK_SLUG = "qa-discovery-questions-fixture";
+
 const results = [];
 function check(name, ok, detail = "") {
   results.push({ name, ok });
@@ -78,11 +87,11 @@ async function callTrpc(kind, path, token, input) {
   return { ok: !entry?.error, data: entry?.result?.data, message: entry?.error?.message };
 }
 
-function baseDeckConfig(suffix) {
+function baseDeckConfig(companyName) {
   return {
     industry: "QA",
-    companyName: `QA Discovery Questions ${suffix}`,
-    tagline: "Throwaway fixture for the live discovery-questions E2E suite.",
+    companyName,
+    tagline: "Fixture for the live discovery-questions E2E suite.",
     logo: { type: "text", wordmark: "QA" },
     colors: { amber: "#888888", teal: "#666666" },
     pricingModels: [{ id: "primary", label: "Units", unit: "units", questionText: "How many units?", isPrimary: true }],
@@ -132,15 +141,30 @@ check("setup: admin API login succeeds", loginRes.ok);
 const token = loginRes.data?.accessToken;
 
 await section("setup: server still rejects a toggle with fewer than two options", async () => {
-  const badConfig = baseDeckConfig(`${RUN_TAG}-bad`);
+  // Never persists (deck.create is expected to reject this) — the exact companyName
+  // doesn't matter, this call never succeeds so it can't leave a fixture behind.
+  const badConfig = baseDeckConfig(`QA Discovery Questions Bad Fixture ${RUN_TAG}`);
   badConfig.discoveryQuestions = [{ id: "onlyOneOption", section: "general", label: "Bad toggle", type: "toggle", options: ["Just one"] }];
   const res = await callTrpc("mutation", "deck.create", token, { config: badConfig });
   check("setup: one-option toggle rejected by deck.create", !res.ok && /at least two options/i.test(res.message || ""), res.message);
 });
 
-const created = await callTrpc("mutation", "deck.create", token, { config: baseDeckConfig(RUN_TAG) });
-check("setup: fixture deck created", created.ok, created.message);
-const deckSlug = created.data?.slug;
+// Idempotent — same getBySlug-then-create idiom as every other fixture in this repo's live
+// E2E suites. Reset back to the bare config on an existing fixture (see header comment on
+// DECK_NAME above) rather than skipped outright, since the wizard steps below always add a
+// fresh copy of every question type.
+const existingFixture = await callTrpc("query", "deck.getBySlug", token, { slug: DECK_SLUG });
+let deckSlug;
+if (existingFixture.ok) {
+  console.log(`"${DECK_NAME}" already exists (created on a previous run) — resetting it to the bare fixture config.`);
+  const reset = await callTrpc("mutation", "deck.update", token, { slug: DECK_SLUG, config: baseDeckConfig(DECK_NAME) });
+  check("setup: fixture deck reset to bare config", reset.ok, reset.message);
+  deckSlug = DECK_SLUG;
+} else {
+  const created = await callTrpc("mutation", "deck.create", token, { config: baseDeckConfig(DECK_NAME) });
+  check("setup: fixture deck created", created.ok && created.data?.slug === DECK_SLUG, created.message);
+  deckSlug = created.data?.slug;
+}
 
 // ========== Wizard: add one question of each new/changed type ==========
 console.log("\n=== Wizard: add Toggle (3 options), Multi-select, Date, Email, Phone, Number ===");

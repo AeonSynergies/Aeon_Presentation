@@ -2395,6 +2395,19 @@ select:focus {
   padding: 1px 6px;
   margin-left: 8px;
 }
+.team-inactive-tag {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--fog);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 6px;
+  margin-left: 8px;
+}
+.team-row-inactive {
+  opacity: 0.55;
+}
 .team-row-error {
   color: var(--danger, #c0504d);
   font-size: 12px;

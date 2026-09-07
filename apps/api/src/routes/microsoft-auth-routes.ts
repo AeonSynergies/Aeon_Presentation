@@ -71,7 +71,9 @@ microsoftAuthRouter.get("/callback", async (req, res) => {
       // Deliberately no auto-provisioning — see lib/microsoft-auth.ts. An Admin has to
       // create the account (Team Management) before this email can sign in via Microsoft,
       // exactly like it already has to before that email can sign in with a password.
-      redirectToLoginError(res, "no_account", { email: result.email });
+      // "deactivated" is the other terminal reason resolveMicrosoftUser can return — same
+      // account-exists-but-can't-sign-in outcome password login enforces, surfaced here too.
+      redirectToLoginError(res, result.reason, { email: result.email });
       return;
     }
     await issueSession(res, result.user);
