@@ -1,5 +1,265 @@
 {
-  "mode": "audit",
-  "actions_json": [],
-  "_note": "re-run after slimming the meeting-record audit output to fit within job-log limits"
+  "mode": "execute",
+  "actions_json": [
+    {
+      "type": "deck.archive",
+      "id": "cmtaav87b0004op3dq7gw1x2z",
+      "label": "Harbor Lane Dental"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtacigyp000voc3dh9j37nm1",
+      "label": "QA Role Test Deck"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtbnj2m30016lr3cue1sxgjw",
+      "label": "QA Pricing Edit Test Deck"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtet0x4o001soc3dqdxj2367",
+      "label": "QA Meeting Records Test Deck"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmthqtzjg0045o53e7p02bam7",
+      "label": "QA Verify IT MSP"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmthqu1yb004ao53e1pt9lb4u",
+      "label": "QA Verify Hospitality"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmthqu453004fo53eifp60410",
+      "label": "QA Verify Staffing"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtlzof9w007zn83eanloe5lh",
+      "label": "QA Report Authoring mtlzoet4"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtmkx29a007tod3dbcsueqbg",
+      "label": "QA Report Authoring mtmkx1lp"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtmly798007voh3d9umgajp7",
+      "label": "QA Report Authoring mtmly6ji"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtmn2r8k007tlk3exmfsubd4",
+      "label": "QA Report Authoring mtmn2qvi"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtmqqg0d000koe3fhgtseytm",
+      "label": "QA Discovery Questions mtmqqfe5"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtmqxs730088oe3f4vl4i5k2",
+      "label": "QA Report Authoring mtmqxrn5"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtmwl7s2000kna3edl16j9rl",
+      "label": "QA Discovery Questions mtmwl7e3"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtmwp6y7005vna3euorrt4wh",
+      "label": "QA Discount Rules mtmwp6k5"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtmwvbf6008lna3e8agvttiw",
+      "label": "QA Report Authoring mtmwvb1m"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmto9u6oa000kn13fz7hadp8t",
+      "label": "QA Discovery Questions mto9u695"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmto9y3ee005vn13fv6vlo0pw",
+      "label": "QA Discount Rules mto9y336"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmto9y3eu005wn13ff9d3lpcr",
+      "label": "QA Discount Rules mto9y336-norules"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtoa24p5008sn13fmzidws6c",
+      "label": "QA Report Authoring mtoa24en"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtocq4q5000kog3digfyheni",
+      "label": "QA Discovery Questions mtocq4eh"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtocu0ej005xog3dnqjn1l1f",
+      "label": "QA Discount Rules mtocu03a"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtocu0f0005yog3d5gvbe456",
+      "label": "QA Discount Rules mtocu03a-norules"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtocxu67008uog3d6gbgrma2",
+      "label": "QA Report Authoring mtocxttn"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtoox4f8000kn53dyc77dyj1",
+      "label": "QA Discovery Questions mtoox40y"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtop123k005xn53dav3nxwlx",
+      "label": "QA Discount Rules mtop11sy"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtop1242005yn53d2broagry",
+      "label": "QA Discount Rules mtop11sy-norules"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtop1qog006jn53dbr6bohdx",
+      "label": "QA Explicit Save Fixture"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtop56mj009hn53d5538ocxb",
+      "label": "QA Report Authoring mtop56bm"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtosevpc000kn93d1kt8ii77",
+      "label": "QA Discovery Questions mtosevdb"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtosirtr005vn93dz55rm28b",
+      "label": "QA Discount Rules mtosirjq"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtosiru9005wn93d6lrykd1t",
+      "label": "QA Discount Rules mtosirjq-norules"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtosnszo009en93do2e5vqem",
+      "label": "QA Report Authoring mtosnsnq"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtozee5l000kne3dpk1aly9s",
+      "label": "QA Discovery Questions mtozedrn"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtozicot005vne3d86u2m5fs",
+      "label": "QA Discount Rules mtozicby"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtozicpc005wne3d2e4x932n",
+      "label": "QA Discount Rules mtozicby-norules"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtozmwrv009ene3dmplbn4qc",
+      "label": "QA Report Authoring mtozmwev"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtr72kog000koj3effk5zgbk",
+      "label": "QA Discovery Questions mtr72kai"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtr76jrj005voj3euaxqzj72",
+      "label": "QA Discount Rules mtr76jfv"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtr76js5005woj3e73q0roqh",
+      "label": "QA Discount Rules mtr76jfv-norules"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtr7bmoq009goj3e8licx7tl",
+      "label": "QA Report Authoring mtr7bmb3"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtr7r0dm000kn43evn2wmw9g",
+      "label": "QA Discovery Questions mtr7qzag"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtr7uqse005vn43edr2rqtha",
+      "label": "QA Discount Rules mtr7uq4p"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtr7uqul005wn43ezfa7nx60",
+      "label": "QA Discount Rules mtr7uq4p-norules"
+    },
+    {
+      "type": "deck.deletePermanent",
+      "id": "cmtr80cyk009gn43ewo3zfx0i",
+      "label": "QA Report Authoring mtr80ca8"
+    },
+    {
+      "type": "user.remove",
+      "id": "cmtacid5a000goc3dv3reebnd",
+      "label": "qa-sales-executive@aeonqa.internal"
+    },
+    {
+      "type": "user.remove",
+      "id": "cmtacidm3000hoc3dnw8afcfa",
+      "label": "qa-operations-manager@aeonqa.internal"
+    },
+    {
+      "type": "user.remove",
+      "id": "cmtacie24000ioc3d9bgfalo5",
+      "label": "qa-bd-manager@aeonqa.internal"
+    },
+    {
+      "type": "user.remove",
+      "id": "cmtaikwcg0016ob3d07odtwua",
+      "label": "qa-ai-draft-limit@aeonqa.internal"
+    },
+    {
+      "type": "user.remove",
+      "id": "cmtj5xsmo001omy3ei1cqm4py",
+      "label": "qa-password-reset-test@aeonqa.internal"
+    },
+    {
+      "type": "user.remove",
+      "id": "cmtjh8xjj0026oi3cyjqwpjsq",
+      "label": "qa-invited-user@aeonqa.internal"
+    },
+    {
+      "type": "user.remove",
+      "id": "cmtjh90jz002noi3c9n72x5cr",
+      "label": "qa-direct-password-test@aeonqa.internal"
+    }
+  ]
 }
