@@ -1,5 +1,5 @@
 {
-  "_note": "Final re-audit after round-2 execute (workflow run 34144111665, all 16/16 actions succeeded). Verify final state: only the 3 already-known-blocked QA role accounts (sales-executive/operations-manager/bd-manager) should remain as QA data, alongside demo/test.admin and the 3 KEEP decks; Harbor Lane Dental archived.",
+  "_note": "Audit after the deactivation + e2e fixture fixes deploy (PR #91, workflow run 34146770693). Checking current state before deciding on the deactivate-3-QA-role-accounts follow-up.",
   "mode": "audit",
   "actions_json": []
 }
