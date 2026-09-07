@@ -1,4 +1,5 @@
 {
   "mode": "audit",
-  "actions_json": []
+  "actions_json": [],
+  "_note": "re-run after slimming the meeting-record audit output to fit within job-log limits"
 }
