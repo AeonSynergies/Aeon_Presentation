@@ -83,17 +83,28 @@ if ([activeDecks, archivedDecks, users, ownActiveMeetings, archivedMeetings].som
 const deckSlugById = new Map([...activeDecks.data, ...archivedDecks.data].map((d) => [d.id, d.slug]));
 const userEmailById = new Map(users.data.map((u) => [u.id, u.email]));
 
+// Meeting DTOs carry the full live SessionState (selected/toggles/answers/discount) — bloat
+// irrelevant to classifying test data and, at real accumulated volume, big enough to blow
+// past this tool's own job-log size limits. Audit mode only needs enough to decide
+// keep/archive/delete, so print a slim projection instead of the raw objects.
+function slimMeeting(m) {
+  return { id: m.id, deckId: m.deckId, deckCompanyName: m.deckCompanyName, clientName: m.clientName, completedAt: m.completedAt };
+}
+function slimArchivedMeeting(m) {
+  return { id: m.id, clientName: m.clientName, deckCompanyName: m.deckCompanyName, createdByName: m.createdByName, completedAt: m.completedAt, archivedAt: m.archivedAt };
+}
+
 if (MODE === "audit") {
   console.log("\n=== ACTIVE DECKS (deck.list) ===");
-  console.log(JSON.stringify(activeDecks.data, null, 2));
+  console.log(JSON.stringify(activeDecks.data.map((d) => ({ id: d.id, slug: d.slug, companyName: d.companyName })), null, 2));
   console.log("\n=== ARCHIVED DECKS (archive.listDecks) ===");
   console.log(JSON.stringify(archivedDecks.data, null, 2));
   console.log("\n=== USER ACCOUNTS (user.list) ===");
-  console.log(JSON.stringify(users.data, null, 2));
-  console.log("\n=== ADMIN'S OWN ACTIVE COMPLETED MEETING RECORDS (meeting.listRecords) ===");
-  console.log(JSON.stringify(ownActiveMeetings.data, null, 2));
-  console.log("\n=== ALL ARCHIVED COMPLETED MEETING RECORDS, ANY OWNER (archive.listMeetings) ===");
-  console.log(JSON.stringify(archivedMeetings.data, null, 2));
+  console.log(JSON.stringify(users.data.map((u) => ({ id: u.id, email: u.email, role: u.role })), null, 2));
+  console.log("\n=== ADMIN'S OWN ACTIVE COMPLETED MEETING RECORDS (meeting.listRecords) — slim projection ===");
+  console.log(JSON.stringify(ownActiveMeetings.data.map(slimMeeting), null, 2));
+  console.log("\n=== ALL ARCHIVED COMPLETED MEETING RECORDS, ANY OWNER (archive.listMeetings) — slim projection ===");
+  console.log(JSON.stringify(archivedMeetings.data.map(slimArchivedMeeting), null, 2));
   process.exit(0);
 }
 
