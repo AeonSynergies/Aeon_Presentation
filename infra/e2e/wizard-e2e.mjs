@@ -230,20 +230,40 @@ async function createViaWizard() {
   await fieldTextarea("Subtitle").fill("We run the back office so your clinical team runs the practice.");
   await form.locator(".builder-svc-head", { hasText: "ABOUT US" }).click();
   await fieldTextarea("Body").fill("Harbor Lane Dental is a dedicated back-office team for dental practices.");
-  await form.locator(".q-block", { hasText: "Bullets" }).locator(".mini-btn", { hasText: "Add bullet" }).click();
-  await form.locator(".q-block", { hasText: "Bullets" }).locator(".builder-list-row input").first().fill("One team across billing, scheduling, and reporting");
+  // About Us's old freeform "Bullets" list was replaced by the two-panel redesign's "Focus
+  // areas" right-panel tiles (FocusAreaListEditor, apps/web/src/components/builder/fields.tsx)
+  // — this suite's selector was never updated for that redesign, so it was hanging forever
+  // waiting for a "Bullets" q-block that no longer exists (test-selector staleness, not a
+  // real app regression).
+  await form.locator(".q-block", { hasText: "Focus areas" }).locator(".mini-btn", { hasText: "Add focus area" }).click();
+  await form.locator(".q-block", { hasText: "Focus areas" }).locator(".builder-list-row input").first().fill("Dental Practices");
+  // Same redesign that replaced About Us's "Bullets" with "Focus areas" (see above) also
+  // replaced Challenges/Benefits' plain one-line list rows with a title+description card
+  // pair each (GridItemListEditor, apps/web/src/components/builder/fields.tsx) — this
+  // suite's selectors were never updated for that redesign either, so this crash was
+  // hidden behind the Focus areas one until that got fixed. Each item is its own
+  // .builder-subcard with a "Title" input and a "Description" textarea, not a
+  // .builder-list-row.
   await form.locator(".builder-svc-head", { hasText: "CHALLENGES" }).click();
   const challenges = form.locator(".q-block", { hasText: "Challenge items" });
   await challenges.locator(".mini-btn", { hasText: "Add challenge" }).click();
-  await challenges.locator(".builder-list-row input").nth(0).fill("Rejected insurance claims sitting unworked");
+  const challengeCard1 = challenges.locator(".builder-subcard").nth(0);
+  await challengeCard1.locator(".q-block", { hasText: "Title" }).locator("input").fill("Slow claims processing");
+  await challengeCard1.locator(".q-block", { hasText: "Description" }).locator("textarea").fill("Rejected insurance claims sitting unworked");
   await challenges.locator(".mini-btn", { hasText: "Add challenge" }).click();
-  await challenges.locator(".builder-list-row input").nth(1).fill("Front desk overwhelmed by recall scheduling");
+  const challengeCard2 = challenges.locator(".builder-subcard").nth(1);
+  await challengeCard2.locator(".q-block", { hasText: "Title" }).locator("input").fill("Overwhelmed front desk");
+  await challengeCard2.locator(".q-block", { hasText: "Description" }).locator("textarea").fill("Front desk overwhelmed by recall scheduling");
   await form.locator(".builder-svc-head", { hasText: "BENEFITS" }).click();
   const benefits = form.locator(".q-block", { hasText: "Benefit items" });
   await benefits.locator(".mini-btn", { hasText: "Add benefit" }).click();
-  await benefits.locator(".builder-list-row input").nth(0).fill("Cleaner claims and faster reimbursement");
+  const benefitCard1 = benefits.locator(".builder-subcard").nth(0);
+  await benefitCard1.locator(".q-block", { hasText: "Title" }).locator("input").fill("Faster reimbursement");
+  await benefitCard1.locator(".q-block", { hasText: "Description" }).locator("textarea").fill("Cleaner claims and faster reimbursement");
   await benefits.locator(".mini-btn", { hasText: "Add benefit" }).click();
-  await benefits.locator(".builder-list-row input").nth(1).fill("Fuller schedules with fewer no-shows");
+  const benefitCard2 = benefits.locator(".builder-subcard").nth(1);
+  await benefitCard2.locator(".q-block", { hasText: "Title" }).locator("input").fill("Fuller schedules");
+  await benefitCard2.locator(".q-block", { hasText: "Description" }).locator("textarea").fill("Fuller schedules with fewer no-shows");
   await form.locator(".builder-svc-head", { hasText: "Q&A / CONTACT" }).click();
   await form.locator(".q-block", { hasText: "Email" }).locator("input").fill("hello@harborlanedental.com");
   await form.locator(".q-block", { hasText: "Phone" }).locator("input").fill("+1 (555) 010-2000");
