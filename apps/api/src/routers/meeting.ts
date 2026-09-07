@@ -485,13 +485,18 @@ function buildQuotePdfBuffer(snapshot: QuoteSnapshot): Promise<Buffer> {
 
     // Per-service sections — heading + the deck's own "what we handle" bullets, reused
     // verbatim rather than summarized, so this never drifts from what the live deck shows.
+    // A record completed before per-service bullets were added to this snapshot (see
+    // QuoteSnapshotRow above) has `handle` permanently absent from its frozen JSON — that
+    // row's other fields (service name, team, pricing) are still perfectly valid and worth
+    // showing, so a missing/malformed handle just means no bullets for that service, not a
+    // crash regenerating a years-old proposal.
     drawSectionHeading("Services");
     for (const r of snapshot.rows) {
       doc.font("Helvetica-Bold").fontSize(12).fillColor(BRAND_INK).text(r.service);
       doc.font("Helvetica").fontSize(9).fillColor("#777").text(r.team);
       doc.moveDown(0.3);
       doc.fontSize(10).fillColor("#333");
-      for (const bullet of r.handle) {
+      for (const bullet of Array.isArray(r.handle) ? r.handle : []) {
         doc.text(`•  ${bullet}`, { indent: 10 });
       }
       doc.moveDown(0.7);

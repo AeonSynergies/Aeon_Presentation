@@ -386,18 +386,31 @@ const isChipCheckable = async (chip) => !(await chip.locator('input[type="checkb
 // click or the total's own read stuck past the fixed wait below — this function is called
 // nine times in this suite, so one rare slow tick shouldn't fail the whole run when every
 // other call succeeds with the exact same fixed wait.
-async function pricingTotalOnNotesPopupParent() {
+//
+// A thrown error isn't the only way this read can come back wrong: the debounced pricing
+// recompute after a checkbox/selection change can occasionally take longer than the fixed
+// wait even when every click and selector resolves fine, so the read SUCCEEDS but returns
+// the still-stale previous total — no exception, so the old version of this loop (which
+// only retried on a throw) returned that stale value as if it were correct. When the
+// caller knows what the total should settle to, pass it as `expected` so a merely-stale
+// (not thrown) read is retried too, same growing-wait schedule as the throw case; when the
+// read still disagrees after every attempt, the last value is returned regardless, so a
+// genuine mismatch still surfaces as a normal check() failure rather than being masked.
+async function pricingTotalOnNotesPopupParent(expected) {
   let lastErr;
+  let lastValue;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       await notesPage.waitForTimeout(1800 + attempt * 1200); // clear the notes-window save debounce + main window's poll cycle
       await page.locator(".routebar .stop", { hasText: "Pricing" }).click({ timeout: 10000 });
       await page.waitForTimeout(300);
-      return (await page.locator(".total-row .tval").textContent({ timeout: 10000 }))?.trim();
+      lastValue = (await page.locator(".total-row .tval").textContent({ timeout: 10000 }))?.trim();
+      if (expected === undefined || lastValue === expected) return lastValue;
     } catch (e) {
       lastErr = e;
     }
   }
+  if (lastValue !== undefined) return lastValue;
   throw lastErr;
 }
 
@@ -408,7 +421,7 @@ await section("live: neither category discount nor the bundle tier is pre-checke
   check("live: category B is NOT pre-checked", !(await isChipSelected(categoryChip(CATEGORY_B))));
   check("live: the qualifying 15% bundle tier is NOT pre-checked", !(await isChipSelected(bundleTierChip(4))));
   check("live: breakdown block is absent (nothing checked yet, nothing to break down)", (await breakdownBlock().count()) === 0);
-  const total = await pricingTotalOnNotesPopupParent();
+  const total = await pricingTotalOnNotesPopupParent("$1,000");
   check("live: Pricing slide total is undiscounted $1,000 (4 services, nothing checked)", total === "$1,000", total ?? "");
 });
 
@@ -423,7 +436,7 @@ await section("live: checking the qualifying bundle tier applies it — 15% off,
   await notesPage.waitForTimeout(300);
   check("live: 15% tier chip now shows as checked", await isChipSelected(bundleTierChip(4)));
   check("live: breakdown lists only the bundle tier", /Bundle tier \(4\+ services\): 15%/.test((await breakdownBlock().textContent()) || ""));
-  const total = await pricingTotalOnNotesPopupParent();
+  const total = await pricingTotalOnNotesPopupParent("$850");
   check("live: Pricing slide total is $850 (4 services, 15% off $1,000, bundle tier only)", total === "$850", total ?? "");
 });
 
@@ -433,7 +446,7 @@ await section("live: deselecting a service to a still-qualifying count (3) keeps
   check("live: 15% (4+) tier is now disabled and unchecked (no longer qualifies at 3 selected)", !(await isChipCheckable(bundleTierChip(4))) && !(await isChipSelected(bundleTierChip(4))));
   check("live: 10% (3+) tier is now the checkable one, and shows as checked — no re-confirmation needed", (await isChipCheckable(bundleTierChip(3))) && (await isChipSelected(bundleTierChip(3))));
   check("live: breakdown now shows the 10% tier value", /Bundle tier \(3\+ services\): 10%/.test((await breakdownBlock().textContent()) || ""));
-  const total = await pricingTotalOnNotesPopupParent();
+  const total = await pricingTotalOnNotesPopupParent("$540");
   check("live: Pricing slide total is $540 (3 services A+B+C=$600, 10% off, bundle tier only)", total === "$540", total ?? "");
 });
 
@@ -442,7 +455,7 @@ await section("live: deselecting again to another still-qualifying count (2) aga
   await notesPage.waitForTimeout(300);
   check("live: 10% (3+) tier is now disabled and unchecked", !(await isChipCheckable(bundleTierChip(3))) && !(await isChipSelected(bundleTierChip(3))));
   check("live: 5% (2+) tier is now the checkable one, and shows as checked", (await isChipCheckable(bundleTierChip(2))) && (await isChipSelected(bundleTierChip(2))));
-  const total = await pricingTotalOnNotesPopupParent();
+  const total = await pricingTotalOnNotesPopupParent("$285");
   check("live: Pricing slide total is $285 (2 services A+B=$300, 5% off, bundle tier only)", total === "$285", total ?? "");
 });
 
@@ -452,7 +465,7 @@ await section("live: deselecting below every configured threshold (down to 1 ser
   check("live: no tier is checkable at 1 selected (below the lowest 2+ threshold)", !(await isChipCheckable(bundleTierChip(2))) && !(await isChipCheckable(bundleTierChip(3))) && !(await isChipCheckable(bundleTierChip(4))));
   check("live: 5% (2+) tier is no longer checked — auto-unchecked, not stuck on", !(await isChipSelected(bundleTierChip(2))));
   check("live: breakdown block is absent again (nothing active — the tier unchecked itself, nothing else was ever checked)", (await breakdownBlock().count()) === 0);
-  const total = await pricingTotalOnNotesPopupParent();
+  const total = await pricingTotalOnNotesPopupParent("$100");
   check("live: Pricing slide total reverts to undiscounted $100 (1 service, no discount active)", total === "$100", total ?? "");
 });
 
@@ -463,7 +476,7 @@ await section("live: restoring the selection to 3 services and re-checking the b
   await bundleTierChip(3).locator('input[type="checkbox"]').click();
   await notesPage.waitForTimeout(300);
   check("live: 10% (3+) tier is checked again after re-selecting 3 services and re-checking it", await isChipSelected(bundleTierChip(3)));
-  const total = await pricingTotalOnNotesPopupParent();
+  const total = await pricingTotalOnNotesPopupParent("$540");
   check("live: Pricing slide total is $540 again (3 services A+B+C=$600, 10% off, bundle tier only)", total === "$540", total ?? "");
 });
 
@@ -475,7 +488,7 @@ await section("live: checking category A adds its 10% to the active 10% bundle t
   check("live: category A chip shows as selected", (await categoryChip(CATEGORY_A).getAttribute("class")).includes("selected"));
   check("live: breakdown lists both the bundle tier and category A", /Bundle tier/.test((await breakdownBlock().textContent()) || "") && new RegExp(CATEGORY_A).test((await breakdownBlock().textContent()) || ""));
   check("live: breakdown's stacked total is 20% off", /20% off/.test((await breakdownBlock().textContent()) || ""), await breakdownBlock().textContent());
-  const total = await pricingTotalOnNotesPopupParent();
+  const total = await pricingTotalOnNotesPopupParent("$480");
   check("live: Pricing slide total is $480 (3 services, 20% off $600)", total === "$480", total ?? "");
 });
 
@@ -487,7 +500,7 @@ await section("live: ALSO checking category B adds its 5% on top — the reporte
   const breakdownText = await breakdownBlock().textContent();
   check("live: breakdown lists the bundle tier and BOTH category discounts", /Bundle tier/.test(breakdownText || "") && new RegExp(CATEGORY_A).test(breakdownText || "") && new RegExp(CATEGORY_B).test(breakdownText || ""));
   check("live: breakdown's stacked total is 25% off (10 + 10 + 5)", /25% off/.test(breakdownText || ""), breakdownText);
-  const total = await pricingTotalOnNotesPopupParent();
+  const total = await pricingTotalOnNotesPopupParent("$450");
   check(
     "live: Pricing slide total is $450 (3 services, 25% off $600) — NOT $480 (would mean category B was ignored)",
     total === "$450",
@@ -498,12 +511,12 @@ await section("live: ALSO checking category B adds its 5% on top — the reporte
 await section("live: unchecking one category discount removes only its own contribution, independently", async () => {
   await categoryChip(CATEGORY_B).click();
   await notesPage.waitForTimeout(300);
-  const total = await pricingTotalOnNotesPopupParent();
+  const total = await pricingTotalOnNotesPopupParent("$480");
   check("live: Pricing slide total reverts to $480 (back to 20% off, category A alone)", total === "$480", total ?? "");
   // Restore category B before moving on to the manual-override step.
   await categoryChip(CATEGORY_B).click();
   await notesPage.waitForTimeout(300);
-  const restoredTotal = await pricingTotalOnNotesPopupParent();
+  const restoredTotal = await pricingTotalOnNotesPopupParent("$450");
   check("live: re-checking category B restores $450", restoredTotal === "$450", restoredTotal ?? "");
 });
 
@@ -523,7 +536,7 @@ await section("live: enabling a 5% manual override adds on top of the bundle tie
       /Additional discount/.test(breakdownText || "")
   );
   check("live: breakdown's stacked total is 30% off (10 + 10 + 5 + 5)", /30% off/.test(breakdownText || ""), breakdownText);
-  const total = await pricingTotalOnNotesPopupParent();
+  const total = await pricingTotalOnNotesPopupParent("$420");
   check("live: Pricing slide total is $420 (3 services, 30% off $600) — the full stack combined", total === "$420", total ?? "");
 });
 
