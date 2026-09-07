@@ -1,22 +1,5 @@
 {
-  "_note": "Round 2: merging the round-1 cleanup PRs pushed to main, which re-triggered deploy-aws.yml's live-e2e suite and regenerated a fresh batch of QA fixture decks/accounts. This deletes that fresh batch, found via the re-audit (workflow run 34143376211).",
-  "mode": "execute",
-  "actions_json": [
-    { "type": "deck.deletePermanent", "id": "cmtr8huyx000koc3eybdlibi6", "label": "QA Discovery Questions mtr8huc3" },
-    { "type": "deck.deletePermanent", "id": "cmtr8lagz005xoc3ew80l04tn", "label": "QA Discount Rules mtr8l9wa" },
-    { "type": "deck.deletePermanent", "id": "cmtr8lait005yoc3eohcir10p", "label": "QA Discount Rules mtr8l9wa-norules" },
-    { "type": "deck.deletePermanent", "id": "cmtr8n4vg006loc3eo4lrs3xw", "label": "QA Explicit Save Fixture" },
-    { "type": "deck.deletePermanent", "id": "cmtr8neuu007aoc3eb137hbq1", "label": "QA Meeting Records Test Deck" },
-    { "type": "deck.deletePermanent", "id": "cmtr8r6ax009noc3enwn8he8b", "label": "QA Report Authoring mtr8r5o0" },
-    { "type": "deck.deletePermanent", "id": "cmtr989u60006mv3ehysqh2v5", "label": "QA Discovery Questions mtr989i3" },
-    { "type": "deck.deletePermanent", "id": "cmtr99kvr003bmv3ecgi8nuf9", "label": "QA Role Test Deck" },
-    { "type": "deck.deletePermanent", "id": "cmtr9byzw004zmv3eo656x0r9", "label": "QA Pricing Edit Test Deck" },
-    { "type": "deck.deletePermanent", "id": "cmtr9c92r005qmv3eordpjl3k", "label": "QA Discount Rules mtr9c8rb" },
-    { "type": "deck.deletePermanent", "id": "cmtr9c937005rmv3eq8ljoc10", "label": "QA Discount Rules mtr9c8rb-norules" },
-    { "type": "deck.deletePermanent", "id": "cmtr9ib0f009bmv3ezunh36bz", "label": "QA Report Authoring mtr9iaod" },
-    { "type": "user.remove", "id": "cmtr8ohpp0092oc3e9unh2iar", "label": "qa-ai-draft-limit@aeonqa.internal" },
-    { "type": "user.remove", "id": "cmtr99omd003smv3epdaaeea7", "label": "qa-password-reset-test@aeonqa.internal" },
-    { "type": "user.remove", "id": "cmtr9btvp004bmv3eawiria4y", "label": "qa-invited-user@aeonqa.internal" },
-    { "type": "user.remove", "id": "cmtr9bx2b004smv3ebe8bkq2i", "label": "qa-direct-password-test@aeonqa.internal" }
-  ]
+  "_note": "Final re-audit after round-2 execute (workflow run 34144111665, all 16/16 actions succeeded). Verify final state: only the 3 already-known-blocked QA role accounts (sales-executive/operations-manager/bd-manager) should remain as QA data, alongside demo/test.admin and the 3 KEEP decks; Harbor Lane Dental archived.",
+  "mode": "audit",
+  "actions_json": []
 }
