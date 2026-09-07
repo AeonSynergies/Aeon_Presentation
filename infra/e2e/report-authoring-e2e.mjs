@@ -74,7 +74,16 @@ const PASSWORD = process.env.DEMO_PASSWORD || "AeonDemo123!";
 const OUT = process.env.OUT_DIR || "./e2e-artifacts/report-authoring";
 mkdirSync(OUT, { recursive: true });
 
-const RUN_TAG = Date.now().toString(36);
+// Fixed fixture name/slug, reused across runs (not randomized) — matching the idempotent
+// pattern pricing-edit-e2e.mjs / meeting-records-e2e.mjs already use. This deck's config
+// gets edited through the real wizard UI below (an image upload + an AI-generated report
+// appended to QA Authoring Service, one of the two then removed again), and the very first
+// check below asserts QA Authoring Service starts with ZERO reports listed — only true on a
+// genuinely fresh/reset fixture, so an existing fixture is explicitly RESET back to the bare
+// config before each run rather than skipped or left as whatever the previous run's
+// upload+generate+remove sequence left it in.
+const DECK_NAME = "QA Report Authoring Fixture";
+const DECK_SLUG = "qa-report-authoring-fixture";
 
 const results = [];
 function check(name, ok, detail = "") {
@@ -111,8 +120,8 @@ function compactReport(i) {
 function fixtureConfig() {
   return {
     industry: "QA",
-    companyName: `QA Report Authoring ${RUN_TAG}`,
-    tagline: "Throwaway fixture for the live report-authoring E2E suite.",
+    companyName: DECK_NAME,
+    tagline: "Fixture for the live report-authoring E2E suite.",
     logo: { type: "text", wordmark: "QA" },
     colors: { amber: "#888888", teal: "#666666" },
     pricingModels: [{ id: "primary", label: "Units", unit: "units", questionText: "How many units?", isPrimary: true }],
@@ -193,9 +202,22 @@ const loginRes = await callTrpc("mutation", "auth.login", null, { email: EMAIL, 
 check("setup: admin API login succeeds", loginRes.ok);
 const token = loginRes.data?.accessToken;
 
-const created = await callTrpc("mutation", "deck.create", token, { config: fixtureConfig() });
-check("setup: fixture deck created", created.ok, created.message);
-const deckSlug = created.data?.slug;
+// Idempotent — same getBySlug-then-create idiom as every other fixture in this repo's live
+// E2E suites. Reset back to the bare config on an existing fixture (see header comment on
+// DECK_NAME above) so the "starts with zero reports" / "exactly 5 compact reports" checks
+// below hold on every run, not just the first.
+const existingFixture = await callTrpc("query", "deck.getBySlug", token, { slug: DECK_SLUG });
+let deckSlug;
+if (existingFixture.ok) {
+  console.log(`"${DECK_NAME}" already exists (created on a previous run) — resetting it to the bare fixture config.`);
+  const reset = await callTrpc("mutation", "deck.update", token, { slug: DECK_SLUG, config: fixtureConfig() });
+  check("setup: fixture deck reset to bare config", reset.ok, reset.message);
+  deckSlug = DECK_SLUG;
+} else {
+  const created = await callTrpc("mutation", "deck.create", token, { config: fixtureConfig() });
+  check("setup: fixture deck created", created.ok && created.data?.slug === DECK_SLUG, created.message);
+  deckSlug = created.data?.slug;
+}
 
 // ========== Wizard: upload an image + generate an AI report ==========
 console.log("\n=== Wizard: Upload image + Create with AI ===");

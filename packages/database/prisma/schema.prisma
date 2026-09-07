@@ -41,11 +41,22 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Set by "Deactivate" on Team Management (soft-delete) — same semantics as
+  // Deck.archivedAt/Meeting.archivedAt: the row (and every Meeting they created) stays
+  // intact, but a deactivated user can no longer authenticate (password or Microsoft) and
+  // is treated as having no role/permissions by every gated procedure. Null means active;
+  // this is never set back to null except by an explicit "Reactivate". Unlike deck/meeting
+  // archival there is no permanent-delete path once this is set — "Remove" (hard delete) is
+  // a separate, narrower action that already refuses to run if the user has any Meeting
+  // rows, and deactivation is the real answer for that case rather than a way around it.
+  deactivatedAt DateTime?
+
   refreshTokens     RefreshToken[]
   passwordSetTokens PasswordSetToken[]
   meetings          Meeting[]
   aiDraftRequests   AiDraftRequest[]
 
+  @@index([deactivatedAt])
   @@map("users")
 }
 

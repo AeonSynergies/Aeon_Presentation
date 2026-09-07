@@ -19,6 +19,7 @@ function microsoftErrorMessage(): string | null {
     const email = params.get("email");
     return `No account found for ${email ?? "that Microsoft email"} — ask an Admin to create one in Team Management first.`;
   }
+  if (error === "deactivated") return "This account has been deactivated. Contact an Admin if you think that's a mistake.";
   if (error === "microsoft_not_configured") return "Sign in with Microsoft isn't set up on this server yet.";
   return "Sign in with Microsoft didn't work — please try again, or sign in with email and password.";
 }

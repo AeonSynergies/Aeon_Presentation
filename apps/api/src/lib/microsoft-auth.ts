@@ -90,7 +90,8 @@ export async function exchangeMicrosoftCode(code: string): Promise<MicrosoftIden
 
 export type MicrosoftSignInResult =
   | { ok: true; user: { id: string; email: string; name: string; role: string } }
-  | { ok: false; reason: "no_account"; email: string };
+  | { ok: false; reason: "no_account"; email: string }
+  | { ok: false; reason: "deactivated"; email: string };
 
 /** The one piece of this flow that's genuinely testable without a real Azure AD tenant:
  * given a (real-or-simulated) verified Microsoft identity, map it to an existing user row.
@@ -100,5 +101,8 @@ export type MicrosoftSignInResult =
 export async function resolveMicrosoftUser(identity: MicrosoftIdentity): Promise<MicrosoftSignInResult> {
   const user = await prisma.user.findUnique({ where: { email: identity.email } });
   if (!user) return { ok: false, reason: "no_account", email: identity.email };
+  // Same rule as password login: a deactivated account can't get a session through either
+  // door, Microsoft included — this is the SSO-side check mirroring auth.login's.
+  if (user.deactivatedAt) return { ok: false, reason: "deactivated", email: identity.email };
   return { ok: true, user: { id: user.id, email: user.email, name: user.name, role: user.role } };
 }

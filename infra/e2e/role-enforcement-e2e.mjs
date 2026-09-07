@@ -19,10 +19,13 @@
 //      Admin account exists) hold.
 //
 // Idempotent by design, matching the Phase 2b wizard-e2e.mjs pattern: QA users have fixed
-// emails and are only created once; the one action that persists new data on success
-// (Sales Executive's deck.create) targets a fixed slug and is skipped on repeat runs
-// (verified via getBySlug instead) so re-deploys don't pile up duplicate rows. Every
-// REJECTED-path check is naturally idempotent already — a rejected call persists nothing.
+// emails and are only created once; the two actions that persist new data on success
+// (Admin's shared meeting-fixture deck, and Sales Executive's own deck.create permission
+// check) each target their own fixed slug and are skipped on repeat runs (verified via
+// getBySlug instead) so re-deploys don't pile up duplicate rows. Every REJECTED-path check
+// is naturally idempotent already — a rejected call persists nothing. Every role's own
+// Meeting row (createOwnMeeting) is created against that shared meeting-fixture deck, never
+// against a real seeded deck — see MEETING_FIXTURE_DECK_SLUG below.
 //
 // Env: BASE_URL + API_URL (required), ADMIN_EMAIL/ADMIN_PASSWORD (default: the seeded
 // demo user), CHROMIUM_PATH (optional; CI uses Playwright's own install), OUT_DIR
@@ -49,7 +52,15 @@ const QA_USERS = {
 };
 const QA_DECK_NAME = "QA Role Test Deck";
 const QA_DECK_SLUG = "qa-role-test-deck";
-const PRESENT_DECK_SLUG = "aeon-logistics"; // Amazon DSP — used for meeting-based checks
+// A dedicated fixture for every meeting-based check below (createOwnMeeting, plus the
+// Operations Manager deck.update-REJECTED check and the Sales Executive UI permission
+// check) — NOT the real seeded Amazon DSP deck (aeon-logistics). Every QA role account
+// creates a real Meeting row every run, and pointing that at a real, protected deck
+// pollutes its meeting history and blocks that account from ever being hard-deleted
+// (user.remove refuses to run while a user has any Meeting rows). Created idempotently by
+// Admin below, before any role-specific section runs.
+const MEETING_FIXTURE_DECK_NAME = "QA Role Enforcement Fixture";
+const MEETING_FIXTURE_DECK_SLUG = "qa-role-enforcement-fixture";
 
 const results = [];
 function check(name, ok, detail = "") {
@@ -91,7 +102,7 @@ async function apiLogin(email, password) {
 }
 
 async function createOwnMeeting(token) {
-  const deck = await callTrpc("query", "deck.getBySlug", token, { slug: PRESENT_DECK_SLUG });
+  const deck = await callTrpc("query", "deck.getBySlug", token, { slug: MEETING_FIXTURE_DECK_SLUG });
   return callTrpc("mutation", "meeting.create", token, { deckId: deck.data.dbId });
 }
 
@@ -213,6 +224,54 @@ if (currentAdminCount <= 1) {
   );
 }
 
+// ========== Admin: create/verify the shared meeting-fixture deck ==========
+// Idempotent — same getBySlug-then-create idiom as every other fixture in this repo's
+// live E2E suites (pricing-edit-e2e.mjs, meeting-records-e2e.mjs): only actually creates
+// on the first run against a given deployment, later runs confirm it still exists.
+const existingMeetingFixtureDeck = await callTrpc("query", "deck.getBySlug", adminApiLogin.token, { slug: MEETING_FIXTURE_DECK_SLUG });
+if (existingMeetingFixtureDeck.ok) {
+  check("admin: meeting-fixture deck confirmed (created on a previous run)", true);
+} else {
+  const meetingFixtureConfig = {
+    industry: "QA",
+    companyName: MEETING_FIXTURE_DECK_NAME,
+    tagline: "Created by the live role-enforcement E2E as a target for every QA role account's own meetings.",
+    logo: { type: "text", wordmark: "QA" },
+    colors: { amber: "#888888", teal: "#666666" },
+    pricingModels: [{ id: "primary", label: "Units", unit: "units", questionText: "How many units?", isPrimary: true }],
+    services: [
+      {
+        id: "svc",
+        name: "QA Service",
+        team: "QA Team",
+        category: "major",
+        pricingModelId: "primary",
+        bandLabel: "1 band",
+        handle: ["QA bullet"],
+        stats: [],
+        dashboards: [],
+        priceBands: [{ upTo: null, price: 100 }],
+      },
+    ],
+    team: [{ initials: "QA", name: "QA Bot", title: "Automation", email: "qa@aeonqa.internal", phone: "" }],
+    staticContent: {
+      cover: { title1: "QA", title2: "Role Enforcement", sub: "" },
+      about: { title1: "QA", title2: "Deck", body: "", bullets: [] },
+      how: { steps: [{ t: "QA", d: "" }] },
+      challenges: { items: [] },
+      benefits: { items: [] },
+      qa: { title: "Questions?", sub: "", email: "", phone: "", web: "", address: "" },
+    },
+    discoveryQuestions: [],
+  };
+  const createdMeetingFixtureDeck = await callTrpc("mutation", "deck.create", adminApiLogin.token, { config: meetingFixtureConfig });
+  check(
+    "admin: meeting-fixture deck.create succeeds",
+    createdMeetingFixtureDeck.ok && createdMeetingFixtureDeck.data?.slug === MEETING_FIXTURE_DECK_SLUG,
+    createdMeetingFixtureDeck.message,
+  );
+}
+
 // ========== Operations Manager: only Present + Discovery Notes ==========
 console.log("\n=== Operations Manager ===");
 await uiLogin(QA_USERS.OPERATIONS_MANAGER.email, QA_USERS.OPERATIONS_MANAGER.password);
@@ -229,7 +288,7 @@ check("OM: meeting.updateState (Discovery Notes) succeeds", opsUpdateState.ok);
 
 const opsCreateDeck = await callTrpc("mutation", "deck.create", opsApiLogin.token, { config: { companyName: "OM should never create this" } });
 check("OM: deck.create REJECTED at API", !opsCreateDeck.ok && opsCreateDeck.trpcCode === "FORBIDDEN", opsCreateDeck.message);
-const opsUpdateDeck = await callTrpc("mutation", "deck.update", opsApiLogin.token, { slug: PRESENT_DECK_SLUG, config: {} });
+const opsUpdateDeck = await callTrpc("mutation", "deck.update", opsApiLogin.token, { slug: MEETING_FIXTURE_DECK_SLUG, config: {} });
 check("OM: deck.update (Edit Deck) REJECTED at API", !opsUpdateDeck.ok && opsUpdateDeck.trpcCode === "FORBIDDEN", opsUpdateDeck.message);
 const opsExport = await callTrpc("query", "meeting.export", opsApiLogin.token, { id: opsMeeting.data?.id });
 check("OM: meeting.export REJECTED at API", !opsExport.ok && opsExport.trpcCode === "FORBIDDEN", opsExport.message);
@@ -286,7 +345,7 @@ if (existingQaDeck.ok) {
 
 await uiLogin(QA_USERS.SALES_EXECUTIVE.email, QA_USERS.SALES_EXECUTIVE.password);
 check("SE: New Deck button shown on Home", (await page.$(".new-deck-btn")) !== null);
-await page.goto(`${BASE}/decks/${PRESENT_DECK_SLUG}`);
+await page.goto(`${BASE}/decks/${MEETING_FIXTURE_DECK_SLUG}`);
 await page.waitForSelector(".notes-btn");
 await page.waitForTimeout(300);
 const salesButtons = await page.$$eval(".topbar-actions button, .topbar-actions a", (els) => els.map((e) => e.textContent.trim()));
@@ -299,10 +358,12 @@ console.log("\n=== BD Manager ===");
 const bdApiLogin = await apiLogin(QA_USERS.BD_MANAGER.email, QA_USERS.BD_MANAGER.password);
 check("BD: API login succeeds", bdApiLogin.ok && bdApiLogin.user?.role === "BD_MANAGER");
 const bdMeeting = await createOwnMeeting(bdApiLogin.token);
-await callTrpc("mutation", "meeting.updateState", bdApiLogin.token, { id: bdMeeting.data?.id, patch: { answers: { primary: "20" }, selected: ["payroll"] } });
+// "svc" is the meeting-fixture deck's own (only) service id — was "payroll" back when this
+// meeting targeted the real Amazon DSP deck, which has a service actually named that.
+await callTrpc("mutation", "meeting.updateState", bdApiLogin.token, { id: bdMeeting.data?.id, patch: { answers: { primary: "20" }, selected: ["svc"] } });
 const bdExport = await callTrpc("query", "meeting.export", bdApiLogin.token, { id: bdMeeting.data?.id });
 check("BD: meeting.export succeeds", bdExport.ok, bdExport.message);
-check("BD: export CSV contains real pricing data", typeof bdExport.data?.csv === "string" && bdExport.data.csv.includes("Payroll"), bdExport.data?.csv?.slice(0, 100));
+check("BD: export CSV contains real pricing data", typeof bdExport.data?.csv === "string" && bdExport.data.csv.includes("QA Service"), bdExport.data?.csv?.slice(0, 100));
 const bdUsers = await callTrpc("query", "user.list", bdApiLogin.token, undefined);
 check("BD: user.list (manageUsers) REJECTED at API — only Admin has this", !bdUsers.ok && bdUsers.trpcCode === "FORBIDDEN");
 

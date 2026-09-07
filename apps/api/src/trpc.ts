@@ -1,6 +1,7 @@
 import { TRPCError, initTRPC } from "@trpc/server";
 import type * as trpcExpress from "@trpc/server/adapters/express";
 import { ROLE_LABELS, can, type Permission, type Role } from "@aeon/types";
+import { prisma } from "@aeon/database";
 import { verifyAccessToken } from "./lib/auth.js";
 
 export interface AuthedUser {
@@ -32,10 +33,20 @@ export const router = t.router;
 export const publicProcedure = t.procedure;
 
 /** Login-gate only — every role can reach these. Matches the spec's "Present" /
- * "Discovery Notes" columns, which are Yes for all four roles. */
-export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
+ * "Discovery Notes" columns, which are Yes for all four roles.
+ *
+ * The JWT itself carries no deactivation flag (see AuthedUser above), so a deactivated
+ * user's still-valid access token would otherwise keep working here until it naturally
+ * expires. This re-checks the DB on every request specifically so deactivation takes
+ * effect immediately, not just at next login/refresh — the same live-DB re-check
+ * auth.login/auth.refresh/the Microsoft callback already do before ever issuing a token. */
+export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (!ctx.user) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Login required" });
+  }
+  const current = await prisma.user.findUnique({ where: { id: ctx.user.id }, select: { deactivatedAt: true } });
+  if (!current || current.deactivatedAt) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "This account has been deactivated." });
   }
   return next({ ctx: { ...ctx, user: ctx.user } });
 });

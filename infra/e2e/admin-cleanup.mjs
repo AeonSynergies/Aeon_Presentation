@@ -10,10 +10,15 @@
 //     the job log and classify before anything is touched.
 //   - "execute": takes ACTIONS_JSON (an array of {type, id, label} — id is always the
 //     Prisma DB id, label is just for readable logging) and applies each action via the
-//     matching tRPC mutation. Every action is checked against a hardcoded protected-slug/
-//     protected-email list (re-fetched live at the top of this same run, not trusted from
-//     the caller) before it's allowed to run, as a hard safety net independent of whatever
-//     ACTIONS_JSON happens to contain.
+//     matching tRPC mutation (type is "<router>.<method>", e.g. "deck.archive",
+//     "deck.deletePermanent", "user.remove", "user.deactivate", "user.reactivate"). Every
+//     action is checked against a hardcoded protected-slug/protected-email list (re-fetched
+//     live at the top of this same run, not trusted from the caller) before it's allowed to
+//     run, as a hard safety net independent of whatever ACTIONS_JSON happens to contain.
+//     Prefer "user.deactivate" over "user.remove" for any QA account that has recorded
+//     meetings — remove refuses to run in that case anyway (see routers/user.ts), and
+//     deactivate is the real answer: the account can't log in again but its history stays
+//     intact, exactly like archiving a deck rather than deleting it.
 //
 // Env: BASE_URL + API_URL (required — the current live app; see admin-cleanup.yml, which
 // resolves these itself via `aws apprunner describe-service` rather than hardcoding them).
@@ -100,7 +105,7 @@ if (MODE === "audit") {
   console.log("\n=== ARCHIVED DECKS (archive.listDecks) ===");
   console.log(JSON.stringify(archivedDecks.data, null, 2));
   console.log("\n=== USER ACCOUNTS (user.list) ===");
-  console.log(JSON.stringify(users.data.map((u) => ({ id: u.id, email: u.email, role: u.role })), null, 2));
+  console.log(JSON.stringify(users.data.map((u) => ({ id: u.id, email: u.email, role: u.role, deactivatedAt: u.deactivatedAt })), null, 2));
   console.log("\n=== ADMIN'S OWN ACTIVE COMPLETED MEETING RECORDS (meeting.listRecords) — slim projection ===");
   console.log(JSON.stringify(ownActiveMeetings.data.map(slimMeeting), null, 2));
   console.log("\n=== ALL ARCHIVED COMPLETED MEETING RECORDS, ANY OWNER (archive.listMeetings) — slim projection ===");
@@ -116,7 +121,10 @@ for (const action of ACTIONS) {
   let guard = null;
   if (type.startsWith("deck.") && PROTECTED_DECK_SLUGS.has(deckSlugById.get(id))) {
     guard = `refused: id ${id} resolves to a protected deck slug (${deckSlugById.get(id)})`;
-  } else if (type === "user.remove" && PROTECTED_USER_EMAILS.has(userEmailById.get(id))) {
+  } else if (
+    (type === "user.remove" || type === "user.deactivate") &&
+    PROTECTED_USER_EMAILS.has(userEmailById.get(id))
+  ) {
     guard = `refused: id ${id} resolves to a protected user email (${userEmailById.get(id)})`;
   }
   if (guard) {

@@ -41,7 +41,7 @@ function TeamGate() {
   return <TeamManager />;
 }
 
-type UserRow = { id: string; email: string; name: string; role: string; createdAt: string };
+type UserRow = { id: string; email: string; name: string; role: string; createdAt: string; deactivatedAt: string | null };
 
 function TeamManager() {
   const { user: me } = useAuth();
@@ -50,6 +50,8 @@ function TeamManager() {
   const createUser = trpc.user.create.useMutation();
   const updateRole = trpc.user.updateRole.useMutation();
   const removeUser = trpc.user.remove.useMutation();
+  const deactivateUser = trpc.user.deactivate.useMutation();
+  const reactivateUser = trpc.user.reactivate.useMutation();
 
   const [showAdd, setShowAdd] = React.useState(false);
   // "Send invitation email" is the default path — reuses the exact single-use token + "set
@@ -97,6 +99,26 @@ function TeamManager() {
       await utils.user.list.invalidate();
     } catch (err) {
       setRowError({ id, message: err instanceof Error ? err.message : "Couldn't remove that user." });
+    }
+  }
+
+  async function onDeactivate(id: string) {
+    setRowError(null);
+    try {
+      await deactivateUser.mutateAsync({ id });
+      await utils.user.list.invalidate();
+    } catch (err) {
+      setRowError({ id, message: err instanceof Error ? err.message : "Couldn't deactivate that user." });
+    }
+  }
+
+  async function onReactivate(id: string) {
+    setRowError(null);
+    try {
+      await reactivateUser.mutateAsync({ id });
+      await utils.user.list.invalidate();
+    } catch (err) {
+      setRowError({ id, message: err instanceof Error ? err.message : "Couldn't reactivate that user." });
     }
   }
 
@@ -189,38 +211,72 @@ function TeamManager() {
               </tr>
             </thead>
             <tbody>
-              {(users as UserRow[]).map((u) => (
-                <React.Fragment key={u.id}>
-                  <tr>
-                    <td>
-                      {u.name}
-                      {u.id === me?.id && <span className="team-you-tag">YOU</span>}
-                    </td>
-                    <td>{u.email}</td>
-                    <td>
-                      <select value={u.role} onChange={(e) => onChangeRole(u.id, e.target.value as Role)} disabled={updateRole.isPending}>
-                        {ROLES.map((r) => (
-                          <option value={r} key={r}>
-                            {ROLE_LABELS[r]}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>
-                      <button type="button" className="mini-btn mini-btn-danger" onClick={() => onRemove(u.id)} disabled={removeUser.isPending}>
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                  {rowError?.id === u.id && (
-                    <tr>
-                      <td colSpan={4} className="team-row-error">
-                        {rowError.message}
+              {(users as UserRow[]).map((u) => {
+                const inactive = !!u.deactivatedAt;
+                return (
+                  <React.Fragment key={u.id}>
+                    <tr className={inactive ? "team-row-inactive" : undefined}>
+                      <td>
+                        {u.name}
+                        {u.id === me?.id && <span className="team-you-tag">YOU</span>}
+                        {inactive && <span className="team-inactive-tag">INACTIVE</span>}
+                      </td>
+                      <td>{u.email}</td>
+                      <td>
+                        <select
+                          value={u.role}
+                          onChange={(e) => onChangeRole(u.id, e.target.value as Role)}
+                          disabled={updateRole.isPending || inactive}
+                        >
+                          {ROLES.map((r) => (
+                            <option value={r} key={r}>
+                              {ROLE_LABELS[r]}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        {inactive ? (
+                          <button
+                            type="button"
+                            className="mini-btn"
+                            onClick={() => onReactivate(u.id)}
+                            disabled={reactivateUser.isPending}
+                          >
+                            Reactivate
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              className="mini-btn"
+                              onClick={() => onDeactivate(u.id)}
+                              disabled={u.id === me?.id || deactivateUser.isPending}
+                            >
+                              Deactivate
+                            </button>
+                            <button
+                              type="button"
+                              className="mini-btn mini-btn-danger"
+                              onClick={() => onRemove(u.id)}
+                              disabled={u.id === me?.id || removeUser.isPending}
+                            >
+                              Remove
+                            </button>
+                          </>
+                        )}
                       </td>
                     </tr>
-                  )}
-                </React.Fragment>
-              ))}
+                    {rowError?.id === u.id && (
+                      <tr>
+                        <td colSpan={4} className="team-row-error">
+                          {rowError.message}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

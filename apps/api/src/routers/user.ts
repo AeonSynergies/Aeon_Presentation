@@ -16,8 +16,16 @@ import { protectedProcedure, requirePermission, router } from "../trpc.js";
 
 const roleSchema = z.enum(ROLES);
 
-function toUserDTO(u: { id: string; email: string; name: string; title: string | null; role: string; createdAt: Date }) {
-  return { id: u.id, email: u.email, name: u.name, title: u.title, role: u.role, createdAt: u.createdAt };
+function toUserDTO(u: {
+  id: string;
+  email: string;
+  name: string;
+  title: string | null;
+  role: string;
+  createdAt: Date;
+  deactivatedAt: Date | null;
+}) {
+  return { id: u.id, email: u.email, name: u.name, title: u.title, role: u.role, createdAt: u.createdAt, deactivatedAt: u.deactivatedAt };
 }
 
 export const userRouter = router({
@@ -98,6 +106,39 @@ export const userRouter = router({
     }
     await prisma.user.delete({ where: { id: input.id } });
     return { ok: true };
+  }),
+
+  // Soft-delete for a user who DOES have Meeting history (remove above refuses those) —
+  // same principle as Deck/Meeting archival: the row and every Meeting they created stay
+  // intact, but they lose the ability to log in (auth.login/refresh/Microsoft callback all
+  // check deactivatedAt, see routers/auth.ts and lib/microsoft-auth.ts) and every gated tRPC
+  // procedure rejects them too (protectedProcedure re-checks deactivatedAt from the DB, not
+  // just the JWT, so a still-valid access token dies immediately rather than at next
+  // refresh). This is the real answer to "I want this account gone" once they have
+  // recorded meetings — not a reason to force `remove` through.
+  deactivate: requirePermission("manageUsers").input(z.object({ id: z.string() })).mutation(async ({ input, ctx }) => {
+    if (input.id === ctx.user.id) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "You can't deactivate your own account while signed in as it." });
+    }
+    const target = await prisma.user.findUnique({ where: { id: input.id } });
+    if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+    if (target.role === "ADMIN") {
+      const activeAdminCount = await prisma.user.count({ where: { role: "ADMIN", deactivatedAt: null } });
+      if (activeAdminCount <= 1) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Can't deactivate the last active Admin." });
+      }
+    }
+    if (target.deactivatedAt) return toUserDTO(target);
+    const user = await prisma.user.update({ where: { id: input.id }, data: { deactivatedAt: new Date() } });
+    return toUserDTO(user);
+  }),
+
+  reactivate: requirePermission("manageUsers").input(z.object({ id: z.string() })).mutation(async ({ input }) => {
+    const target = await prisma.user.findUnique({ where: { id: input.id } });
+    if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+    if (!target.deactivatedAt) return toUserDTO(target);
+    const user = await prisma.user.update({ where: { id: input.id }, data: { deactivatedAt: null } });
+    return toUserDTO(user);
   }),
 
   // Profile & Settings (Phase 5a) — self-service, every logged-in role, own account only.
