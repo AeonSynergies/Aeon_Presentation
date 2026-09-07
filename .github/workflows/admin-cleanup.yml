@@ -1,0 +1,61 @@
+name: Admin Cleanup (manual)
+
+# Manual, one-off ops tool — NOT part of the regular push-triggered deploy/live-e2e
+# pipeline. Runs infra/e2e/admin-cleanup.mjs against the CURRENT live deployment to audit
+# (read-only) or clean up (archive/permanently delete) test/QA data. See that script's own
+# header comment for the full design and safety notes.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "audit (read-only, dumps current state) or execute (apply actions_json)"
+        required: true
+        type: choice
+        default: audit
+        options:
+          - audit
+          - execute
+      actions_json:
+        description: 'execute mode only — JSON array of {"type","id","label"} actions, e.g. [{"type":"deck.archive","id":"...","label":"Harbor Lane Dental"}]'
+        required: false
+        default: "[]"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      # Resolved live via the AWS API (same lookup infra/aws/deploy.sh itself uses), rather
+      # than hardcoded, so this keeps working even if the App Runner service URL ever
+      # rotates.
+      - name: Resolve live app URLs
+        run: |
+          set -euo pipefail
+          API_ARN="$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='aeon-api'].ServiceArn | [0]" --output text)"
+          WEB_ARN="$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='aeon-web'].ServiceArn | [0]" --output text)"
+          API_URL="https://$(aws apprunner describe-service --service-arn "$API_ARN" --query 'Service.ServiceUrl' --output text)"
+          WEB_URL="https://$(aws apprunner describe-service --service-arn "$WEB_ARN" --query 'Service.ServiceUrl' --output text)"
+          echo "api=$API_URL"
+          echo "web=$WEB_URL"
+          echo "API_URL=$API_URL" >> "$GITHUB_ENV"
+          echo "BASE_URL=$WEB_URL" >> "$GITHUB_ENV"
+
+      - name: Run admin-cleanup.mjs
+        working-directory: infra/e2e
+        run: node admin-cleanup.mjs
+        env:
+          MODE: ${{ inputs.mode }}
+          ACTIONS_JSON: ${{ inputs.actions_json }}
