@@ -16,9 +16,11 @@
 //      template's structure — no real company name attached.
 //
 // Idempotent by design: on re-runs (every push to main redeploys) the creation phase is
-// skipped when the deck already exists, and only the behavior checks run — so this is a
-// permanent live regression test, not a one-shot that would pile up harbor-lane-dental-2,
-// -3… in production.
+// skipped when a deck named "Harbor Lane Dental" already exists, and only the behavior
+// checks run — so this is a permanent live regression test, not a one-shot that piles up
+// duplicates. The deck's actual slug is always read back from the browser rather than
+// assumed, since an intentionally-archived deck of the same name can already occupy the
+// "harbor-lane-dental" slug and force deck.create to auto-suffix ("-2", "-3", ...).
 //
 // Env: BASE_URL (required), DEMO_EMAIL/DEMO_PASSWORD (default: the seeded demo user),
 // CHROMIUM_PATH (optional executable override; CI uses Playwright's own install),
@@ -38,7 +40,6 @@ const OUT = process.env.OUT_DIR || "./e2e-artifacts";
 mkdirSync(OUT, { recursive: true });
 
 const DECK_NAME = "Harbor Lane Dental";
-const DECK_SLUG = "harbor-lane-dental";
 
 const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
 const page = await browser.newPage();
@@ -64,6 +65,16 @@ async function homeDeckNames() {
   await page.waitForSelector(".deck-grid");
   await page.waitForTimeout(400);
   return page.$$eval(".deck-card .dc-name", (els) => els.map((el) => el.textContent));
+}
+
+// The deck-card grid has no slug attribute to read directly, so the only reliable way to
+// learn an existing deck's real slug (which may be suffixed, see above) is to open it and
+// read the resulting URL back.
+async function resolveDeckSlugByName(name) {
+  await page.goto(`${BASE}/`);
+  await page.waitForSelector(".deck-grid");
+  await Promise.all([page.waitForURL(/\/decks\/[^/]+$/, { timeout: 20000 }), page.locator(".deck-card", { hasText: name }).first().click()]);
+  return new URL(page.url()).pathname.split("/").pop();
 }
 
 // ---------- creation phase (skipped when the deck already exists) ----------
@@ -275,11 +286,18 @@ async function createViaWizard() {
   const issueCount = await form.locator(".builder-issues li").count();
   check("wizard: no validation issues on a fully-filled deck", issueCount === 0);
   await page.screenshot({ path: `${OUT}/wizard-review.png`, fullPage: true });
+  // The whole wizard (including this review step) is itself served at the "/decks/new"
+  // route, so a bare /^\/decks\/[^/]+$/ test would match the CURRENT url before the click
+  // even navigates — waitForURL resolves immediately in that case. Require the pathname to
+  // actually change away from "/decks/new" to the real created slug.
   await Promise.all([
-    page.waitForURL(`**/decks/${DECK_SLUG}`, { timeout: 20000 }),
+    page.waitForURL((url) => /^\/decks\/[^/]+$/.test(url.pathname) && url.pathname !== "/decks/new", { timeout: 20000 }),
     form.locator(".btn-primary", { hasText: "Create deck" }).click(),
   ]);
-  check("wizard: deck created and opened in the real player", page.url().includes(`/decks/${DECK_SLUG}`));
+  const pathname = new URL(page.url()).pathname;
+  const createdSlug = pathname.split("/").pop();
+  check("wizard: deck created and opened in the real player", /^\/decks\/[^/]+$/.test(pathname), createdSlug);
+  return createdSlug;
 }
 
 // ---------- behavior verification (always runs) ----------
@@ -289,8 +307,8 @@ async function createViaWizard() {
 // through the real backend (save debounce + poll — see useNotesWindowSession.ts /
 // useDeckSession.ts), not a shortcut back into the main page's own state.
 const SYNC_WAIT_MS = 3000; // 800ms save debounce + 1500ms poll + margin
-async function verifyDeckBehavior() {
-  await page.goto(`${BASE}/decks/${DECK_SLUG}`);
+async function verifyDeckBehavior(deckSlug) {
+  await page.goto(`${BASE}/decks/${deckSlug}`);
   await page.waitForSelector(".notes-btn");
   await page.waitForTimeout(400);
 
@@ -437,12 +455,14 @@ async function verifyHomeAndTemplates() {
 // ---------- run ----------
 await login();
 const names = await homeDeckNames();
+let deckSlug;
 if (names.includes(DECK_NAME)) {
   console.log(`"${DECK_NAME}" already exists — skipping creation, running behavior checks only (idempotent re-run).`);
+  deckSlug = await resolveDeckSlugByName(DECK_NAME);
 } else {
-  await createViaWizard();
+  deckSlug = await createViaWizard();
 }
-await verifyDeckBehavior();
+await verifyDeckBehavior(deckSlug);
 await verifyHomeAndTemplates();
 
 console.log("\nPage errors:", pageErrors.length ? pageErrors : "none");
