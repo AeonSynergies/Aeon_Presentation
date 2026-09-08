@@ -1,9 +1,5 @@
 {
-  "_note": "Reactivate the 3 permanent QA role-fixture accounts (qa-sales-executive, qa-operations-manager, qa-bd-manager @aeonqa.internal). An earlier cleanup pass deactivated them as if they were one-off test accounts, but role-enforcement-e2e.mjs logs in as them on every run to verify per-role permission gating, so deactivating them broke that suite. admin-cleanup.mjs now hardcodes them into PROTECTED_USER_EMAILS so this can't happen again.",
-  "mode": "execute",
-  "actions_json": [
-    { "type": "user.reactivate", "id": "cmtacid5a000goc3dv3reebnd", "label": "qa-sales-executive@aeonqa.internal" },
-    { "type": "user.reactivate", "id": "cmtacidm3000hoc3dnw8afcfa", "label": "qa-operations-manager@aeonqa.internal" },
-    { "type": "user.reactivate", "id": "cmtacie24000ioc3d9bgfalo5", "label": "qa-bd-manager@aeonqa.internal" }
-  ]
+  "_note": "Audit: role-enforcement-e2e.mjs still fails on qa-sales-executive specifically after the reactivate-3-accounts run (workflow run 34214585933, which logged 3/3 OK). Checking the ACTUAL current state of all qa-* accounts (id, role, deactivatedAt) to find out why sales-executive alone didn't take.",
+  "mode": "audit",
+  "actions_json": []
 }
