@@ -8,13 +8,17 @@
 //     deck, archived deck, user account, the admin's own active meeting records, and every
 //     archived meeting record (any owner) as plain JSON to stdout, for a human to read from
 //     the job log and classify before anything is touched.
-//   - "execute": takes ACTIONS_JSON (an array of {type, id, label} — id is always the
-//     Prisma DB id, label is just for readable logging) and applies each action via the
-//     matching tRPC mutation (type is "<router>.<method>", e.g. "deck.archive",
-//     "deck.deletePermanent", "user.remove", "user.deactivate", "user.reactivate"). Every
-//     action is checked against a hardcoded protected-slug/protected-email list (re-fetched
-//     live at the top of this same run, not trusted from the caller) before it's allowed to
-//     run, as a hard safety net independent of whatever ACTIONS_JSON happens to contain.
+//   - "execute": takes ACTIONS_JSON (an array of {type, id, label, ...extra} — id is always
+//     the Prisma DB id, label is just for readable logging, and any other fields are passed
+//     straight through as extra mutation input alongside id, e.g. {"type":"user.updateRole",
+//     "id":"...","role":"SALES_EXECUTIVE"}) and applies each action via the matching tRPC
+//     mutation (type is "<router>.<method>", e.g. "deck.archive", "deck.deletePermanent",
+//     "user.remove", "user.deactivate", "user.reactivate", "user.updateRole"). Every action
+//     is checked against a hardcoded protected-slug/protected-email list (re-fetched live at
+//     the top of this same run, not trusted from the caller) before it's allowed to run, as
+//     a hard safety net independent of whatever ACTIONS_JSON happens to contain — this only
+//     guards remove/deactivate, not updateRole, since correcting a QA fixture's role is a
+//     legitimate, expected use of this tool.
 //     Prefer "user.deactivate" over "user.remove" for any QA account that has recorded
 //     meetings — remove refuses to run in that case anyway (see routers/user.ts), and
 //     deactivate is the real answer: the account can't log in again but its history stays
@@ -139,7 +143,7 @@ if (MODE === "audit") {
 console.log(`\n=== EXECUTE: ${ACTIONS.length} action(s) ===`);
 const results = [];
 for (const action of ACTIONS) {
-  const { type, id, label } = action;
+  const { type, id, label, ...extra } = action;
   let guard = null;
   if (type.startsWith("deck.") && PROTECTED_DECK_SLUGS.has(deckSlugById.get(id))) {
     guard = `refused: id ${id} resolves to a protected deck slug (${deckSlugById.get(id)})`;
@@ -155,7 +159,7 @@ for (const action of ACTIONS) {
     continue;
   }
   const [router, method] = type.split(".");
-  const res = await callTrpc("mutation", `${router}.${method}`, token, { id });
+  const res = await callTrpc("mutation", `${router}.${method}`, token, { id, ...extra });
   console.log(`${res.ok ? "OK" : "FAIL"}: ${type} ${label ?? id}${res.ok ? "" : ` — ${res.message}`}`);
   results.push({ type, id, label, ok: res.ok, message: res.message });
 }
