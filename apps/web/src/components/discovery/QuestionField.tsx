@@ -1,4 +1,5 @@
-import type { DiscoveryQuestion, SessionState } from "@aeon/types";
+import type { DiscoveryQuestion, FieldLock, SessionState } from "@aeon/types";
+import { lockStatus } from "~/lib/fieldLock";
 
 function dependencyHint(q: DiscoveryQuestion, allQuestions: DiscoveryQuestion[], state: SessionState): string {
   if (!q.dependsOn) return "";
@@ -23,26 +24,53 @@ export function QuestionField({
   state,
   setAnswer,
   setToggle,
+  fieldLocks,
+  currentUserId,
+  onLockField,
+  onUnlockField,
 }: {
   question: DiscoveryQuestion;
   allQuestions: DiscoveryQuestion[];
   state: SessionState;
   setAnswer: (id: string, value: string | number | string[] | null) => void;
   setToggle: (id: string, value: boolean) => void;
+  fieldLocks: Record<string, FieldLock>;
+  currentUserId: string | undefined;
+  onLockField: (fieldKey: string) => void;
+  onUnlockField: (fieldKey: string) => void;
 }) {
   const q = question;
   const dh = dependencyHint(q, allQuestions, state);
+
+  // Only single-value text/number/date/etc. inputs are lockable — a checkbox/toggle click
+  // is instantaneous, so there's no meaningful "someone is actively focused here" window to
+  // protect for those (see the schema.prisma comment on Meeting.fieldLocks).
+  const fieldKey = `answer:${q.id}`;
+  const lock = lockStatus(fieldLocks, fieldKey, currentUserId);
+  const lockInputProps = {
+    disabled: lock.lockedByOther,
+    className: lock.lockedByOther ? "field-locked" : undefined,
+    onFocus: () => onLockField(fieldKey),
+    onBlur: () => onUnlockField(fieldKey),
+  };
+  const lockBadge = lock.lockedByOther ? (
+    <span className="field-lock-badge">🔒 {lock.lockedByName}</span>
+  ) : null;
 
   if (q.type === "text" || q.type === "number" || q.type === "time" || q.type === "date") {
     const value = state.answers[q.id];
     return (
       <div className="q-block">
-        <div className="q-label">{q.label}</div>
+        <div className="q-label">
+          {q.label}
+          {lockBadge}
+        </div>
         <input
           type={q.type}
           placeholder={q.placeholder || ""}
           value={value === undefined || value === null ? "" : String(value)}
           onChange={(e) => setAnswer(q.id, q.type === "number" ? (e.target.value === "" ? null : Number(e.target.value)) : e.target.value)}
+          {...lockInputProps}
         />
         {q.hint && <div className="q-hint">{q.hint}</div>}
         {dh && <div className="q-hint">{dh}</div>}
@@ -56,12 +84,16 @@ export function QuestionField({
     const invalid = raw !== "" && !(q.type === "email" ? EMAIL_PATTERN : PHONE_PATTERN).test(raw);
     return (
       <div className="q-block">
-        <div className="q-label">{q.label}</div>
+        <div className="q-label">
+          {q.label}
+          {lockBadge}
+        </div>
         <input
           type={q.type === "email" ? "email" : "tel"}
           placeholder={q.placeholder || (q.type === "email" ? "name@company.com" : "(555) 123-4567")}
           value={raw}
           onChange={(e) => setAnswer(q.id, e.target.value)}
+          {...lockInputProps}
         />
         {invalid && <div className="q-error">{q.type === "email" ? "Doesn't look like a valid email address." : "Doesn't look like a valid phone number."}</div>}
         {q.hint && <div className="q-hint">{q.hint}</div>}
@@ -74,11 +106,15 @@ export function QuestionField({
     const value = state.answers[q.id];
     return (
       <div className="q-block">
-        <div className="q-label">{q.label}</div>
+        <div className="q-label">
+          {q.label}
+          {lockBadge}
+        </div>
         <textarea
           placeholder={q.placeholder || "Notes..."}
           value={value === undefined || value === null ? "" : String(value)}
           onChange={(e) => setAnswer(q.id, e.target.value)}
+          {...lockInputProps}
         />
         {dh && <div className="q-hint">{dh}</div>}
       </div>
@@ -89,8 +125,15 @@ export function QuestionField({
     const value = state.answers[q.id];
     return (
       <div className="q-block">
-        <div className="q-label">{q.label}</div>
-        <select value={value === undefined || value === null ? "" : String(value)} onChange={(e) => setAnswer(q.id, e.target.value || null)}>
+        <div className="q-label">
+          {q.label}
+          {lockBadge}
+        </div>
+        <select
+          value={value === undefined || value === null ? "" : String(value)}
+          onChange={(e) => setAnswer(q.id, e.target.value || null)}
+          {...lockInputProps}
+        >
           <option value="">Select…</option>
           {(q.options || []).map((o) => (
             <option value={o} key={o}>

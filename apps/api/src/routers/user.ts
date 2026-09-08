@@ -34,6 +34,21 @@ export const userRouter = router({
     return users.map(toUserDTO);
   }),
 
+  // A minimal, unprivileged roster for pickers that need "which real Team members exist"
+  // without exposing role/deactivation/anything Admin-only — e.g. the session-collaboration
+  // invite picker (any logged-in user can invite any other active teammate to a session
+  // they're already in, not just an Admin). Deliberately open to every role, unlike list
+  // above; deliberately excludes the caller's own account (inviting yourself is meaningless)
+  // and every deactivated account (they can't log in to accept an invite anyway).
+  listTeamPickable: protectedProcedure.query(async ({ ctx }) => {
+    const users = await prisma.user.findMany({
+      where: { deactivatedAt: null, id: { not: ctx.user.id } },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, email: true },
+    });
+    return users;
+  }),
+
   create: requirePermission("manageUsers")
     .input(
       z

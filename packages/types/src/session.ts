@@ -87,6 +87,23 @@ export interface SessionState {
   meetingOutcome?: MeetingOutcome;
 }
 
+// A single field's live "someone is editing this" lock (session-collaboration feature) —
+// see Meeting.fieldLocks (packages/database/prisma/schema.prisma) and the api's
+// collaboration/meeting routers. Keyed by an opaque "fieldKey" the Discovery Notes UI
+// defines (e.g. `answer:${questionId}`), not modeled here.
+export interface FieldLock {
+  userId: string;
+  userName: string;
+  lockedAt: string; // ISO timestamp
+}
+
+// A lock older than this is treated as expired (closed tab, crashed browser) and no longer
+// shown as locked to other collaborators — enforced server-side at read time in
+// meeting.get, never trusted from a client. Sits inside the product's stated ~15-30s
+// window, with margin on both sides of the client's own renewal heartbeat
+// (useNotesWindowSession.ts).
+export const FIELD_LOCK_IDLE_MS = 20_000;
+
 export function freshSessionState(): SessionState {
   return {
     selected: [],

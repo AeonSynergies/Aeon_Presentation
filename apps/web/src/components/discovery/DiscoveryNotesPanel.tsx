@@ -1,6 +1,7 @@
-import type { DeckConfig, ManualDiscount, SessionState } from "@aeon/types";
+import type { DeckConfig, FieldLock, ManualDiscount, SessionState } from "@aeon/types";
 import { activeBundleTier, appliedBundleTier, computeDiscountBreakdown, groupQuestionsByService, visibleGeneralQuestions, visibleServiceQuestions } from "@aeon/types";
 import * as React from "react";
+import { lockStatus } from "~/lib/fieldLock";
 import { QuestionField } from "./QuestionField";
 
 interface Props {
@@ -9,7 +10,17 @@ interface Props {
   setState: React.Dispatch<React.SetStateAction<SessionState>>;
   clientName: string;
   setClientName: (v: string) => void;
+  // Session-collaboration field locking — optional so callers with no collaborators to
+  // worry about (there are none yet, currently every caller of this panel passes these)
+  // aren't forced to plumb through no-op stand-ins.
+  fieldLocks?: Record<string, FieldLock>;
+  currentUserId?: string;
+  onLockField?: (fieldKey: string) => void;
+  onUnlockField?: (fieldKey: string) => void;
 }
+
+const NOOP_LOCKS: Record<string, FieldLock> = {};
+const NOOP = () => {};
 
 function fmtDiscountValue(item: { type: "percent" | "flat"; value: number }): string {
   return item.type === "percent" ? `${item.value}%` : `$${item.value}`;
@@ -19,8 +30,19 @@ function fmtDiscountValue(item: { type: "percent" | "flat"; value: number }): st
 // that workaround existed only for the prototype's no-backend/no-screen-share constraint.
 // Renders the same three tiers as the prototype: (1) driver + services selector, always
 // present; (2) general questions; (3) service-mapped questions, gated on opt-in.
-export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClientName }: Props) {
+export function DiscoveryNotesPanel({
+  deck,
+  state,
+  setState,
+  clientName,
+  setClientName,
+  fieldLocks = NOOP_LOCKS,
+  currentUserId,
+  onLockField = NOOP,
+  onUnlockField = NOOP,
+}: Props) {
   const questions = deck.discoveryQuestions;
+  const clientNameLock = lockStatus(fieldLocks, "clientName", currentUserId);
 
   const setAnswer = (id: string, value: string | number | string[] | null) => {
     setState((prev) => ({ ...prev, answers: { ...prev.answers, [id]: value ?? undefined } }));
@@ -118,8 +140,20 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
         </p>
 
         <div className="q-block">
-          <div className="q-label">Client name (for Send to Client / records)</div>
-          <input type="text" placeholder="e.g. Coleman Logistics LLC" value={clientName} onChange={(e) => setClientName(e.target.value)} />
+          <div className="q-label">
+            Client name (for Send to Client / records)
+            {clientNameLock.lockedByOther && <span className="field-lock-badge">🔒 {clientNameLock.lockedByName}</span>}
+          </div>
+          <input
+            type="text"
+            placeholder="e.g. Coleman Logistics LLC"
+            value={clientName}
+            onChange={(e) => setClientName(e.target.value)}
+            disabled={clientNameLock.lockedByOther}
+            className={clientNameLock.lockedByOther ? "field-locked" : undefined}
+            onFocus={() => onLockField("clientName")}
+            onBlur={() => onUnlockField("clientName")}
+          />
         </div>
 
         <div className="tier-heading">
@@ -127,16 +161,25 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
         </div>
         {activeModels.map((model) => {
           const raw = state.answers[model.id];
+          const fieldKey = `model:${model.id}`;
+          const modelLock = lockStatus(fieldLocks, fieldKey, currentUserId);
           return (
             <div className="q-block" key={model.id}>
               <span className="q-num">REQUIRED · DRIVES PRICING{model.isPrimary ? " · PRIMARY" : ""}</span>
-              <div className="q-label">{model.questionText}</div>
+              <div className="q-label">
+                {model.questionText}
+                {modelLock.lockedByOther && <span className="field-lock-badge">🔒 {modelLock.lockedByName}</span>}
+              </div>
               <input
                 type="number"
                 placeholder="e.g. 20"
                 min={0}
                 value={raw === undefined || raw === null ? "" : String(raw)}
                 onChange={(e) => setModelValue(model.id, e.target.value)}
+                disabled={modelLock.lockedByOther}
+                className={modelLock.lockedByOther ? "field-locked" : undefined}
+                onFocus={() => onLockField(fieldKey)}
+                onBlur={() => onUnlockField(fieldKey)}
               />
             </div>
           );
@@ -320,7 +363,7 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
           2 · GENERAL QUESTIONS <span className="q-hint" style={{ display: "inline" }}>— optional, always shown</span>
         </div>
         {generalQs.map((q) => (
-          <QuestionField key={q.id} question={q} allQuestions={questions} state={state} setAnswer={setAnswer} setToggle={setToggle} />
+          <QuestionField key={q.id} question={q} allQuestions={questions} state={state} setAnswer={setAnswer} setToggle={setToggle} fieldLocks={fieldLocks} currentUserId={currentUserId} onLockField={onLockField} onUnlockField={onUnlockField} />
         ))}
 
         <hr className="section-divider" />
@@ -335,7 +378,7 @@ export function DiscoveryNotesPanel({ deck, state, setState, clientName, setClie
               {group.questions.map((q) => (
                 <div className="q-block" key={q.id} style={{ marginBottom: 0 }}>
                   {q.section === "surcharge" && <span className="q-num">DRIVES PRICING</span>}
-                  <QuestionField question={q} allQuestions={questions} state={state} setAnswer={setAnswer} setToggle={setToggle} />
+                  <QuestionField question={q} allQuestions={questions} state={state} setAnswer={setAnswer} setToggle={setToggle} fieldLocks={fieldLocks} currentUserId={currentUserId} onLockField={onLockField} onUnlockField={onUnlockField} />
                 </div>
               ))}
             </div>

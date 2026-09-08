@@ -1,8 +1,10 @@
 import type { DeckConfig } from "@aeon/types";
 import { createFileRoute } from "@tanstack/react-router";
+import { CollaboratorsPanel } from "~/components/discovery/CollaboratorsPanel";
 import { DiscoveryNotesPanel } from "~/components/discovery/DiscoveryNotesPanel";
 import { deckColorVars } from "~/components/deck/deckColors";
 import { RequireAuth } from "~/components/layout/RequireAuth";
+import { useAuth } from "~/hooks/useAuth";
 import { useNotesWindowSession } from "~/hooks/useNotesWindowSession";
 import { trpc } from "~/lib/trpc";
 
@@ -41,7 +43,9 @@ function NotesWindowLoader({ slug, meetingId }: { slug: string; meetingId: strin
 }
 
 function NotesWindowContent({ deck, meetingId }: { deck: DeckConfig; meetingId: string }) {
-  const { state, setState, clientName, setClientName, hydrated, notFound } = useNotesWindowSession(meetingId);
+  const { user } = useAuth();
+  const { state, setState, clientName, setClientName, hydrated, notFound, fieldLocks, lockField, unlockField } =
+    useNotesWindowSession(meetingId);
 
   if (notFound) return <NotesWindowMessage text="This meeting session could not be found." isError />;
   if (!hydrated) return <NotesWindowMessage text="Loading…" />;
@@ -52,8 +56,19 @@ function NotesWindowContent({ deck, meetingId }: { deck: DeckConfig; meetingId: 
         <div className="wordmark">
           <span className="sub">DISCOVERY NOTES · {deck.companyName.toUpperCase()}</span>
         </div>
+        <CollaboratorsPanel meetingId={meetingId} />
       </div>
-      <DiscoveryNotesPanel deck={deck} state={state} setState={setState} clientName={clientName} setClientName={setClientName} />
+      <DiscoveryNotesPanel
+        deck={deck}
+        state={state}
+        setState={setState}
+        clientName={clientName}
+        setClientName={setClientName}
+        fieldLocks={fieldLocks}
+        currentUserId={user?.id}
+        onLockField={lockField}
+        onUnlockField={unlockField}
+      />
     </div>
   );
 }
