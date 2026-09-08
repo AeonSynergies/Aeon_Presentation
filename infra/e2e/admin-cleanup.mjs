@@ -20,6 +20,14 @@
 //     deactivate is the real answer: the account can't log in again but its history stays
 //     intact, exactly like archiving a deck rather than deleting it.
 //
+//     IMPORTANT: qa-sales-executive / qa-operations-manager / qa-bd-manager @aeonqa.internal
+//     are NOT one-off cleanup targets despite the "qa-" prefix — they are permanent fixture
+//     accounts role-enforcement-e2e.mjs logs in as on every run to verify per-role
+//     permission gating, and are hardcoded into PROTECTED_USER_EMAILS below so they can
+//     never be deactivated/removed by this tool, even by an ACTIONS_JSON that lists them.
+//     If a future audit flags them as "unused"/"blocked from deletion", that is expected —
+//     leave them alone.
+//
 // Env: BASE_URL + API_URL (required — the current live app; see admin-cleanup.yml, which
 // resolves these itself via `aws apprunner describe-service` rather than hardcoding them).
 // ADMIN_EMAIL/ADMIN_PASSWORD default to the seeded demo admin, same convention every other
@@ -39,7 +47,21 @@ const ACTIONS = MODE === "execute" ? JSON.parse(process.env.ACTIONS_JSON || "[]"
 // Never touched by this tool, regardless of what ACTIONS_JSON says — checked by slug/email
 // against data fetched fresh in THIS run, not trusted from the caller.
 const PROTECTED_DECK_SLUGS = new Set(["aeon-logistics", "fedex-pd", "meridian-property"]);
-const PROTECTED_USER_EMAILS = new Set(["demo@aeonsynergies.com", "test.admin@aeonsynergies.com"]);
+// Two different kinds of "never touch" accounts, both blocked from remove/deactivate here:
+//   - real accounts (demo/test.admin) — obviously never test cleanup targets.
+//   - qa-sales-executive / qa-operations-manager / qa-bd-manager @aeonqa.internal — NOT
+//     one-off cleanup targets either, despite the "qa-" prefix. These are permanent,
+//     ongoing fixtures that role-enforcement-e2e.mjs logs in as on every run to verify
+//     per-role permission gating; deactivating them (as an earlier cleanup pass did) breaks
+//     that suite outright since it can no longer log in as them. They must stay active
+//     forever, exactly like the protected deck slugs above stay unarchived/undeleted.
+const PROTECTED_USER_EMAILS = new Set([
+  "demo@aeonsynergies.com",
+  "test.admin@aeonsynergies.com",
+  "qa-sales-executive@aeonqa.internal",
+  "qa-operations-manager@aeonqa.internal",
+  "qa-bd-manager@aeonqa.internal",
+]);
 
 async function callTrpc(kind, path, token, input) {
   const url =
