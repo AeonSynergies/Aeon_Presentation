@@ -1,5 +1,7 @@
 {
-  "_note": "Audit: role-enforcement-e2e.mjs still fails on qa-sales-executive specifically after the reactivate-3-accounts run (workflow run 34214585933, which logged 3/3 OK). Checking the ACTUAL current state of all qa-* accounts (id, role, deactivatedAt) to find out why sales-executive alone didn't take.",
-  "mode": "audit",
-  "actions_json": []
+  "_note": "Fix: the audit from workflow run 34229427316 showed qa-sales-executive@aeonqa.internal's role is currently OPERATIONS_MANAGER instead of SALES_EXECUTIVE (deactivatedAt was already null for all 3 QA accounts, so the earlier reactivation itself worked fine — this is a separate, pre-existing role-data mismatch). That's why role-enforcement-e2e.mjs's 'SE: API login succeeds' and 'admin sees QA Sales Executive with role SALES_EXECUTIVE' checks both fail: both assert role === SALES_EXECUTIVE. admin-cleanup.mjs now supports passing extra mutation input through an action, so this corrects the role directly.",
+  "mode": "execute",
+  "actions_json": [
+    { "type": "user.updateRole", "id": "cmtacid5a000goc3dv3reebnd", "role": "SALES_EXECUTIVE", "label": "qa-sales-executive@aeonqa.internal (fix role: was OPERATIONS_MANAGER)" }
+  ]
 }
