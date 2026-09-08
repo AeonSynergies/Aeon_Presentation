@@ -223,6 +223,24 @@ jobs:
         env:
           BASE_URL: ${{ needs.deploy.outputs.web_url }}
 
+      # Session Collaboration: real, permissioned multi-user access to a live Discovery
+      # Notes session (SessionCollaborator table), replacing the old "anyone with the URL"
+      # model. Two real logged-in browser contexts (the seeded demo admin as owner, the
+      # permanent qa-operations-manager QA account as invitee): invites a real Team member
+      # via the picker, confirms both the in-app notification and a real SES email arrive,
+      # confirms the invite link grants access to that specific session and no other,
+      # confirms one user's field focus shows locked to the other and unlocks on blur,
+      # confirms ownership transfer both explicit and implicit, and confirms removing a
+      # non-owner collaborator works cleanly.
+      - name: Run live session-collaboration E2E against the deployment
+        id: session-collaboration
+        continue-on-error: true
+        working-directory: infra/e2e
+        run: node session-collaboration-e2e.mjs
+        env:
+          BASE_URL: ${{ needs.deploy.outputs.web_url }}
+          API_URL: ${{ needs.deploy.outputs.api_url }}
+
       # Send to Client: Download PDF. Reuses the seeded Amazon DSP deck (safe — Discovery
       # Notes session state lives on a fresh per-visit Meeting row, never the shared deck
       # config), sets a known driver value and service selection, downloads the live quote
@@ -409,6 +427,7 @@ jobs:
             [report-template-screenshots]="${{ steps.report-template-screenshots.outcome }}"
             [slide-system]="${{ steps.slide-system.outcome }}"
             [notes-window]="${{ steps.notes-window.outcome }}"
+            [session-collaboration]="${{ steps.session-collaboration.outcome }}"
             [send-to-client-pdf]="${{ steps.send-to-client-pdf.outcome }}"
             [role-enforcement]="${{ steps.role-enforcement.outcome }}"
             [password-reset]="${{ steps.password-reset.outcome }}"

@@ -1,6 +1,7 @@
 import { can } from "@aeon/types";
 import { Link } from "@tanstack/react-router";
 import { useAuth } from "~/hooks/useAuth";
+import { NotificationBell } from "./NotificationBell";
 
 export function Header() {
   const { user, logout } = useAuth();
@@ -36,14 +37,12 @@ export function Header() {
         )}
       </nav>
       {user && (
-        <button
-          className="nav-item"
-          onClick={() => logout()}
-          style={{ marginLeft: "auto" }}
-          title={user.email}
-        >
-          Sign out ({user.name})
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginLeft: "auto" }}>
+          <NotificationBell />
+          <button className="nav-item" onClick={() => logout()} title={user.email}>
+            Sign out ({user.name})
+          </button>
+        </div>
       )}
     </header>
   );

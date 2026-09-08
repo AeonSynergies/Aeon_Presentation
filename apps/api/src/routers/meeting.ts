@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { Prisma, prisma } from "@aeon/database";
 import {
   computePricingSummary,
+  FIELD_LOCK_IDLE_MS,
   finalPriceFor,
   fmtMoney,
   groupQuestionsByService,
@@ -14,6 +15,7 @@ import {
   type DeckConfig,
   type DiscountState,
   type DiscoveryQuestion,
+  type FieldLock,
   type LogoConfig,
   type MeetingOutcome,
   type SessionState,
@@ -24,6 +26,7 @@ import { Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
 import PDFDocument from "pdfkit";
 import { z } from "zod";
 import { sendEmailWithAttachment } from "../lib/email.js";
+import { meetingAccessWhere } from "../lib/session-access.js";
 import { protectedProcedure, requirePermission, router } from "../trpc.js";
 
 // Prisma's Json columns type as the recursive `JsonValue` union. Left as-is, that
@@ -39,9 +42,27 @@ interface MeetingDTO {
   answers: Record<string, string | number | boolean | string[] | null>;
   discount: DiscountState;
   meetingOutcome: MeetingOutcome | null;
+  fieldLocks: Record<string, FieldLock>;
   completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+// Locks older than FIELD_LOCK_IDLE_MS are simply never handed back to a client — this is
+// the entire "auto-clear" mechanism (see FieldLock, packages/types/src/session.ts): a
+// closed tab or crashed browser stops renewing its lock, and within one poll cycle after
+// it goes stale, every OTHER client's meeting.get response just stops including it.
+// Nothing needs to actively sweep/delete the stale entry from the DB for this to work,
+// though lockField/unlockField below also opportunistically drop expired entries so the
+// column doesn't grow unbounded over a long session.
+function liveFieldLocks(raw: unknown): Record<string, FieldLock> {
+  const locks = (raw as Record<string, FieldLock> | null) ?? {};
+  const now = Date.now();
+  const live: Record<string, FieldLock> = {};
+  for (const [fieldKey, lock] of Object.entries(locks)) {
+    if (now - new Date(lock.lockedAt).getTime() < FIELD_LOCK_IDLE_MS) live[fieldKey] = lock;
+  }
+  return live;
 }
 
 // MeetingOutcome (packages/types/src/session.ts) is the prototype's own outcome shape,
@@ -67,6 +88,7 @@ function toMeetingDTO(m: {
   answers: unknown;
   discount: unknown;
   meetingOutcome: unknown;
+  fieldLocks?: unknown;
   completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -80,6 +102,7 @@ function toMeetingDTO(m: {
     answers: m.answers as Record<string, string | number | boolean | string[] | null>,
     discount: normalizeDiscountState(m.discount),
     meetingOutcome: (m.meetingOutcome as MeetingOutcome | null) ?? null,
+    fieldLocks: liveFieldLocks(m.fieldLocks),
     completedAt: m.completedAt,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
@@ -624,21 +647,30 @@ export const meetingRouter = router({
       // it exists, and a row that only ever had defaults briefly, before the client's own
       // debounced save caught up, would be a real race for whoever reads it first.
       const initial = initialSessionStateForDeck(deck.config as unknown as DeckConfig);
-      const meeting = await prisma.meeting.create({
-        data: {
-          deckId: deck.id,
-          createdById: ctx.user.id,
-          selected: initial.selected,
-          toggles: initial.toggles as Prisma.InputJsonValue,
-          discount: initial.discount as unknown as Prisma.InputJsonValue,
-        },
+      // The creator's own collaborator row (isOwner: true) is seeded in the same
+      // transaction as the Meeting itself — see lib/session-access.ts — so a brand new
+      // session is never briefly inaccessible to the very person who just created it.
+      const meeting = await prisma.$transaction(async (tx) => {
+        const created = await tx.meeting.create({
+          data: {
+            deckId: deck.id,
+            createdById: ctx.user.id,
+            selected: initial.selected,
+            toggles: initial.toggles as Prisma.InputJsonValue,
+            discount: initial.discount as unknown as Prisma.InputJsonValue,
+          },
+        });
+        await tx.sessionCollaborator.create({
+          data: { meetingId: created.id, userId: ctx.user.id, isOwner: true },
+        });
+        return created;
       });
       return toMeetingDTO(meeting);
     }),
 
   get: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input, ctx }) => {
     const meeting = await prisma.meeting.findFirst({
-      where: { id: input.id, createdById: ctx.user.id },
+      where: meetingAccessWhere(input.id, ctx.user.id),
     });
     if (!meeting) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting not found" });
     return toMeetingDTO(meeting);
@@ -648,7 +680,7 @@ export const meetingRouter = router({
     .input(z.object({ id: z.string(), patch: stateInput }))
     .mutation(async ({ input, ctx }) => {
       const existing = await prisma.meeting.findFirst({
-        where: { id: input.id, createdById: ctx.user.id },
+        where: meetingAccessWhere(input.id, ctx.user.id),
       });
       if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting not found" });
 
@@ -663,6 +695,54 @@ export const meetingRouter = router({
       return toMeetingDTO(meeting);
     }),
 
+  // Per-field editing lock for multi-user collaboration (see FieldLock, packages/types/
+  // src/session.ts) — the client calls this once on focus, then again on a short interval
+  // while the field stays focused (see useNotesWindowSession.ts's heartbeat), and
+  // unlockField on blur. Deliberately permissive rather than strictly CAS-guarded: it
+  // refuses to steal an active (non-stale) lock genuinely held by a DIFFERENT user, but a
+  // well-behaved client only ever calls this for a field its own last poll showed as free —
+  // two clients racing to lock the same field inside one ~1.5s poll interval is a known,
+  // accepted gap (see the schema.prisma comment on Meeting.fieldLocks), not something this
+  // guards against.
+  lockField: protectedProcedure
+    .input(z.object({ id: z.string(), fieldKey: z.string().min(1) }))
+    .mutation(async ({ input, ctx }) => {
+      const existing = await prisma.meeting.findFirst({ where: meetingAccessWhere(input.id, ctx.user.id) });
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting not found" });
+
+      const locks = liveFieldLocks(existing.fieldLocks);
+      const currentLock = locks[input.fieldKey];
+      if (currentLock && currentLock.userId !== ctx.user.id) {
+        throw new TRPCError({ code: "CONFLICT", message: `${currentLock.userName} is currently editing this field.` });
+      }
+
+      const user = await prisma.user.findUnique({ where: { id: ctx.user.id }, select: { name: true } });
+      locks[input.fieldKey] = { userId: ctx.user.id, userName: user?.name ?? "Someone", lockedAt: new Date().toISOString() };
+      const meeting = await prisma.meeting.update({
+        where: { id: existing.id },
+        data: { fieldLocks: locks as unknown as Prisma.InputJsonValue },
+      });
+      return toMeetingDTO(meeting);
+    }),
+
+  unlockField: protectedProcedure
+    .input(z.object({ id: z.string(), fieldKey: z.string().min(1) }))
+    .mutation(async ({ input, ctx }) => {
+      const existing = await prisma.meeting.findFirst({ where: meetingAccessWhere(input.id, ctx.user.id) });
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting not found" });
+
+      const locks = liveFieldLocks(existing.fieldLocks);
+      // Only the field's own current holder can clear it early — someone else's stray
+      // blur/unmount should never be able to unlock a field they don't actually hold.
+      if (locks[input.fieldKey]?.userId === ctx.user.id) delete locks[input.fieldKey];
+
+      const meeting = await prisma.meeting.update({
+        where: { id: existing.id },
+        data: { fieldLocks: locks as unknown as Prisma.InputJsonValue },
+      });
+      return toMeetingDTO(meeting);
+    }),
+
   // Export — Sales Executive and Operations Manager don't have this permission (the
   // requirePermission("export") gate below is the actual enforcement; nothing about this
   // being a query vs. mutation changes that). Returns a CSV rate card for the meeting's
@@ -670,7 +750,7 @@ export const meetingRouter = router({
   // slide uses. A query, not a mutation, since it only reads/derives — it changes nothing.
   export: requirePermission("export").input(z.object({ id: z.string() })).query(async ({ input, ctx }) => {
     const meeting = await prisma.meeting.findFirst({
-      where: { id: input.id, createdById: ctx.user.id },
+      where: meetingAccessWhere(input.id, ctx.user.id),
       include: { deck: true },
     });
     if (!meeting) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting not found" });
@@ -693,7 +773,7 @@ export const meetingRouter = router({
     .input(z.object({ id: z.string(), clientEmail: z.email(), subject: z.string().optional(), note: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
       const meeting = await prisma.meeting.findFirst({
-        where: { id: input.id, createdById: ctx.user.id },
+        where: meetingAccessWhere(input.id, ctx.user.id),
         include: { deck: true },
       });
       if (!meeting) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting not found" });
@@ -720,7 +800,7 @@ export const meetingRouter = router({
   // buildQuotePdfBuffer pair Meeting Records already built rather than a second PDF pipeline.
   generateLiveQuotePdf: requirePermission("sendToClient").input(z.object({ id: z.string() })).query(async ({ input, ctx }) => {
     const meeting = await prisma.meeting.findFirst({
-      where: { id: input.id, createdById: ctx.user.id },
+      where: meetingAccessWhere(input.id, ctx.user.id),
       include: { deck: true },
     });
     if (!meeting) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting not found" });
@@ -742,7 +822,7 @@ export const meetingRouter = router({
     .input(z.object({ id: z.string(), outcome: meetingOutcomeSchema }))
     .mutation(async ({ input, ctx }) => {
       const meeting = await prisma.meeting.findFirst({
-        where: { id: input.id, createdById: ctx.user.id },
+        where: meetingAccessWhere(input.id, ctx.user.id),
         include: { deck: true },
       });
       if (!meeting) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting not found" });
@@ -767,8 +847,11 @@ export const meetingRouter = router({
   // Lists only meetings explicitly saved via complete() above (completedAt set) — every
   // deck open creates a Meeting row for live-session sync, but a session someone merely
   // opened and never saved as a record shouldn't clutter this screen. Spans every deck
-  // (not a per-deck view), scoped to the caller's own meetings — consistent with get/
-  // export/sendToClient above, all of which already scope by createdById.
+  // (not a per-deck view), scoped to createdById — unlike get/export/sendToClient/complete
+  // above (which check live-session collaborator access, see lib/session-access.ts), a
+  // completed record is a personal, historical Meeting Record from here on, not a shared
+  // live session, so this and the Meeting Records procedures below it intentionally keep
+  // the original creator-only scoping.
   listRecords: requirePermission("meetingRecords")
     .input(
       z.object({

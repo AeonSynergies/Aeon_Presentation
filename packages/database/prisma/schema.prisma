@@ -51,23 +51,26 @@ model User {
   // rows, and deactivation is the real answer for that case rather than a way around it.
   deactivatedAt DateTime?
 
-  refreshTokens     RefreshToken[]
-  passwordSetTokens PasswordSetToken[]
-  meetings          Meeting[]
-  aiDraftRequests   AiDraftRequest[]
+  refreshTokens         RefreshToken[]
+  passwordSetTokens     PasswordSetToken[]
+  meetings              Meeting[]
+  aiDraftRequests       AiDraftRequest[]
+  sessionCollaborations SessionCollaborator[] @relation("SessionCollaboratorUser")
+  sentSessionInvites    SessionCollaborator[] @relation("SessionCollaboratorInvitedBy")
+  notifications         Notification[]
 
   @@index([deactivatedAt])
   @@map("users")
 }
 
 model RefreshToken {
-  id        String   @id @default(cuid())
-  tokenHash String   @unique
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime
   revokedAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@index([userId])
   @@map("refresh_tokens")
@@ -118,9 +121,9 @@ model Deck {
 }
 
 model Meeting {
-  id        String   @id @default(cuid())
-  deckId    String
-  deck      Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  id          String @id @default(cuid())
+  deckId      String
+  deck        Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
   createdById String
   createdBy   User   @relation(fields: [createdById], references: [id])
 
@@ -130,10 +133,10 @@ model Meeting {
   // the Discovery Notes panel in real time. Every pricing-driver value (one per model in
   // the deck's pricing-model library) lives in `answers`, keyed by model id — there is no
   // separate deck-level default column.
-  selected    Json    @default("[]")
-  toggles     Json    @default("{}")
-  answers     Json    @default("{}")
-  discount    Json    @default("{\"enabled\":false,\"scope\":\"all\",\"services\":[],\"type\":\"percent\",\"value\":0}")
+  selected Json @default("[]")
+  toggles  Json @default("{}")
+  answers  Json @default("{}")
+  discount Json @default("{\"enabled\":false,\"scope\":\"all\",\"services\":[],\"type\":\"percent\",\"value\":0}")
 
   meetingOutcome Json?
 
@@ -168,11 +171,66 @@ model Meeting {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Per-field "someone is actively editing this" locks for multi-user collaboration (see
+  // SessionCollaborator below) — a map of fieldKey -> {userId, userName, lockedAt}. Staleness
+  // (no typing activity for ~15-30s) is checked at read time in meeting.get rather than via
+  // a background job, since the existing 1.5s poll already re-reads this row on every
+  // client; a lock also naturally disappears if the browser that set it crashes or closes,
+  // since nothing keeps refreshing lockedAt for it.
+  fieldLocks Json @default("{}")
+
+  collaborators SessionCollaborator[]
+
   @@index([deckId])
   @@index([createdById])
   @@index([completedAt])
   @@index([archivedAt])
   @@map("meetings")
+}
+
+// Who currently has access to a Meeting's live Discovery Notes session, replacing the old
+// "only createdById can read/write this Meeting" check (see meeting.get/updateState) with
+// real per-session collaborators. The Meeting's own createdById is kept purely as
+// historical/audit metadata from here on — it is NOT re-checked for access once this table
+// exists; meeting.create inserts the creator's own row here (isOwner: true) in the same
+// transaction, so this table is always the single source of truth for who can open a
+// session, from the very first person.
+//
+// Exactly one collaborator per meeting may have isOwner: true — enforced by a partial
+// unique index added by raw SQL in this model's migration (Prisma's schema DSL has no
+// partial-unique-index syntax), not just trusted at the application layer.
+model SessionCollaborator {
+  id          String   @id @default(cuid())
+  meetingId   String
+  meeting     Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation("SessionCollaboratorUser", fields: [userId], references: [id], onDelete: Cascade)
+  isOwner     Boolean  @default(false)
+  invitedById String?
+  invitedBy   User?    @relation("SessionCollaboratorInvitedBy", fields: [invitedById], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@unique([meetingId, userId])
+  @@index([meetingId])
+  @@index([userId])
+  @@map("session_collaborators")
+}
+
+// Generic in-app notification, first (and so far only) use: a session-invite ping. Kept
+// deliberately untyped beyond title/body/linkUrl rather than adding a "kind" enum for a
+// single kind — extend with a type discriminator only once a second kind actually exists.
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  linkUrl   String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@map("notifications")
 }
 
 // One row per AI drafting call (Phase 3a) — never the draft content itself, just who

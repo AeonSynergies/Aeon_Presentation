@@ -1,4 +1,4 @@
-import type { SessionState } from "@aeon/types";
+import type { FieldLock, SessionState } from "@aeon/types";
 import { freshDiscountState } from "@aeon/types";
 import * as React from "react";
 import { trpc } from "~/lib/trpc";
@@ -10,6 +10,14 @@ const SAVE_DEBOUNCE_MS = 800;
 // up anything changed elsewhere (e.g. someone editing in-page before Present was entered).
 const REMOTE_POLL_MS = 1500;
 const LOCAL_EDIT_GUARD_MS = 2500;
+// How often a held field lock renews itself while the field stays focused — comfortably
+// inside the server's FIELD_LOCK_IDLE_MS (packages/types/src/session.ts) so a normal
+// network hiccup between renewals doesn't let the lock expire out from under an active
+// editor, but frequent enough that a closed tab's lock still clears for everyone else soon
+// after FIELD_LOCK_IDLE_MS elapses.
+const FIELD_LOCK_HEARTBEAT_MS = 8000;
+
+const EMPTY_FIELD_LOCKS: Record<string, FieldLock> = {};
 
 const EMPTY_STATE: SessionState = {
   selected: [],
@@ -82,5 +90,61 @@ export function useNotesWindowSession(meetingId: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, clientName, hydrated, dirty]);
 
-  return { state, setState, clientName, setClientName, hydrated, notFound: query.isError };
+  // Per-field editing locks (session-collaboration feature) — see FieldLock, @aeon/types,
+  // and meeting.lockField/unlockField. lockField is called once on a field's focus, then
+  // again on a heartbeat while it stays focused, so the lock keeps renewing for as long as
+  // the user is actually there; unlockField on blur clears it immediately rather than
+  // waiting for the idle timeout. A lock rejected because someone else already holds the
+  // field (or a heartbeat that loses a race after an expired lock got reassigned) simply
+  // stops renewing — the next poll's fieldLocks already reflects the real current holder,
+  // so there's nothing else to reconcile locally.
+  const lockFieldMutation = trpc.meeting.lockField.useMutation();
+  const unlockFieldMutation = trpc.meeting.unlockField.useMutation();
+  const heartbeats = React.useRef<Record<string, ReturnType<typeof setInterval>>>({});
+
+  const lockField = React.useCallback(
+    (fieldKey: string) => {
+      const attempt = () => lockFieldMutation.mutate({ id: meetingId, fieldKey }, { onError: () => stopHeartbeat(fieldKey) });
+      const stopHeartbeat = (key: string) => {
+        clearInterval(heartbeats.current[key]);
+        delete heartbeats.current[key];
+      };
+      stopHeartbeat(fieldKey);
+      attempt();
+      heartbeats.current[fieldKey] = setInterval(attempt, FIELD_LOCK_HEARTBEAT_MS);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [meetingId]
+  );
+
+  const unlockField = React.useCallback(
+    (fieldKey: string) => {
+      clearInterval(heartbeats.current[fieldKey]);
+      delete heartbeats.current[fieldKey];
+      unlockFieldMutation.mutate({ id: meetingId, fieldKey });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [meetingId]
+  );
+
+  // Best-effort: stop renewing any held locks if this window closes/navigates away. The
+  // server-side idle timeout is what actually guarantees a lock never gets stuck forever
+  // regardless of whether this cleanup ever runs (a crashed tab never runs it at all).
+  React.useEffect(() => {
+    return () => {
+      Object.values(heartbeats.current).forEach(clearInterval);
+    };
+  }, []);
+
+  return {
+    state,
+    setState,
+    clientName,
+    setClientName,
+    hydrated,
+    notFound: query.isError,
+    fieldLocks: query.data?.fieldLocks ?? EMPTY_FIELD_LOCKS,
+    lockField,
+    unlockField,
+  };
 }
